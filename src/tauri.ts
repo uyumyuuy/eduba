@@ -2,9 +2,11 @@ import { invoke as tauriInvoke } from "@tauri-apps/api/core";
 
 export type BackendCommands = {
   get_environment: { args: undefined; result: { modelPath: string; tesseractPath: string } };
-  create_project: { args: { pdfPath: string; projectPath: string }; result: ProjectInfo };
+  inspect_pdf: { args: { pdfPath: string }; result: { pdfSize: number } };
+  create_project: { args: { pdfPath: string; projectPath: string; manifest?: string }; result: ProjectInfo };
   open_project: { args: { projectPath: string }; result: ProjectInfo };
   read_pdf_range: { args: { projectPath: string; begin: number; end: number }; result: string };
+  read_source_pdf_range: { args: { pdfPath: string; begin: number; end: number }; result: string };
   save_manifest: { args: { projectPath: string; manifest: string }; result: void };
   load_page: { args: { projectPath: string; pageId: string }; result: string | null };
   save_page: { args: { projectPath: string; pageId: string; data: string }; result: void };

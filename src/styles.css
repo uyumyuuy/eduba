@@ -117,3 +117,34 @@ button:disabled { cursor: not-allowed; opacity: .42; }
 .layout-svg { pointer-events: auto; }
 .layout-svg text { pointer-events: none; fill: #273b38; dominant-baseline: alphabetic; }
 .line-overlay { position: absolute; z-index: 3; resize: none; overflow: hidden; padding: 0 2px; border: 1px solid #2f887e; outline: 2px solid rgba(61,143,140,.2); background: rgba(255,254,250,.96); color: #273b38; font-family: ui-monospace, SFMono-Regular, Consolas, monospace; line-height: 1.05; white-space: pre; }
+
+/* Import configuration needs room for controls and a useful PDF preview. */
+.import-modal { width: min(920px, calc(100vw - 32px)); max-height: calc(100dvh - 32px); display: flex; flex-direction: column; padding: 22px 24px; overflow: auto; }
+.import-modal h2 { margin-top: 7px; }
+.source-path { overflow: hidden; margin: 0 0 14px !important; color: #788580 !important; text-overflow: ellipsis; white-space: nowrap; }
+.import-body { display: grid; grid-template-columns: minmax(250px, 300px) minmax(360px, 1fr); gap: 20px; min-height: 0; }
+.import-controls { display: flex; flex-direction: column; gap: 13px; }
+.import-controls label { display: flex; flex-direction: column; gap: 6px; color: #63716d; font-size: 10px; font-weight: 600; }
+.import-controls input, .import-controls select { width: 100%; height: 34px; padding: 0 9px; border: 1px solid #d6d8d0; border-radius: 5px; outline: 0; background: #fffefa; color: #3d4e4a; font-size: 11px; }
+.import-controls .secondary { justify-content: center; margin-top: 2px; }
+.import-preview { display: flex; flex-direction: column; min-width: 0; min-height: 280px; padding: 10px; border: 1px solid #dedbd1; border-radius: 7px; background: #f0eee8; }
+.preview-nav { display: flex; align-items: center; justify-content: center; gap: 9px; margin-bottom: 8px; color: #68736e; font: 10px "DM Mono", monospace; }
+.preview-canvases { display: grid; grid-template-columns: minmax(0, 1fr); align-items: start; gap: 10px; flex: 1; min-height: 0; overflow: auto; }
+.preview-canvases.both { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.preview-canvases figure { display: flex; flex-direction: column; align-items: center; gap: 5px; min-width: 0; margin: 0; }
+.preview-canvases figcaption { color: #5b6b67; font-size: 10px; font-weight: 700; }
+.preview-canvases canvas { display: block; max-width: 100%; height: auto; background: #fff; box-shadow: 0 3px 10px rgba(42,49,46,.14); }
+.preview-canvases small, .import-preview > small { color: #7f8882; font: 9px "DM Mono", monospace; text-align: center; }
+.form-error { margin-top: 12px !important; color: #ad5c4d !important; }
+@media (max-width: 700px) { .import-modal { width: calc(100vw - 16px); max-height: calc(100dvh - 16px); padding: 18px; } .import-body { grid-template-columns: 1fr; } .import-preview { min-height: 240px; } }
+.split-check { flex-direction: row !important; align-items: center; gap: 8px !important; font-size: 11px !important; }
+.margin-fields { display: flex; flex-direction: column; gap: 8px; }
+.margin-fields strong { color: #63716d; font-size: 10px; }
+.preview-canvas-wrap { position: relative; display: inline-block; max-width: 100%; line-height: 0; }
+.preview-canvas-wrap i { position: absolute; display: block; pointer-events: none; background: rgba(185, 73, 99, .28); }
+.preview-canvas-wrap .margin-top { inset: 0 0 auto; }
+.preview-canvas-wrap .margin-bottom { inset: auto 0 0; }
+.preview-canvas-wrap .margin-left { inset: 0 auto 0 0; }
+.preview-canvas-wrap .margin-right { inset: 0 0 0 auto; }
+.split-check input { width: auto !important; height: auto !important; flex: 0 0 auto; }
+.margin-legend { margin-top: 7px !important; color: #9b6975 !important; font-size: 9px !important; text-align: center; }

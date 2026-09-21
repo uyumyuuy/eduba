@@ -4,40 +4,43 @@ import { invokeCommand } from "./tauri";
 
 GlobalWorkerOptions.workerSrc = workerUrl;
 
+type RangeReader = (begin: number, end: number) => Promise<string>;
+
 function decodeBase64(value: string): Uint8Array {
   const clean = value.includes(",") ? value.slice(value.indexOf(",") + 1) : value;
   const binary = atob(clean);
   const bytes = new Uint8Array(binary.length);
-  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+  for (let index = 0; index < binary.length; index++) bytes[index] = binary.charCodeAt(index);
   return bytes;
 }
 
-export class ProjectRangeTransport extends PDFDataRangeTransport {
+class RangeTransport extends PDFDataRangeTransport {
   rangeError: unknown;
   private onFailure?: (error: unknown) => void;
-  constructor(length: number, private readonly projectPath: string) {
+
+  constructor(length: number, private readonly readRange: RangeReader) {
     super(length, new Uint8Array(), false);
   }
 
-  setFailureHandler(handler: (error: unknown) => void): void { this.onFailure = handler; }
+  setFailureHandler(handler: (error: unknown) => void): void {
+    this.onFailure = handler;
+  }
 
   override requestDataRange(begin: number, end: number): void {
-    invokeCommand("read_pdf_range", { projectPath: this.projectPath, begin, end })
-      .then((base64) => this.onDataRange(begin, decodeBase64(base64)))
-      .catch((error) => {
-        // Tell the owning loading task to abort. An empty byte range alone
-        // can leave PDF.js waiting for more data indefinitely.
+    this.readRange(begin, end)
+      .then(base64 => this.onDataRange(begin, decodeBase64(base64)))
+      .catch(error => {
         this.rangeError = error;
         this.onFailure?.(error);
       });
   }
 }
 
-export async function openProjectPdf(projectPath: string, pdfSize: number): Promise<PDFDocumentProxy> {
-  const transport = new ProjectRangeTransport(pdfSize, projectPath);
+async function openRangedPdf(size: number, readRange: RangeReader): Promise<PDFDocumentProxy> {
+  const transport = new RangeTransport(size, readRange);
   const task = getDocument({
     range: transport,
-    length: pdfSize,
+    length: size,
     disableAutoFetch: true,
     disableStream: true,
     useWorkerFetch: false,
@@ -45,9 +48,24 @@ export async function openProjectPdf(projectPath: string, pdfSize: number): Prom
   });
   let rejectRange!: (reason: unknown) => void;
   const rangeFailure = new Promise<never>((_, reject) => { rejectRange = reject; });
-  transport.setFailureHandler((error) => { rejectRange(error); void task.destroy(); });
-  try { return await Promise.race([task.promise, rangeFailure]); }
-  catch (error) { throw transport.rangeError ?? error; }
+  transport.setFailureHandler(error => {
+    rejectRange(error);
+    void task.destroy();
+  });
+  try {
+    return await Promise.race([task.promise, rangeFailure]);
+  } catch (error) {
+    throw transport.rangeError ?? error;
+  }
+}
+
+export function openProjectPdf(projectPath: string, pdfSize: number): Promise<PDFDocumentProxy> {
+  return openRangedPdf(pdfSize, (begin, end) => invokeCommand("read_pdf_range", { projectPath, begin, end }));
+}
+
+/** Preview an external PDF through bounded source reads without creating a project. */
+export function openSourcePdf(pdfPath: string, pdfSize: number): Promise<PDFDocumentProxy> {
+  return openRangedPdf(pdfSize, (begin, end) => invokeCommand("read_source_pdf_range", { pdfPath, begin, end }));
 }
 
 export function rotateCanvas(source: HTMLCanvasElement, degrees: number, split: boolean): HTMLCanvasElement[] {
@@ -56,20 +74,20 @@ export function rotateCanvas(source: HTMLCanvasElement, degrees: number, split: 
   const sideways = rotation === 90 || rotation === 270;
   rotated.width = sideways ? source.height : source.width;
   rotated.height = sideways ? source.width : source.height;
-  const ctx = rotated.getContext("2d")!;
-  ctx.fillStyle = "#fff";
-  ctx.fillRect(0, 0, rotated.width, rotated.height);
-  ctx.translate(rotated.width / 2, rotated.height / 2);
-  ctx.rotate((rotation * Math.PI) / 180);
-  ctx.drawImage(source, -source.width / 2, -source.height / 2);
+  const context = rotated.getContext("2d")!;
+  context.fillStyle = "#fff";
+  context.fillRect(0, 0, rotated.width, rotated.height);
+  context.translate(rotated.width / 2, rotated.height / 2);
+  context.rotate(rotation * Math.PI / 180);
+  context.drawImage(source, -source.width / 2, -source.height / 2);
   if (!split) return [rotated];
   const half = Math.floor(rotated.width / 2);
-  return [0, 1].map((part) => {
-    const out = document.createElement("canvas");
-    out.width = part === 0 ? half : rotated.width - half;
-    out.height = rotated.height;
-    out.getContext("2d")!.drawImage(rotated, part * half, 0, out.width, rotated.height, 0, 0, out.width, rotated.height);
-    return out;
+  return [0, 1].map(part => {
+    const output = document.createElement("canvas");
+    output.width = part === 0 ? half : rotated.width - half;
+    output.height = rotated.height;
+    output.getContext("2d")!.drawImage(rotated, part * half, 0, output.width, rotated.height, 0, 0, output.width, output.height);
+    return output;
   });
 }
 

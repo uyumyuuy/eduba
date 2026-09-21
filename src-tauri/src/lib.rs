@@ -5,7 +5,7 @@ use rusqlite::{params, Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
 use std::{
     fs,
-    io::{Read, Write},
+    io::{Read, Seek, SeekFrom, Write},
     path::{Path, PathBuf},
     process::{Child, Command, Stdio},
     sync::{Arc, Mutex},
@@ -65,6 +65,7 @@ pub struct ProjectInfo {
 pub struct CreateProjectArgs {
     pub pdf_path: String,
     pub project_path: String,
+    pub manifest: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -77,6 +78,14 @@ pub struct ProjectPathArgs {
 #[serde(rename_all = "camelCase")]
 pub struct ReadPdfArgs {
     pub project_path: String,
+    pub begin: u64,
+    pub end: u64,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ReadSourcePdfArgs {
+    pub pdf_path: String,
     pub begin: u64,
     pub end: u64,
 }
@@ -310,11 +319,16 @@ fn resolve_tesseract_path(app: &AppHandle) -> PathBuf {
 }
 
 #[tauri::command]
-async fn create_project(pdf_path: String, project_path: String) -> Result<ProjectInfo, String> {
+async fn create_project(
+    pdf_path: String,
+    project_path: String,
+    manifest: Option<String>,
+) -> Result<ProjectInfo, String> {
     tauri::async_runtime::spawn_blocking(move || {
         create_project_impl(&CreateProjectArgs {
             pdf_path,
             project_path,
+            manifest,
         })
     })
     .await
@@ -323,6 +337,11 @@ async fn create_project(pdf_path: String, project_path: String) -> Result<Projec
 }
 
 fn create_project_impl(args: &CreateProjectArgs) -> BackendResult<ProjectInfo> {
+    let manifest = args
+        .manifest
+        .as_deref()
+        .map(validate_manifest)
+        .transpose()?;
     let pdf = PathBuf::from(&args.pdf_path);
     if !pdf.is_file() {
         return Err(BackendError::msg(format!(
@@ -379,6 +398,12 @@ fn create_project_impl(args: &CreateProjectArgs) -> BackendResult<ProjectInfo> {
             "INSERT INTO meta(key, value) VALUES ('pdf_size', ?1)",
             [pdf_size.to_string()],
         )?;
+        if let Some(manifest) = manifest {
+            tx.execute(
+                "INSERT INTO meta(key, value) VALUES ('manifest', ?1)",
+                [manifest],
+            )?;
+        }
         tx.commit()?;
     }
     temporary.persist_noclobber(&project).map_err(|error| {
@@ -390,6 +415,77 @@ fn create_project_impl(args: &CreateProjectArgs) -> BackendResult<ProjectInfo> {
     read_project_info(&project, &conn)
 }
 
+fn validate_manifest(manifest: &str) -> BackendResult<&str> {
+    let value: serde_json::Value = serde_json::from_str(manifest)?;
+    if !value.is_object() {
+        return Err(BackendError::msg("manifest must be a JSON object"));
+    }
+    Ok(manifest)
+}
+
+fn source_pdf_size(path: &str) -> BackendResult<u64> {
+    let pdf = PathBuf::from(path);
+    let metadata = fs::metadata(&pdf)?;
+    if !metadata.is_file() {
+        return Err(BackendError::msg(format!(
+            "PDF path is not a regular file: {}",
+            pdf.display()
+        )));
+    }
+    let mut file = fs::File::open(&pdf)?;
+    let mut prefix = [0u8; 1024];
+    let read = file.read(&mut prefix)?;
+    if !prefix[..read].windows(5).any(|window| window == b"%PDF-") {
+        return Err(BackendError::msg(format!(
+            "file is not a PDF (missing %PDF- header): {}",
+            pdf.display()
+        )));
+    }
+    Ok(metadata.len())
+}
+
+#[tauri::command]
+fn inspect_pdf(pdf_path: String) -> Result<serde_json::Value, String> {
+    source_pdf_size(&pdf_path)
+        .map(|pdf_size| serde_json::json!({ "pdfSize": pdf_size }))
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn read_source_pdf_range(pdf_path: String, begin: u64, end: u64) -> Result<String, String> {
+    read_source_pdf_range_impl(&ReadSourcePdfArgs {
+        pdf_path,
+        begin,
+        end,
+    })
+    .map_err(|e| e.to_string())
+}
+
+fn read_source_pdf_range_impl(args: &ReadSourcePdfArgs) -> BackendResult<String> {
+    if args.end < args.begin {
+        return Err(BackendError::msg(
+            "PDF range end must be greater than or equal to begin",
+        ));
+    }
+    let length = args.end - args.begin;
+    if length > MAX_RANGE {
+        return Err(BackendError::msg(
+            "PDF range is too large (maximum is 16 MiB)",
+        ));
+    }
+    let pdf_size = source_pdf_size(&args.pdf_path)?;
+    if args.begin > pdf_size || args.end > pdf_size {
+        return Err(BackendError::msg("PDF range is outside the source PDF"));
+    }
+    if length == 0 {
+        return Ok(String::new());
+    }
+    let mut source = fs::File::open(&args.pdf_path)?;
+    source.seek(SeekFrom::Start(args.begin))?;
+    let mut bytes = vec![0; length as usize];
+    source.read_exact(&mut bytes)?;
+    Ok(BASE64.encode(bytes))
+}
 #[tauri::command]
 fn open_project(project_path: String) -> Result<ProjectInfo, String> {
     open_project_impl(&project_path).map_err(|e| e.to_string())
@@ -775,6 +871,8 @@ pub fn run() {
             create_project,
             open_project,
             read_pdf_range,
+            inspect_pdf,
+            read_source_pdf_range,
             save_manifest,
             load_page,
             save_page,
@@ -807,6 +905,7 @@ mod tests {
         let info = create_project_impl(&CreateProjectArgs {
             pdf_path: pdf.to_string_lossy().into_owned(),
             project_path: project.to_string_lossy().into_owned(),
+            manifest: None,
         })
         .unwrap();
         assert_eq!(info.pdf_size, (CHUNK_SIZE + 31) as u64);
@@ -857,6 +956,7 @@ mod tests {
         let args = CreateProjectArgs {
             pdf_path: pdf.to_string_lossy().into_owned(),
             project_path: project.to_string_lossy().into_owned(),
+            manifest: None,
         };
         create_project_impl(&args).unwrap();
         assert!(create_project_impl(&args).is_err());
@@ -883,6 +983,63 @@ mod tests {
         assert_eq!(source.len(), CHUNK_SIZE + 31);
     }
 
+    #[test]
+    fn source_pdf_range_reads_exact_bytes_and_rejects_out_of_bounds() {
+        let dir = tempdir().unwrap();
+        let pdf = dir.path().join("source.pdf");
+        let bytes = b"%PDF-1.7\nsource-bytes";
+        fs::write(&pdf, bytes).unwrap();
+        assert_eq!(
+            source_pdf_size(&pdf.to_string_lossy()).unwrap(),
+            bytes.len() as u64
+        );
+        assert!(source_pdf_size(&dir.path().to_string_lossy()).is_err());
+        let non_pdf = dir.path().join("not-a-pdf.bin");
+        fs::write(&non_pdf, b"plain text").unwrap();
+        assert!(source_pdf_size(&non_pdf.to_string_lossy()).is_err());
+        let encoded = read_source_pdf_range_impl(&ReadSourcePdfArgs {
+            pdf_path: pdf.to_string_lossy().into_owned(),
+            begin: 5,
+            end: 14,
+        })
+        .unwrap();
+        assert_eq!(BASE64.decode(encoded).unwrap(), bytes[5..14]);
+        assert!(read_source_pdf_range_impl(&ReadSourcePdfArgs {
+            pdf_path: pdf.to_string_lossy().into_owned(),
+            begin: 0,
+            end: bytes.len() as u64 + 1,
+        })
+        .is_err());
+    }
+
+    #[test]
+    fn initial_manifest_is_validated_and_persists() {
+        let (_dir, pdf, project) = fixture();
+        let manifest = r#"{"version":1,"pages":[{"id":"page-1","source":1}]}"#;
+        let info = create_project_impl(&CreateProjectArgs {
+            pdf_path: pdf.to_string_lossy().into_owned(),
+            project_path: project.to_string_lossy().into_owned(),
+            manifest: Some(manifest.into()),
+        })
+        .unwrap();
+        assert_eq!(info.manifest.as_deref(), Some(manifest));
+        assert_eq!(
+            open_project_impl(&project.to_string_lossy())
+                .unwrap()
+                .manifest
+                .as_deref(),
+            Some(manifest)
+        );
+
+        let invalid_project = project.with_file_name("invalid.eduba");
+        assert!(create_project_impl(&CreateProjectArgs {
+            pdf_path: pdf.to_string_lossy().into_owned(),
+            project_path: invalid_project.to_string_lossy().into_owned(),
+            manifest: Some("[]".into()),
+        })
+        .is_err());
+        assert!(!invalid_project.exists());
+    }
     #[test]
     #[ignore = "requires a local Tesseract runtime, model, and fixture image"]
     fn ocr_integration_fixture_returns_hocr() {

@@ -21,3 +21,9 @@ npm run tauri dev
 `setup-runtime.ps1` は Tesseract の実行ファイル、DLL、選択した traineddata を `src-tauri/resources/` にコピーします。テストを実行する場合は、プロジェクト依存関係のインストール後に `npm test` を使います。初期セットアップで Tauri の Rust 環境が必要です。代表的な hOCR は `tmp/ocr/` にあります。
 
 デバッグ実行ファイルは、`src-tauri/target/debug/eduba.exe` と同じ階層にある `models/` と `tesseract/` ディレクトリを必要とします。実行ファイルだけを別の場所へコピーしても OCR は動作しません。
+
+### PDF import
+
+**PDF を読み込む** では、プロジェクトを作成する前に元 PDF を確認できます。開始・終了ページ（両端を含む）、DPI、回転を指定し、必要なら「見開きを左右に分割」をオンにします。プレビューの移動範囲は選択したページ内だけです。保存すると、その範囲の論理ページだけを作成し、元 PDF 全体は `.eduba` プロジェクト内に保持します。
+
+OCR 禁止範囲は各論理ページに百分率で保存されます。天・地と、通常ページでは左・右、見開き分割では小口・ノドを設定できます。表示画像とその全画面の provenance は変えず、OCR 時だけ複製画像の該当領域をマスクします。PDF の埋め込み画像を直接取り出す方式は検討中であり、現在のアプリには実装していません。詳細は [PDF image extraction research](docs/pdf-image-extraction.md) を参照してください。
