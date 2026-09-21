@@ -1,5 +1,11 @@
-# PDF image extraction research
+# PDF 画像抽出
 
-Eduba currently renders source pages through PDF.js. Direct extraction of a dominant embedded image may preserve the source image resolution, but is only proposed for a future path. It must first establish that one image covers at least 95% of the visible page and safely reproduce PDF placement, transforms, clipping paths, and overlays; otherwise it must fall back to page rendering. The sample research PDF uses a dominant FlateDecode image but also has clipping and an x offset, so raw image extraction would not reproduce the visible page by itself. DPI remains relevant to the render fallback.
+EDUBA の新規 PDF 読み込みは、既定で **画像抽出** を使います。PDF ページに表示される単一の主要画像が可視ページの 95% 以上を占め、配置を安全に再現できる場合は、その復号済み画像を元の画素数で使います。読み込み設定では **ページを画像化** に切り替えることもできます。
 
-References: [pypdf image extraction](https://pypdf.readthedocs.io/en/stable/user/extract-images.html) and [PDF.js API](https://mozilla.github.io/pdf.js/api/).
+抽出時は任意の DPI を指定しません。プレビューにはページごとの実効 DPI（X/Y）と元画像の画素数を表示します。90° または 270° 回転では、表示する X/Y DPI の軸も回転後の向きに合わせて入れ替えます。見開き分割は画素数を左右に分けますが、DPI 自体は変えません。
+
+安全な抽出には、画像の PDF 内での配置、矩形の clipping、90° 回転・反転を復元できることが必要です。画像が複数ある、主要画像が小さい、またはこれらの変換を安全に扱えないページでは、EDUBA はそのページだけ **ページを画像化** にフォールバックします。フォールバックは固定 300 DPI で、プレビューに「画像化 300 DPI」と理由を表示します。抽出結果を単なる JPEG/PNG の埋め込みバイト列として扱う実装ではありません。
+
+読み込みモード、各ページの実効 DPI、画素数はプロジェクトの論理ページ情報に保存されます。既存プロジェクトに読み込みモードがない場合は互換性のため **ページを画像化** として開きます。
+
+参考: [pypdf image extraction](https://pypdf.readthedocs.io/en/stable/user/extract-images.html) と [PDF.js API](https://mozilla.github.io/pdf.js/api/)。

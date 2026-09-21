@@ -81,6 +81,10 @@ export interface DocumentPage extends LogicalPageProvenance {
   width: number;
   height: number;
   sourceImage?: string;
+  importMode?: "extract" | "render";
+  resolvedImportMode?: "extract" | "render";
+  sourceDpiX?: number;
+  sourceDpiY?: number;
   blocks: PageBlock[];
 }
 

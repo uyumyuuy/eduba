@@ -8,6 +8,7 @@ const mocks = vi.hoisted(() => ({
   dialogOpen: vi.fn(),
   invoke: vi.fn(),
   openProjectPdf: vi.fn(),
+  loadPageImage: vi.fn(),
 }));
 
 vi.mock("@tauri-apps/plugin-dialog", () => ({
@@ -36,6 +37,7 @@ vi.mock("./pdf", () => ({
   canvasToBase64: vi.fn(() => "image"),
 }));
 
+vi.mock("./pageImage", () => ({ loadPageImage: mocks.loadPageImage }));
 vi.mock("./domain", async importOriginal => {
   const actual = await importOriginal<typeof import("./domain")>();
   return {
@@ -102,6 +104,7 @@ describe("saved project loading", () => {
         render: () => ({ promise: Promise.resolve() }),
       })),
     });
+    mocks.loadPageImage.mockImplementation(async (_page: unknown, mode: string, dpi: number) => { const canvas = document.createElement("canvas"); canvas.width = 100; canvas.height = 80; return { canvas, modeUsed: mode, dpiX: dpi, dpiY: dpi }; });
 
     const manifest = JSON.stringify({
       version: 1,

@@ -36,6 +36,7 @@ import {
 import type { PDFDocumentProxy } from "pdfjs-dist";
 import { ImportModal } from "./ImportModal";
 import { importEntries, type ImportConfig } from "./importConfig";
+import { loadPageImage, type ImportMode } from "./pageImage";
 import {
   defaultOcrMargins,
   maskOcrCanvas,
@@ -50,9 +51,14 @@ type Entry = LogicalPageProvenance & {
   width?: number;
   height?: number;
   dpi?: number;
+  importMode?: ImportMode;
+  resolvedImportMode?: ImportMode;
+  sourceDpiX?: number;
+  sourceDpiY?: number;
 };
 type Settings = { modelPath: string; psm: 3 | 6 | 11; dpi: number };
 type Manifest = { version: 1; pages: Entry[]; settings: Settings };
+type RenderedEntry = { canvas: HTMLCanvasElement; modeUsed: ImportMode; dpiX: number; dpiY: number; reason?: string; sourceWidth?: number; sourceHeight?: number; };
 const defaultSettings: Settings = { modelPath: "", psm: 3, dpi: 300 };
 const errorText = (error: unknown) =>
   error instanceof Error ? error.message : String(error);
@@ -80,6 +86,7 @@ function makeManifest(pageCount = 1): Manifest {
       split: "single",
       rotation: 0,
       angle: 0,
+      importMode: "render",
       status: "pending",
     });
   }
@@ -127,6 +134,13 @@ function parseManifest(raw: string | null): Manifest {
           Number(page.dpi) <= 600
             ? Number(page.dpi)
             : undefined,
+        importMode: page.importMode === "extract" ? "extract" : "render",
+        resolvedImportMode:
+          page.resolvedImportMode === "extract" || page.resolvedImportMode === "render"
+            ? page.resolvedImportMode
+            : undefined,
+        sourceDpiX: Number.isFinite(Number(page.sourceDpiX)) ? Number(page.sourceDpiX) : undefined,
+        sourceDpiY: Number.isFinite(Number(page.sourceDpiY)) ? Number(page.sourceDpiY) : undefined,
       })),
     };
   } catch {
@@ -244,21 +258,16 @@ export default function App() {
       token: number,
       sourcePdf = pdf,
       destination?: HTMLCanvasElement,
-    ) => {
+    ): Promise<RenderedEntry | undefined> => {
       if (!sourcePdf) return;
       const source = await sourcePdf.getPage(entry.sourcePage);
-      const scale =
-        Math.max(
-          72,
-          Math.min(600, entry.dpi ?? manifestRef.current.settings.dpi),
-        ) / 72;
-      const viewport = source.getViewport({ scale });
-      const raw = document.createElement("canvas");
-      raw.width = Math.ceil(viewport.width);
-      raw.height = Math.ceil(viewport.height);
-      await source.render({ canvasContext: raw.getContext("2d")!, viewport })
-        .promise;
-      const result = processCanvas(raw, {
+      const requestedDpi = entry.dpi ?? manifestRef.current.settings.dpi;
+      const requestedMode = entry.resolvedImportMode ?? entry.importMode ?? "render";
+      const loaded = await loadPageImage(source, requestedMode, requestedDpi);
+      if (entry.resolvedImportMode === "extract" && loaded.modeUsed !== "extract") {
+        throw new Error(`PDF の抽出画像を利用できません: ${loaded.reason ?? "抽出に失敗しました"}`);
+      }
+      const result = processCanvas(loaded.canvas, {
         sourcePage: entry.sourcePage,
         rotation: entry.rotation as 0 | 90 | 180 | 270,
         split: entry.split === "single" ? "none" : entry.split,
@@ -273,12 +282,15 @@ export default function App() {
         return;
       const image = result.pages[0]?.canvas;
       if (!image) throw new Error("処理済みページを作成できません");
+      if (entry.resolvedImportMode && entry.width && entry.height && (entry.width !== image.width || entry.height !== image.height)) {
+        throw new Error("保存済み OCR 座標と画像解像度が一致しません");
+      }
       const target = destination ?? canvasRef.current!;
       target.width = image.width;
       target.height = image.height;
       target.getContext("2d")!.drawImage(image, 0, 0);
-      if (!destination)
-        setCanvasSize({ width: image.width, height: image.height });
+      if (!destination) setCanvasSize({ width: image.width, height: image.height });
+      return { ...loaded, canvas: image };
     },
     [pdf],
   );
@@ -321,6 +333,8 @@ export default function App() {
     current?.rotation,
     current?.split,
     current?.dpi,
+    current?.importMode,
+    current?.resolvedImportMode,
     manifest.settings.dpi,
     JSON.stringify(current?.crop),
     renderEntry,
@@ -524,10 +538,13 @@ export default function App() {
   const recognize = useCallback(
     async (entry: Entry, token: number) => {
       const worker = document.createElement("canvas");
-      await renderEntry(entry, token, undefined, worker);
+      const rendered = await renderEntry(entry, token, undefined, worker);
+      if (!rendered) throw new Error("画像を作成できません");
       if (cancelled.current || token !== ocrLoading.current)
         throw new Error("OCR を中止しました");
-      const renderDpi = entry.dpi ?? manifestRef.current.settings.dpi;
+      const sourceDpiX = entry.rotation === 90 || entry.rotation === 270 ? rendered.dpiY : rendered.dpiX;
+      const sourceDpiY = entry.rotation === 90 || entry.rotation === 270 ? rendered.dpiX : rendered.dpiY;
+      const renderDpi = Math.max(70, Math.min(2400, Math.round(Math.sqrt(sourceDpiX * sourceDpiY))));
       const hocr = await invokeCommand("run_ocr", {
         imageBase64: canvasToBase64(
           maskOcrCanvas(worker, entry.split, entry.ocrMargins),
@@ -553,6 +570,10 @@ export default function App() {
         ocrMargins: entry.ocrMargins,
         width: worker.width,
         height: worker.height,
+        importMode: entry.importMode ?? "render",
+        resolvedImportMode: rendered.modeUsed,
+        sourceDpiX,
+        sourceDpiY,
       };
     },
     [renderEntry],
@@ -598,6 +619,10 @@ export default function App() {
                     width: result.width,
                     height: result.height,
                     dpi: entry.dpi ?? manifestRef.current.settings.dpi,
+                    importMode: result.importMode ?? entry.importMode ?? "render",
+                    resolvedImportMode: result.resolvedImportMode ?? entry.resolvedImportMode,
+                    sourceDpiX: result.sourceDpiX,
+                    sourceDpiY: result.sourceDpiY,
                   }
                 : p,
             ),

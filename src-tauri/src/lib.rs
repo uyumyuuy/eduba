@@ -712,15 +712,21 @@ async fn run_ocr(
     .map_err(|e| e.to_string())
 }
 
+// PDF image resolution may exceed the manual 72–600 DPI UI range; this scalar only hints Tesseract and never resamples the image.
+fn validate_ocr_dpi(dpi: u16) -> BackendResult<()> {
+    if !(70..=2400).contains(&dpi) {
+        return Err(BackendError::msg("OCR DPI must be between 70 and 2400"));
+    }
+    Ok(())
+}
+
 fn run_ocr_blocking(child_slot: Arc<Mutex<Option<Child>>>, args: OcrArgs) -> BackendResult<String> {
     if args.psm > 13 {
         return Err(BackendError::msg(
             "page segmentation mode must be between 0 and 13",
         ));
     }
-    if !(72..=600).contains(&args.dpi) {
-        return Err(BackendError::msg("OCR DPI must be between 72 and 600"));
-    }
+    validate_ocr_dpi(args.dpi)?;
     let image = BASE64.decode(args.image_base64.trim())?;
     if image.is_empty() || image.len() > MAX_OCR_IMAGE {
         return Err(BackendError::msg("OCR image is empty or exceeds 64 MiB"));
@@ -1039,6 +1045,13 @@ mod tests {
         })
         .is_err());
         assert!(!invalid_project.exists());
+    }
+    #[test]
+    fn ocr_dpi_accepts_native_range_and_rejects_outside() {
+        assert!(validate_ocr_dpi(70).is_ok());
+        assert!(validate_ocr_dpi(2400).is_ok());
+        assert!(validate_ocr_dpi(69).is_err());
+        assert!(validate_ocr_dpi(2401).is_err());
     }
     #[test]
     #[ignore = "requires a local Tesseract runtime, model, and fixture image"]

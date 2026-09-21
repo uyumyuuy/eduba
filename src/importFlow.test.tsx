@@ -13,6 +13,7 @@ const mocks = vi.hoisted(() => ({
   destroy: vi.fn(async () => undefined),
   canvasToBase64: vi.fn(() => "image"),
   processCanvas: vi.fn(),
+  loadPageImage: vi.fn(),
 }));
 
 vi.mock("@tauri-apps/plugin-dialog", () => ({
@@ -34,6 +35,7 @@ vi.mock("./pdf", () => ({
   openProjectPdf: mocks.openProjectPdf,
   canvasToBase64: mocks.canvasToBase64,
 }));
+vi.mock("./pageImage", () => ({ loadPageImage: mocks.loadPageImage }));
 vi.mock("./domain", async (importOriginal) => {
   const actual = await importOriginal<typeof import("./domain")>();
   return { ...actual, processCanvas: mocks.processCanvas };
@@ -102,6 +104,7 @@ describe("PDF import configuration", () => {
     mocks.dialogSave.mockResolvedValue(projectPath);
     mocks.openSourcePdf.mockResolvedValue(pdf());
     mocks.openProjectPdf.mockResolvedValue(pdf());
+    mocks.loadPageImage.mockImplementation(async (_page: unknown, mode: string, dpi: number) => { const canvas = document.createElement("canvas"); canvas.width = 100; canvas.height = 80; return { canvas, modeUsed: mode, dpiX: dpi, dpiY: dpi }; });
     mocks.processCanvas.mockImplementation(() => {
       const canvas = document.createElement("canvas");
       canvas.width = 100;
@@ -148,6 +151,7 @@ describe("PDF import configuration", () => {
       pdfPath: sourcePath,
     });
     expect(mocks.openSourcePdf).toHaveBeenCalledWith(sourcePath, 1234);
+    expect(mocks.loadPageImage).toHaveBeenCalledWith(expect.anything(), "extract", 300);
     expect(mocks.invoke).not.toHaveBeenCalledWith(
       "create_project",
       expect.anything(),
@@ -202,7 +206,7 @@ describe("PDF import configuration", () => {
     )!;
     expect(call[1]).toMatchObject({ pdfPath: sourcePath, projectPath });
     const manifest = JSON.parse((call[1] as { manifest: string }).manifest);
-    expect(manifest.settings.dpi).toBe(200);
+    expect(manifest.settings.dpi).toBe(300);
     expect(
       manifest.pages.map((page: { ocrMargins: unknown }) => page.ocrMargins),
     ).toEqual([
@@ -221,10 +225,10 @@ describe("PDF import configuration", () => {
         }) => [page.sourcePage, page.label, page.dpi, page.rotation],
       ),
     ).toEqual([
-      [2, "2L", 200, 90],
-      [2, "2R", 200, 90],
-      [3, "3L", 200, 90],
-      [3, "3R", 200, 90],
+      [2, "2L", 300, 90],
+      [2, "2R", 300, 90],
+      [3, "3L", 300, 90],
+      [3, "3R", 300, 90],
     ]);
     expect(
       mocks.invoke.mock.calls.some(([command]) => command === "save_page"),
