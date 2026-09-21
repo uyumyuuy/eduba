@@ -1,0 +1,13 @@
+node_modules/
+.tmp-npm-cache/
+*.tsbuildinfo
+dist/
+target/
+src-tauri/gen/
+src-tauri/resources/tesseract/*.exe
+src-tauri/resources/tesseract/*.dll
+src-tauri/resources/models/*.traineddata
+tmp/
+*.sqlite-wal
+*.sqlite-shm
+.eduba/
