@@ -8,7 +8,7 @@ EDUBA は、スキャンした英語の本・論文を Tauri 2 と React で OCR
 
 現在の初期スライスは、`.eduba` 単一ファイルの保存・再オープン、遅延 PDF 読み込み、回転/見開き分割、行単位の校正、選択範囲の候補置換と一括置換、bundled Tesseract 実行、TXT/hOCR/SVG 出力を実装しています。Undo/Redo はページをまたぐ履歴に対応し、復元対象のページへ自動で移動します。行を編集中は入力ごとに取り消せ、編集を終えるとその行の変更全体が一つの操作にまとまります。一括置換も一つの操作としてまとめて取り消せます。実機確認の結果は [docs/validation.md](docs/validation.md) にあります。
 
-Crop/deskew の操作 UI、OCR 領域の追加・削除・読順変更、候補選択 UI と候補データ、1,000 ページ規模の性能確認、配布用インストーラー、非 Windows 対応は今後の作業です。要件の対応表は [docs/requirements-plan.md](docs/requirements-plan.md) にあります。
+Crop/deskew の操作 UI、OCR 領域の追加・削除・読順変更、候補選択 UI と候補データ、1,000 ページ規模の性能確認、非 Windows 対応は今後の作業です。要件の対応表は [docs/requirements-plan.md](docs/requirements-plan.md) にあります。
 
 ## 開発
 
@@ -20,7 +20,22 @@ npm run tauri dev
 
 `setup-runtime.ps1` は Tesseract の実行ファイル、DLL、選択した traineddata を `src-tauri/resources/` にコピーします。テストを実行する場合は、プロジェクト依存関係のインストール後に `npm test` を使います。初期セットアップで Tauri の Rust 環境が必要です。代表的な hOCR は `tmp/ocr/` にあります。
 
-デバッグ実行ファイルは、`src-tauri/target/debug/eduba.exe` と同じ階層にある `models/` と `tesseract/` ディレクトリを必要とします。実行ファイルだけを別の場所へコピーしても OCR は動作しません。
+`src-tauri/target/debug/eduba.exe` は開発用です。単独では起動せず、`npm run dev` が起動する `http://127.0.0.1:1420` を読み込みます。日常利用ではこのファイルを直接開かないでください。
+
+開発中は、次のコマンドでアプリと開発サーバーを同時に起動します。
+
+```powershell
+npm run tauri dev
+```
+
+Windows 向けの配布版を作るには、次を実行します。
+
+```powershell
+npm run tauri build
+```
+
+生成される `src-tauri/target/release/bundle/nsis/Eduba_<version>_x64-setup.exe` を実行してインストールし、スタートメニューの **Eduba** を起動してください。インストーラーにはアプリ本体と OCR 用の Tesseract・モデルが含まれ、開発サーバーは不要です。MSI が必要な環境では、同じビルドで `src-tauri/target/release/bundle/msi/` にも生成されます。
+インストールせずに確認する場合は、`src-tauri/target/release/bundle/portable/Eduba_<version>_x64-portable.zip` を展開し、展開先の `Eduba_<version>_x64-portable/Eduba.exe` を実行してください。`models/` と `tesseract/` は実行ファイルと同じフォルダに置いたままにしてください。開発サーバーは不要です。
 
 ### PDF import
 
