@@ -22,7 +22,7 @@ import {
   X,
 } from "lucide-react";
 import { canvasToBase64, openProjectPdf, openSourcePdf } from "./pdf";
-import { SourcePageThumbnailCache } from "./pdfThumbnail";
+import { LogicalPageThumbnailCache } from "./pdfThumbnail";
 import { invokeCommand, isTauri, type ProjectInfo } from "./tauri";
 import { SaveQueue } from "./persistence";
 import {
@@ -165,7 +165,7 @@ function parseManifest(raw: string | null): Manifest {
   }
 }
 
-function PageThumbnail({ cache, sourcePage }: { cache: SourcePageThumbnailCache | null; sourcePage: number }) {
+function PageThumbnail({ cache, page }: { cache: LogicalPageThumbnailCache | null; page: Entry }) {
   const frameRef = useRef<HTMLSpanElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [visible, setVisible] = useState(false);
@@ -200,7 +200,7 @@ function PageThumbnail({ cache, sourcePage }: { cache: SourcePageThumbnailCache 
     clear();
     if (!visible || !cache) return;
     let active = true;
-    void cache.get(sourcePage).then(source => {
+    void cache.get(page).then(source => {
       const target = canvasRef.current;
       if (!active || !target) return;
       target.width = source.width;
@@ -210,7 +210,7 @@ function PageThumbnail({ cache, sourcePage }: { cache: SourcePageThumbnailCache 
       if (active) clear();
     });
     return () => { active = false; };
-  }, [cache, sourcePage, visible]);
+  }, [cache, page, visible]);
 
   return <span ref={frameRef} className="thumb" aria-hidden="true"><canvas ref={canvasRef} /></span>;
 }
@@ -299,7 +299,7 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
     finishLineEditRef = useRef<(lineId?: string) => void>(() => undefined),
     historyApplying = useRef(false);
   const current = manifest.pages[index] ?? null;
-  const [thumbnailCacheState, setThumbnailCacheState] = useState<{ pdf: PDFDocumentProxy; cache: SourcePageThumbnailCache } | null>(null);
+  const [thumbnailCacheState, setThumbnailCacheState] = useState<{ pdf: PDFDocumentProxy; cache: LogicalPageThumbnailCache } | null>(null);
   // Create the cache in an effect. React StrictMode intentionally tears down
   // and recreates effects in development, so a useMemo-owned cache would be
   // disposed before its second effect setup could use it.
@@ -308,7 +308,7 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
       setThumbnailCacheState(null);
       return;
     }
-    const cache = new SourcePageThumbnailCache(pdf);
+    const cache = new LogicalPageThumbnailCache(pdf);
     setThumbnailCacheState({ pdf, cache });
     return () => cache.dispose();
   }, [pdf]);
@@ -1225,7 +1225,7 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
                 disabled={Boolean(busy)}
                 aria-label={`${t("ui.page", { page: page.label })} · ${t("ui.sourcePage", { page: page.sourcePage })} · ${page.split === "single" ? t("ui.whole") : page.split === "left" ? t("ui.left") : t("ui.right")}${page.completed ? ` · ${t("ui.pageComplete")}` : ""}`}
               >
-                <PageThumbnail cache={thumbnailCache} sourcePage={page.sourcePage} />
+                <PageThumbnail cache={thumbnailCache} page={page} />
                 <span className="page-meta">
                   <strong>{page.label}</strong>
                   <small>

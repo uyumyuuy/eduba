@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { SourcePageThumbnailCache } from "./pdfThumbnail";
+import { LogicalPageThumbnailCache, SourcePageThumbnailCache } from "./pdfThumbnail";
 
 const contexts: CanvasRenderingContext2D[] = [];
 
@@ -13,7 +13,7 @@ function page(render: () => Promise<void> = async () => undefined) {
 
 beforeEach(() => {
   vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockImplementation(() => {
-    const context = { fillStyle: "", fillRect: vi.fn(), drawImage: vi.fn() } as unknown as CanvasRenderingContext2D;
+    const context = { fillStyle: "", fillRect: vi.fn(), drawImage: vi.fn(), translate: vi.fn(), rotate: vi.fn() } as unknown as CanvasRenderingContext2D;
     contexts.push(context);
     return context;
   });
@@ -74,5 +74,46 @@ describe("SourcePageThumbnailCache", () => {
     expect(pdf.getPage).toHaveBeenCalledTimes(1);
     release();
     await first;
+  });
+});
+
+
+describe("LogicalPageThumbnailCache", () => {
+  it("rotates and splits logical pages while sharing one source PDF render", async () => {
+    const source = page();
+    const pdf = { getPage: vi.fn(async () => source) };
+    const cache = new LogicalPageThumbnailCache(pdf as never);
+
+    const [left, right] = await Promise.all([
+      cache.get({ sourcePage: 1, rotation: 90, angle: 0, split: "left" }),
+      cache.get({ sourcePage: 1, rotation: 90, angle: 0, split: "right" }),
+    ]);
+
+    expect(left).toMatchObject({ width: 70, height: 94 });
+    expect(right).toMatchObject({ width: 70, height: 94 });
+    expect(pdf.getPage).toHaveBeenCalledTimes(1);
+    expect(source.render).toHaveBeenCalledTimes(1);
+    expect(contexts.some(context => vi.mocked(context.rotate).mock.calls.some(([angle]) => angle === Math.PI / 2))).toBe(true);
+    const splitXs = contexts.flatMap(context => vi.mocked(context.drawImage).mock.calls)
+      .filter(call => call.length === 9)
+      .map(call => call[1]);
+    expect(splitXs).toEqual(expect.arrayContaining([0, 70]));
+  });
+
+  it("scales persisted crop coordinates to the low-resolution source thumbnail", async () => {
+    const source = page();
+    const pdf = { getPage: vi.fn(async () => source) };
+    const cache = new LogicalPageThumbnailCache(pdf as never);
+
+    const thumbnail = await cache.get({
+      sourcePage: 1,
+      rotation: 0,
+      angle: 0,
+      split: "single",
+      dpi: 300,
+      crop: { left: 0, top: 0, right: 100, bottom: 300 },
+    });
+
+    expect(thumbnail).toMatchObject({ width: 12, height: 34 });
   });
 });

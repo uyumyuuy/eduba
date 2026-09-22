@@ -1,6 +1,7 @@
 import type { PDFDocumentProxy } from "pdfjs-dist";
 
 type CachedThumbnail = { promise: Promise<HTMLCanvasElement>; canvas?: HTMLCanvasElement };
+const sourceScales = new WeakMap<HTMLCanvasElement, number>();
 
 /**
  * A small, bounded cache for raw PDF-page thumbnails.  It deliberately works
@@ -43,6 +44,7 @@ export class SourcePageThumbnailCache {
       context.fillStyle = "#fff";
       context.fillRect(0, 0, canvas.width, canvas.height);
       await page.render({ canvasContext: context, viewport }).promise;
+      sourceScales.set(canvas, scale);
       entry.canvas = canvas;
       return canvas;
     });
@@ -94,4 +96,156 @@ export class SourcePageThumbnailCache {
       this.entries.delete(sourcePage);
     }
   }
+}
+
+
+/**
+ * Bounded cache for the logical pages shown in the page list. Source PDF
+ * renders remain in SourcePageThumbnailCache, so spread halves and different
+ * logical transformations of one source page never render the PDF twice.
+ */
+export type LogicalThumbnail = {
+  sourcePage: number;
+  rotation: number;
+  /** The deskew angle that was recorded while the page was imported. */
+  angle: number;
+  split: "single" | "left" | "right";
+  crop?: { left: number; top: number; right: number; bottom: number };
+  /** Native source resolution, used to scale persisted crop coordinates. */
+  sourceDpiX?: number;
+  sourceDpiY?: number;
+  /** Render DPI before a page has been processed and its source DPI recorded. */
+  dpi?: number;
+};
+
+export class LogicalPageThumbnailCache {
+  private readonly source: SourcePageThumbnailCache;
+  private readonly entries = new Map<string, CachedThumbnail>();
+  private disposed = false;
+
+  constructor(
+    pdf: Pick<PDFDocumentProxy, "getPage">,
+    sourceMaximumEntries = 48,
+    private readonly maximumEntries = 96,
+    maximumConcurrentRenders = 2,
+  ) {
+    this.source = new SourcePageThumbnailCache(pdf, sourceMaximumEntries, maximumConcurrentRenders);
+  }
+
+  get(page: LogicalThumbnail): Promise<HTMLCanvasElement> {
+    if (this.disposed) return Promise.reject(new Error("Thumbnail cache was disposed."));
+    const key = logicalThumbnailKey(page);
+    const existing = this.entries.get(key);
+    if (existing) {
+      this.entries.delete(key);
+      this.entries.set(key, existing);
+      return existing.promise;
+    }
+    const entry: CachedThumbnail = { promise: Promise.resolve(document.createElement("canvas")) };
+    entry.promise = this.source.get(page.sourcePage).then(source => {
+      if (this.disposed) throw new Error("Thumbnail cache was disposed.");
+      const canvas = transformThumbnail(source, page);
+      entry.canvas = canvas;
+      return canvas;
+    });
+    this.entries.set(key, entry);
+    void entry.promise.then(() => this.trim(), () => this.entries.delete(key));
+    return entry.promise;
+  }
+
+  dispose(): void {
+    this.disposed = true;
+    this.source.dispose();
+    this.entries.clear();
+  }
+
+  private trim(): void {
+    while (this.entries.size > this.maximumEntries) {
+      const oldest = this.entries.entries().next().value as [string, CachedThumbnail] | undefined;
+      if (!oldest || !oldest[1].canvas) return;
+      this.entries.delete(oldest[0]);
+    }
+  }
+}
+
+function logicalThumbnailKey(page: LogicalThumbnail): string {
+  const crop = page.crop;
+  return [
+    page.sourcePage,
+    page.rotation,
+    page.angle,
+    page.split,
+    crop?.left ?? "",
+    crop?.top ?? "",
+    crop?.right ?? "",
+    crop?.bottom ?? "",
+    page.sourceDpiX ?? "",
+    page.sourceDpiY ?? "",
+    page.dpi ?? "",
+  ].join(":");
+}
+
+function canvas(width: number, height: number): HTMLCanvasElement {
+  const output = document.createElement("canvas");
+  output.width = Math.max(1, Math.round(width));
+  output.height = Math.max(1, Math.round(height));
+  return output;
+}
+
+function rotate(source: HTMLCanvasElement, degrees: number): HTMLCanvasElement {
+  const normalized = ((degrees % 360) + 360) % 360;
+  const sideways = normalized === 90 || normalized === 270;
+  const output = canvas(sideways ? source.height : source.width, sideways ? source.width : source.height);
+  const context = output.getContext("2d");
+  if (!context) throw new Error("Could not create thumbnail canvas.");
+  context.fillStyle = "#fff";
+  context.fillRect(0, 0, output.width, output.height);
+  context.translate(output.width / 2, output.height / 2);
+  context.rotate((normalized * Math.PI) / 180);
+  context.drawImage(source, -source.width / 2, -source.height / 2);
+  return output;
+}
+
+function crop(source: HTMLCanvasElement, left: number, top: number, right: number, bottom: number): HTMLCanvasElement {
+  const x1 = Math.max(0, Math.floor(left));
+  const y1 = Math.max(0, Math.floor(top));
+  const x2 = Math.min(source.width, Math.ceil(right));
+  const y2 = Math.min(source.height, Math.ceil(bottom));
+  if (x2 <= x1 || y2 <= y1) return source;
+  const output = canvas(x2 - x1, y2 - y1);
+  const context = output.getContext("2d");
+  if (!context) throw new Error("Could not create thumbnail canvas.");
+  context.drawImage(source, x1, y1, x2 - x1, y2 - y1, 0, 0, output.width, output.height);
+  return output;
+}
+
+function transformThumbnail(source: HTMLCanvasElement, page: LogicalThumbnail): HTMLCanvasElement {
+  // This follows processCanvas: rotate, deskew, split, then crop. The source
+  // thumbnail is rendered at PDF points (72 DPI), while saved crop rectangles
+  // use the imported image's pixels, so scale the latter before applying it.
+  let working = rotate(source, page.rotation);
+  if (page.angle) working = rotate(working, page.angle);
+  const normalized = ((page.rotation % 360) + 360) % 360;
+  const sideways = normalized === 90 || normalized === 270;
+  const fallbackDpi = page.dpi ?? 300;
+  const dpiX = page.sourceDpiX ?? fallbackDpi;
+  const dpiY = page.sourceDpiY ?? fallbackDpi;
+  const thumbnailScale = sourceScales.get(source) ?? 1;
+  const scaleX = thumbnailScale * 72 / (sideways ? dpiY : dpiX);
+  const scaleY = thumbnailScale * 72 / (sideways ? dpiX : dpiY);
+
+  if (page.split !== "single") {
+    const half = Math.floor(working.width / 2);
+    working = page.split === "left"
+      ? crop(working, 0, 0, half, working.height)
+      : crop(working, half, 0, working.width, working.height);
+  }
+  if (!page.crop) return working;
+  return crop(
+    working,
+    page.crop.left * scaleX,
+    page.crop.top * scaleY,
+    page.crop.right * scaleX,
+    page.crop.bottom * scaleY,
+  );
 }
