@@ -1,0 +1,6415 @@
+{
+  "alignment_policy": {
+    "candidate_rule": "Count a non-identical output-to-GT pair only when every globally minimum-edit alignment consumes the output code point against that same GT code point. Any deletion or competing pair is unresolved; output-only deletion is insertion.",
+    "name": "nfc_codepoint_levenshtein_all_optima_conservative_v1"
+  },
+  "cohort": {
+    "configured_manifest_sha256": "247b7f626ee64b0b40e0852e1bee946569dc16d83489a23f4cc0084a177a604a",
+    "duplicate_gt_conflicts": [],
+    "excluded": [
+      "sealed_test",
+      "fresh"
+    ],
+    "inputs": [
+      {
+        "accepted_unique_rows": 2075,
+        "declared_split": "reviewed_pool",
+        "excluded_duplicate_rows": 0,
+        "excluded_sealed_test_rows": 24,
+        "label": "current_scan_review_accepted_final",
+        "path": "review/scanned-kramer-black-eng-v1/review.char-confusions.snapshot.sqlite3",
+        "sha256": "ca81d9d0191941f58b29b7f522dce240f28a2e440c9a89b2a69427a56e0a1ac8"
+      },
+      {
+        "accepted_unique_rows": 1169,
+        "canonical_gt_overrides": 0,
+        "declared_split": "dev",
+        "excluded_duplicate_rows": 20,
+        "label": "legacy_digital_dev",
+        "path": "trial/runs/eng_assyriology-scan-seed-v4-20260913/evaluation-manifests/legacy-dev1189.jsonl",
+        "sha256": "86af22a165f2afcc5568d7c9ad175cff4b4931d33e8c36942ebc157ee1eddb96"
+      },
+      {
+        "accepted_unique_rows": 1290,
+        "canonical_gt_overrides": 0,
+        "declared_split": "train",
+        "excluded_duplicate_rows": 239,
+        "label": "v4_unique_train",
+        "path": "trial/runs/eng_assyriology-scan-seed-v4-20260913/manifests/unique.jsonl",
+        "sha256": "73f731bc50b8ab38d74e4695ddf5c09135a9303294b788ec1cf1850e935fcf21"
+      },
+      {
+        "accepted_unique_rows": 171,
+        "canonical_gt_overrides": 160,
+        "declared_split": "dev",
+        "excluded_duplicate_rows": 0,
+        "label": "wagensooner_dev",
+        "path": "trial/runs/eng_assyriology-scan-seed-v5-20260913/evaluation-manifests/wagensooner-dev171.jsonl",
+        "sha256": "49236edbc5792dce66b014f7e0c2e0804efb36b5f628ce53e65f37ba74c1b280"
+      }
+    ],
+    "reviewed_pool_definition": "Current scan review DB rows with status=accepted and review_stage=final. They have no historical train/dev allocation, are treated as learning-eligible reviewed GT, and are included after sealed-test ID exclusion.",
+    "sealed_test_id_projections": [
+      {
+        "id_count": 24,
+        "path": "trial/runs/george2003-v5-full174-20260919/test-once/ocr/locked35k",
+        "reason": "George2003 sealed test; filenames only, never test GT"
+      }
+    ],
+    "source_counts": {
+      "baseline-shift-20260907": 15,
+      "black-gods-demons-symbols": 12,
+      "black-scan-eng-v1": 101,
+      "cohen-1981-sumerian-hymnology-eremma": 396,
+      "cooley-2008-inana-sukaletuda": 293,
+      "delnero-2011-inana-ebih": 627,
+      "foster-1991-authorship-akkadian-literature": 211,
+      "george-2003-babylonian-gilgamesh-vol1": 174,
+      "kramer-gilgamesh-huluppu-tree": 10,
+      "kramer-scan-eng-v1": 822,
+      "kramer-studies-1946-1990": 116,
+      "millard-1984-etymology-eden": 122,
+      "saact6-scan-v1": 194,
+      "serz-2019-female-sages": 125,
+      "sovegjarto-2022-originators": 619,
+      "wagensooner-2009-non-textual-markers": 171,
+      "wisnom-2019-weapons-of-words": 697
+    },
+    "split_counts": {
+      "dev": 1340,
+      "reviewed_pool": 2075,
+      "train": 1290
+    },
+    "unique_line_count": 4705
+  },
+  "model": {
+    "key": "eng_assyriology_scan_candidate_20260920_v1",
+    "name": "eng_assyriology_scan_candidate_20260920_v1",
+    "path": "trial/runs/eng_assyriology-scan-candidate-v1-20260920/seed/eng_assyriology_scan_candidate_20260920_v1.traineddata",
+    "sha256": "7a4a1f041ab93a83f0aa71fa29ddf90caa3ce73c903edcf277c002002a2eac71"
+  },
+  "ocr": {
+    "psm": 7,
+    "tesseract_version": "tesseract 5.5.3"
+  },
+  "output_to_gt": {
+    " ": {
+      "exact_count": 39309,
+      "exact_fraction_of_output": 0.986275592131674,
+      "gt_candidates": [
+        {
+          "count": 39309,
+          "fraction_of_output": 0.986275592131674,
+          "gt_character": " ",
+          "gt_codepoint": "U+0020"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 2.5090325170614212e-05,
+          "gt_character": ",",
+          "gt_codepoint": "U+002C"
+        },
+        {
+          "count": 6,
+          "fraction_of_output": 0.00015054195102368528,
+          "gt_character": "-",
+          "gt_codepoint": "U+002D"
+        },
+        {
+          "count": 15,
+          "fraction_of_output": 0.00037635487755921314,
+          "gt_character": ".",
+          "gt_codepoint": "U+002E"
+        },
+        {
+          "count": 2,
+          "fraction_of_output": 5.0180650341228424e-05,
+          "gt_character": "1",
+          "gt_codepoint": "U+0031"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 2.5090325170614212e-05,
+          "gt_character": "2",
+          "gt_codepoint": "U+0032"
+        },
+        {
+          "count": 2,
+          "fraction_of_output": 5.0180650341228424e-05,
+          "gt_character": ">",
+          "gt_codepoint": "U+003E"
+        },
+        {
+          "count": 2,
+          "fraction_of_output": 5.0180650341228424e-05,
+          "gt_character": "i",
+          "gt_codepoint": "U+0069"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 2.5090325170614212e-05,
+          "gt_character": "ú",
+          "gt_codepoint": "U+00FA"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 2.5090325170614212e-05,
+          "gt_character": "⸢",
+          "gt_codepoint": "U+2E22"
+        }
+      ],
+      "output_character": " ",
+      "output_codepoint": "U+0020",
+      "output_count": 39856,
+      "output_insertion_count": 432,
+      "output_insertion_fraction_of_output": 0.010839020473705338,
+      "unresolved_count": 84,
+      "unresolved_fraction_of_output": 0.002107587314331594
+    },
+    "!": {
+      "exact_count": 67,
+      "exact_fraction_of_output": 0.8589743589743589,
+      "gt_candidates": [
+        {
+          "count": 67,
+          "fraction_of_output": 0.8589743589743589,
+          "gt_character": "!",
+          "gt_codepoint": "U+0021"
+        },
+        {
+          "count": 4,
+          "fraction_of_output": 0.05128205128205128,
+          "gt_character": "1",
+          "gt_codepoint": "U+0031"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 0.01282051282051282,
+          "gt_character": "?",
+          "gt_codepoint": "U+003F"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 0.01282051282051282,
+          "gt_character": "‘",
+          "gt_codepoint": "U+2018"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 0.01282051282051282,
+          "gt_character": "⸣",
+          "gt_codepoint": "U+2E23"
+        }
+      ],
+      "output_character": "!",
+      "output_codepoint": "U+0021",
+      "output_count": 78,
+      "output_insertion_count": 1,
+      "output_insertion_fraction_of_output": 0.01282051282051282,
+      "unresolved_count": 3,
+      "unresolved_fraction_of_output": 0.038461538461538464
+    },
+    "\"": {
+      "exact_count": 3,
+      "exact_fraction_of_output": 0.75,
+      "gt_candidates": [
+        {
+          "count": 3,
+          "fraction_of_output": 0.75,
+          "gt_character": "\"",
+          "gt_codepoint": "U+0022"
+        }
+      ],
+      "output_character": "\"",
+      "output_codepoint": "U+0022",
+      "output_count": 4,
+      "output_insertion_count": 0,
+      "output_insertion_fraction_of_output": 0.0,
+      "unresolved_count": 1,
+      "unresolved_fraction_of_output": 0.25
+    },
+    "#": {
+      "exact_count": 4,
+      "exact_fraction_of_output": 1.0,
+      "gt_candidates": [
+        {
+          "count": 4,
+          "fraction_of_output": 1.0,
+          "gt_character": "#",
+          "gt_codepoint": "U+0023"
+        }
+      ],
+      "output_character": "#",
+      "output_codepoint": "U+0023",
+      "output_count": 4,
+      "output_insertion_count": 0,
+      "output_insertion_fraction_of_output": 0.0,
+      "unresolved_count": 0,
+      "unresolved_fraction_of_output": 0.0
+    },
+    "&": {
+      "exact_count": 17,
+      "exact_fraction_of_output": 0.9444444444444444,
+      "gt_candidates": [
+        {
+          "count": 17,
+          "fraction_of_output": 0.9444444444444444,
+          "gt_character": "&",
+          "gt_codepoint": "U+0026"
+        }
+      ],
+      "output_character": "&",
+      "output_codepoint": "U+0026",
+      "output_count": 18,
+      "output_insertion_count": 1,
+      "output_insertion_fraction_of_output": 0.05555555555555555,
+      "unresolved_count": 0,
+      "unresolved_fraction_of_output": 0.0
+    },
+    "'": {
+      "exact_count": 3,
+      "exact_fraction_of_output": 0.75,
+      "gt_candidates": [
+        {
+          "count": 3,
+          "fraction_of_output": 0.75,
+          "gt_character": "'",
+          "gt_codepoint": "U+0027"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 0.25,
+          "gt_character": "l",
+          "gt_codepoint": "U+006C"
+        }
+      ],
+      "output_character": "'",
+      "output_codepoint": "U+0027",
+      "output_count": 4,
+      "output_insertion_count": 0,
+      "output_insertion_fraction_of_output": 0.0,
+      "unresolved_count": 0,
+      "unresolved_fraction_of_output": 0.0
+    },
+    "(": {
+      "exact_count": 1311,
+      "exact_fraction_of_output": 0.9879427279577996,
+      "gt_candidates": [
+        {
+          "count": 1311,
+          "fraction_of_output": 0.9879427279577996,
+          "gt_character": "(",
+          "gt_codepoint": "U+0028"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 0.0007535795026375283,
+          "gt_character": "0",
+          "gt_codepoint": "U+0030"
+        },
+        {
+          "count": 2,
+          "fraction_of_output": 0.0015071590052750565,
+          "gt_character": "[",
+          "gt_codepoint": "U+005B"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 0.0007535795026375283,
+          "gt_character": "{",
+          "gt_codepoint": "U+007B"
+        },
+        {
+          "count": 2,
+          "fraction_of_output": 0.0015071590052750565,
+          "gt_character": "ṭ",
+          "gt_codepoint": "U+1E6D"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 0.0007535795026375283,
+          "gt_character": "⟨",
+          "gt_codepoint": "U+27E8"
+        }
+      ],
+      "output_character": "(",
+      "output_codepoint": "U+0028",
+      "output_count": 1327,
+      "output_insertion_count": 2,
+      "output_insertion_fraction_of_output": 0.0015071590052750565,
+      "unresolved_count": 7,
+      "unresolved_fraction_of_output": 0.0052750565184626974
+    },
+    ")": {
+      "exact_count": 1332,
+      "exact_fraction_of_output": 0.9859363434492968,
+      "gt_candidates": [
+        {
+          "count": 1332,
+          "fraction_of_output": 0.9859363434492968,
+          "gt_character": ")",
+          "gt_codepoint": "U+0029"
+        },
+        {
+          "count": 2,
+          "fraction_of_output": 0.0014803849000740192,
+          "gt_character": ">",
+          "gt_codepoint": "U+003E"
+        },
+        {
+          "count": 3,
+          "fraction_of_output": 0.0022205773501110288,
+          "gt_character": "]",
+          "gt_codepoint": "U+005D"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 0.0007401924500370096,
+          "gt_character": "ú",
+          "gt_codepoint": "U+00FA"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 0.0007401924500370096,
+          "gt_character": "⟩",
+          "gt_codepoint": "U+27E9"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 0.0007401924500370096,
+          "gt_character": "⸣",
+          "gt_codepoint": "U+2E23"
+        }
+      ],
+      "output_character": ")",
+      "output_codepoint": "U+0029",
+      "output_count": 1351,
+      "output_insertion_count": 3,
+      "output_insertion_fraction_of_output": 0.0022205773501110288,
+      "unresolved_count": 8,
+      "unresolved_fraction_of_output": 0.005921539600296077
+    },
+    "*": {
+      "exact_count": 11,
+      "exact_fraction_of_output": 1.0,
+      "gt_candidates": [
+        {
+          "count": 11,
+          "fraction_of_output": 1.0,
+          "gt_character": "*",
+          "gt_codepoint": "U+002A"
+        }
+      ],
+      "output_character": "*",
+      "output_codepoint": "U+002A",
+      "output_count": 11,
+      "output_insertion_count": 0,
+      "output_insertion_fraction_of_output": 0.0,
+      "unresolved_count": 0,
+      "unresolved_fraction_of_output": 0.0
+    },
+    "+": {
+      "exact_count": 24,
+      "exact_fraction_of_output": 0.8571428571428571,
+      "gt_candidates": [
+        {
+          "count": 24,
+          "fraction_of_output": 0.8571428571428571,
+          "gt_character": "+",
+          "gt_codepoint": "U+002B"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 0.03571428571428571,
+          "gt_character": "i",
+          "gt_codepoint": "U+0069"
+        }
+      ],
+      "output_character": "+",
+      "output_codepoint": "U+002B",
+      "output_count": 28,
+      "output_insertion_count": 1,
+      "output_insertion_fraction_of_output": 0.03571428571428571,
+      "unresolved_count": 2,
+      "unresolved_fraction_of_output": 0.07142857142857142
+    },
+    ",": {
+      "exact_count": 3092,
+      "exact_fraction_of_output": 0.9726329034287512,
+      "gt_candidates": [
+        {
+          "count": 1,
+          "fraction_of_output": 0.00031456432840515884,
+          "gt_character": ")",
+          "gt_codepoint": "U+0029"
+        },
+        {
+          "count": 3092,
+          "fraction_of_output": 0.9726329034287512,
+          "gt_character": ",",
+          "gt_codepoint": "U+002C"
+        },
+        {
+          "count": 34,
+          "fraction_of_output": 0.0106951871657754,
+          "gt_character": ".",
+          "gt_codepoint": "U+002E"
+        },
+        {
+          "count": 2,
+          "fraction_of_output": 0.0006291286568103177,
+          "gt_character": "0",
+          "gt_codepoint": "U+0030"
+        },
+        {
+          "count": 9,
+          "fraction_of_output": 0.0028310789556464295,
+          "gt_character": "1",
+          "gt_codepoint": "U+0031"
+        },
+        {
+          "count": 16,
+          "fraction_of_output": 0.0050330292544825414,
+          "gt_character": "2",
+          "gt_codepoint": "U+0032"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 0.00031456432840515884,
+          "gt_character": "4",
+          "gt_codepoint": "U+0034"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 0.00031456432840515884,
+          "gt_character": "7",
+          "gt_codepoint": "U+0037"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 0.00031456432840515884,
+          "gt_character": "9",
+          "gt_codepoint": "U+0039"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 0.00031456432840515884,
+          "gt_character": "è",
+          "gt_codepoint": "U+00E8"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 0.00031456432840515884,
+          "gt_character": "ē",
+          "gt_codepoint": "U+0113"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 0.00031456432840515884,
+          "gt_character": "š",
+          "gt_codepoint": "U+0161"
+        }
+      ],
+      "output_character": ",",
+      "output_codepoint": "U+002C",
+      "output_count": 3179,
+      "output_insertion_count": 8,
+      "output_insertion_fraction_of_output": 0.0025165146272412707,
+      "unresolved_count": 11,
+      "unresolved_fraction_of_output": 0.0034602076124567475
+    },
+    "-": {
+      "exact_count": 7048,
+      "exact_fraction_of_output": 0.9853208444009507,
+      "gt_candidates": [
+        {
+          "count": 6,
+          "fraction_of_output": 0.0008388088913742485,
+          "gt_character": " ",
+          "gt_codepoint": "U+0020"
+        },
+        {
+          "count": 7048,
+          "fraction_of_output": 0.9853208444009507,
+          "gt_character": "-",
+          "gt_codepoint": "U+002D"
+        },
+        {
+          "count": 4,
+          "fraction_of_output": 0.0005592059275828324,
+          "gt_character": ".",
+          "gt_codepoint": "U+002E"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 0.0001398014818957081,
+          "gt_character": "n",
+          "gt_codepoint": "U+006E"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 0.0001398014818957081,
+          "gt_character": "Á",
+          "gt_codepoint": "U+00C1"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 0.0001398014818957081,
+          "gt_character": "Ö",
+          "gt_codepoint": "U+00D6"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 0.0001398014818957081,
+          "gt_character": "è",
+          "gt_codepoint": "U+00E8"
+        },
+        {
+          "count": 4,
+          "fraction_of_output": 0.0005592059275828324,
+          "gt_character": "ù",
+          "gt_codepoint": "U+00F9"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 0.0001398014818957081,
+          "gt_character": "Ω",
+          "gt_codepoint": "U+03A9"
+        },
+        {
+          "count": 37,
+          "fraction_of_output": 0.005172654830141199,
+          "gt_character": "–",
+          "gt_codepoint": "U+2013"
+        },
+        {
+          "count": 6,
+          "fraction_of_output": 0.0008388088913742485,
+          "gt_character": "—",
+          "gt_codepoint": "U+2014"
+        },
+        {
+          "count": 2,
+          "fraction_of_output": 0.0002796029637914162,
+          "gt_character": "⸣",
+          "gt_codepoint": "U+2E23"
+        }
+      ],
+      "output_character": "-",
+      "output_codepoint": "U+002D",
+      "output_count": 7153,
+      "output_insertion_count": 22,
+      "output_insertion_fraction_of_output": 0.003075632601705578,
+      "unresolved_count": 19,
+      "unresolved_fraction_of_output": 0.002656228156018454
+    },
+    ".": {
+      "exact_count": 3958,
+      "exact_fraction_of_output": 0.9717652835747607,
+      "gt_candidates": [
+        {
+          "count": 3,
+          "fraction_of_output": 0.0007365578197888534,
+          "gt_character": " ",
+          "gt_codepoint": "U+0020"
+        },
+        {
+          "count": 27,
+          "fraction_of_output": 0.006629020378099681,
+          "gt_character": ",",
+          "gt_codepoint": "U+002C"
+        },
+        {
+          "count": 4,
+          "fraction_of_output": 0.0009820770930518046,
+          "gt_character": "-",
+          "gt_codepoint": "U+002D"
+        },
+        {
+          "count": 3958,
+          "fraction_of_output": 0.9717652835747607,
+          "gt_character": ".",
+          "gt_codepoint": "U+002E"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 0.00024551927326295114,
+          "gt_character": "1",
+          "gt_codepoint": "U+0031"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 0.00024551927326295114,
+          "gt_character": "2",
+          "gt_codepoint": "U+0032"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 0.00024551927326295114,
+          "gt_character": "’",
+          "gt_codepoint": "U+2019"
+        }
+      ],
+      "output_character": ".",
+      "output_codepoint": "U+002E",
+      "output_count": 4073,
+      "output_insertion_count": 14,
+      "output_insertion_fraction_of_output": 0.003437269825681316,
+      "unresolved_count": 64,
+      "unresolved_fraction_of_output": 0.015713233488828873
+    },
+    "/": {
+      "exact_count": 239,
+      "exact_fraction_of_output": 0.9484126984126984,
+      "gt_candidates": [
+        {
+          "count": 2,
+          "fraction_of_output": 0.007936507936507936,
+          "gt_character": ",",
+          "gt_codepoint": "U+002C"
+        },
+        {
+          "count": 239,
+          "fraction_of_output": 0.9484126984126984,
+          "gt_character": "/",
+          "gt_codepoint": "U+002F"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 0.003968253968253968,
+          "gt_character": "7",
+          "gt_codepoint": "U+0037"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 0.003968253968253968,
+          "gt_character": "J",
+          "gt_codepoint": "U+004A"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 0.003968253968253968,
+          "gt_character": "l",
+          "gt_codepoint": "U+006C"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 0.003968253968253968,
+          "gt_character": "’",
+          "gt_codepoint": "U+2019"
+        }
+      ],
+      "output_character": "/",
+      "output_codepoint": "U+002F",
+      "output_count": 252,
+      "output_insertion_count": 4,
+      "output_insertion_fraction_of_output": 0.015873015873015872,
+      "unresolved_count": 3,
+      "unresolved_fraction_of_output": 0.011904761904761904
+    },
+    "0": {
+      "exact_count": 843,
+      "exact_fraction_of_output": 0.9825174825174825,
+      "gt_candidates": [
+        {
+          "count": 1,
+          "fraction_of_output": 0.0011655011655011655,
+          "gt_character": ".",
+          "gt_codepoint": "U+002E"
+        },
+        {
+          "count": 843,
+          "fraction_of_output": 0.9825174825174825,
+          "gt_character": "0",
+          "gt_codepoint": "U+0030"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 0.0011655011655011655,
+          "gt_character": "6",
+          "gt_codepoint": "U+0036"
+        },
+        {
+          "count": 2,
+          "fraction_of_output": 0.002331002331002331,
+          "gt_character": "9",
+          "gt_codepoint": "U+0039"
+        },
+        {
+          "count": 2,
+          "fraction_of_output": 0.002331002331002331,
+          "gt_character": "O",
+          "gt_codepoint": "U+004F"
+        },
+        {
+          "count": 4,
+          "fraction_of_output": 0.004662004662004662,
+          "gt_character": "o",
+          "gt_codepoint": "U+006F"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 0.0011655011655011655,
+          "gt_character": "ù",
+          "gt_codepoint": "U+00F9"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 0.0011655011655011655,
+          "gt_character": "’",
+          "gt_codepoint": "U+2019"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 0.0011655011655011655,
+          "gt_character": "⸢",
+          "gt_codepoint": "U+2E22"
+        }
+      ],
+      "output_character": "0",
+      "output_codepoint": "U+0030",
+      "output_count": 858,
+      "output_insertion_count": 1,
+      "output_insertion_fraction_of_output": 0.0011655011655011655,
+      "unresolved_count": 1,
+      "unresolved_fraction_of_output": 0.0011655011655011655
+    },
+    "1": {
+      "exact_count": 2182,
+      "exact_fraction_of_output": 0.9741071428571428,
+      "gt_candidates": [
+        {
+          "count": 3,
+          "fraction_of_output": 0.0013392857142857143,
+          "gt_character": "!",
+          "gt_codepoint": "U+0021"
+        },
+        {
+          "count": 2182,
+          "fraction_of_output": 0.9741071428571428,
+          "gt_character": "1",
+          "gt_codepoint": "U+0031"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 0.0004464285714285714,
+          "gt_character": "4",
+          "gt_codepoint": "U+0034"
+        },
+        {
+          "count": 8,
+          "fraction_of_output": 0.0035714285714285713,
+          "gt_character": "I",
+          "gt_codepoint": "U+0049"
+        },
+        {
+          "count": 2,
+          "fraction_of_output": 0.0008928571428571428,
+          "gt_character": "i",
+          "gt_codepoint": "U+0069"
+        },
+        {
+          "count": 12,
+          "fraction_of_output": 0.005357142857142857,
+          "gt_character": "l",
+          "gt_codepoint": "U+006C"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 0.0004464285714285714,
+          "gt_character": "t",
+          "gt_codepoint": "U+0074"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 0.0004464285714285714,
+          "gt_character": "Ì",
+          "gt_codepoint": "U+00CC"
+        },
+        {
+          "count": 2,
+          "fraction_of_output": 0.0008928571428571428,
+          "gt_character": "ì",
+          "gt_codepoint": "U+00EC"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 0.0004464285714285714,
+          "gt_character": "í",
+          "gt_codepoint": "U+00ED"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 0.0004464285714285714,
+          "gt_character": "ṭ",
+          "gt_codepoint": "U+1E6D"
+        }
+      ],
+      "output_character": "1",
+      "output_codepoint": "U+0031",
+      "output_count": 2240,
+      "output_insertion_count": 11,
+      "output_insertion_fraction_of_output": 0.004910714285714286,
+      "unresolved_count": 15,
+      "unresolved_fraction_of_output": 0.006696428571428571
+    },
+    "2": {
+      "exact_count": 1629,
+      "exact_fraction_of_output": 0.9621972829297105,
+      "gt_candidates": [
+        {
+          "count": 4,
+          "fraction_of_output": 0.002362669816893089,
+          "gt_character": " ",
+          "gt_codepoint": "U+0020"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 0.0005906674542232723,
+          "gt_character": ".",
+          "gt_codepoint": "U+002E"
+        },
+        {
+          "count": 1629,
+          "fraction_of_output": 0.9621972829297105,
+          "gt_character": "2",
+          "gt_codepoint": "U+0032"
+        },
+        {
+          "count": 5,
+          "fraction_of_output": 0.0029533372711163615,
+          "gt_character": "3",
+          "gt_codepoint": "U+0033"
+        },
+        {
+          "count": 2,
+          "fraction_of_output": 0.0011813349084465446,
+          "gt_character": "4",
+          "gt_codepoint": "U+0034"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 0.0005906674542232723,
+          "gt_character": "7",
+          "gt_codepoint": "U+0037"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 0.0005906674542232723,
+          "gt_character": "9",
+          "gt_codepoint": "U+0039"
+        },
+        {
+          "count": 13,
+          "fraction_of_output": 0.00767867690490254,
+          "gt_character": "?",
+          "gt_codepoint": "U+003F"
+        },
+        {
+          "count": 5,
+          "fraction_of_output": 0.0029533372711163615,
+          "gt_character": "a",
+          "gt_codepoint": "U+0061"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 0.0005906674542232723,
+          "gt_character": "e",
+          "gt_codepoint": "U+0065"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 0.0005906674542232723,
+          "gt_character": "m",
+          "gt_codepoint": "U+006D"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 0.0005906674542232723,
+          "gt_character": "v",
+          "gt_codepoint": "U+0076"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 0.0005906674542232723,
+          "gt_character": "z",
+          "gt_codepoint": "U+007A"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 0.0005906674542232723,
+          "gt_character": "à",
+          "gt_codepoint": "U+00E0"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 0.0005906674542232723,
+          "gt_character": "ʾ",
+          "gt_codepoint": "U+02BE"
+        }
+      ],
+      "output_character": "2",
+      "output_codepoint": "U+0032",
+      "output_count": 1693,
+      "output_insertion_count": 22,
+      "output_insertion_fraction_of_output": 0.01299468399291199,
+      "unresolved_count": 4,
+      "unresolved_fraction_of_output": 0.002362669816893089
+    },
+    "3": {
+      "exact_count": 964,
+      "exact_fraction_of_output": 0.9441723800195886,
+      "gt_candidates": [
+        {
+          "count": 7,
+          "fraction_of_output": 0.0068560235063663075,
+          "gt_character": " ",
+          "gt_codepoint": "U+0020"
+        },
+        {
+          "count": 964,
+          "fraction_of_output": 0.9441723800195886,
+          "gt_character": "3",
+          "gt_codepoint": "U+0033"
+        },
+        {
+          "count": 4,
+          "fraction_of_output": 0.0039177277179236044,
+          "gt_character": "5",
+          "gt_codepoint": "U+0035"
+        },
+        {
+          "count": 13,
+          "fraction_of_output": 0.012732615083251714,
+          "gt_character": "8",
+          "gt_codepoint": "U+0038"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 0.0009794319294809011,
+          "gt_character": "9",
+          "gt_codepoint": "U+0039"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 0.0009794319294809011,
+          "gt_character": ";",
+          "gt_codepoint": "U+003B"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 0.0009794319294809011,
+          "gt_character": "g",
+          "gt_codepoint": "U+0067"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 0.0009794319294809011,
+          "gt_character": "i",
+          "gt_codepoint": "U+0069"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 0.0009794319294809011,
+          "gt_character": "à",
+          "gt_codepoint": "U+00E0"
+        },
+        {
+          "count": 2,
+          "fraction_of_output": 0.0019588638589618022,
+          "gt_character": "ì",
+          "gt_codepoint": "U+00EC"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 0.0009794319294809011,
+          "gt_character": "ù",
+          "gt_codepoint": "U+00F9"
+        },
+        {
+          "count": 2,
+          "fraction_of_output": 0.0019588638589618022,
+          "gt_character": "ṣ",
+          "gt_codepoint": "U+1E63"
+        },
+        {
+          "count": 2,
+          "fraction_of_output": 0.0019588638589618022,
+          "gt_character": "ṭ",
+          "gt_codepoint": "U+1E6D"
+        }
+      ],
+      "output_character": "3",
+      "output_codepoint": "U+0033",
+      "output_count": 1021,
+      "output_insertion_count": 15,
+      "output_insertion_fraction_of_output": 0.014691478942213516,
+      "unresolved_count": 6,
+      "unresolved_fraction_of_output": 0.005876591576885406
+    },
+    "4": {
+      "exact_count": 975,
+      "exact_fraction_of_output": 0.9615384615384616,
+      "gt_candidates": [
+        {
+          "count": 6,
+          "fraction_of_output": 0.005917159763313609,
+          "gt_character": " ",
+          "gt_codepoint": "U+0020"
+        },
+        {
+          "count": 2,
+          "fraction_of_output": 0.0019723865877712033,
+          "gt_character": "1",
+          "gt_codepoint": "U+0031"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 0.0009861932938856016,
+          "gt_character": "3",
+          "gt_codepoint": "U+0033"
+        },
+        {
+          "count": 975,
+          "fraction_of_output": 0.9615384615384616,
+          "gt_character": "4",
+          "gt_codepoint": "U+0034"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 0.0009861932938856016,
+          "gt_character": "5",
+          "gt_codepoint": "U+0035"
+        },
+        {
+          "count": 2,
+          "fraction_of_output": 0.0019723865877712033,
+          "gt_character": "8",
+          "gt_codepoint": "U+0038"
+        },
+        {
+          "count": 2,
+          "fraction_of_output": 0.0019723865877712033,
+          "gt_character": "a",
+          "gt_codepoint": "U+0061"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 0.0009861932938856016,
+          "gt_character": "à",
+          "gt_codepoint": "U+00E0"
+        },
+        {
+          "count": 11,
+          "fraction_of_output": 0.010848126232741617,
+          "gt_character": "á",
+          "gt_codepoint": "U+00E1"
+        },
+        {
+          "count": 3,
+          "fraction_of_output": 0.0029585798816568047,
+          "gt_character": "ú",
+          "gt_codepoint": "U+00FA"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 0.0009861932938856016,
+          "gt_character": "ṭ",
+          "gt_codepoint": "U+1E6D"
+        }
+      ],
+      "output_character": "4",
+      "output_codepoint": "U+0034",
+      "output_count": 1014,
+      "output_insertion_count": 5,
+      "output_insertion_fraction_of_output": 0.004930966469428008,
+      "unresolved_count": 4,
+      "unresolved_fraction_of_output": 0.0039447731755424065
+    },
+    "5": {
+      "exact_count": 812,
+      "exact_fraction_of_output": 0.970131421744325,
+      "gt_candidates": [
+        {
+          "count": 1,
+          "fraction_of_output": 0.0011947431302270011,
+          "gt_character": ",",
+          "gt_codepoint": "U+002C"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 0.0011947431302270011,
+          "gt_character": "3",
+          "gt_codepoint": "U+0033"
+        },
+        {
+          "count": 812,
+          "fraction_of_output": 0.970131421744325,
+          "gt_character": "5",
+          "gt_codepoint": "U+0035"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 0.0011947431302270011,
+          "gt_character": "6",
+          "gt_codepoint": "U+0036"
+        },
+        {
+          "count": 4,
+          "fraction_of_output": 0.0047789725209080045,
+          "gt_character": "8",
+          "gt_codepoint": "U+0038"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 0.0011947431302270011,
+          "gt_character": ";",
+          "gt_codepoint": "U+003B"
+        },
+        {
+          "count": 2,
+          "fraction_of_output": 0.0023894862604540022,
+          "gt_character": "s",
+          "gt_codepoint": "U+0073"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 0.0011947431302270011,
+          "gt_character": "à",
+          "gt_codepoint": "U+00E0"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 0.0011947431302270011,
+          "gt_character": "ì",
+          "gt_codepoint": "U+00EC"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 0.0011947431302270011,
+          "gt_character": "î",
+          "gt_codepoint": "U+00EE"
+        },
+        {
+          "count": 2,
+          "fraction_of_output": 0.0023894862604540022,
+          "gt_character": "ĝ",
+          "gt_codepoint": "U+011D"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 0.0011947431302270011,
+          "gt_character": "ṣ",
+          "gt_codepoint": "U+1E63"
+        }
+      ],
+      "output_character": "5",
+      "output_codepoint": "U+0035",
+      "output_count": 837,
+      "output_insertion_count": 4,
+      "output_insertion_fraction_of_output": 0.0047789725209080045,
+      "unresolved_count": 5,
+      "unresolved_fraction_of_output": 0.005973715651135006
+    },
+    "6": {
+      "exact_count": 771,
+      "exact_fraction_of_output": 0.9722572509457755,
+      "gt_candidates": [
+        {
+          "count": 2,
+          "fraction_of_output": 0.0025220680958385876,
+          "gt_character": "5",
+          "gt_codepoint": "U+0035"
+        },
+        {
+          "count": 771,
+          "fraction_of_output": 0.9722572509457755,
+          "gt_character": "6",
+          "gt_codepoint": "U+0036"
+        },
+        {
+          "count": 2,
+          "fraction_of_output": 0.0025220680958385876,
+          "gt_character": "8",
+          "gt_codepoint": "U+0038"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 0.0012610340479192938,
+          "gt_character": "G",
+          "gt_codepoint": "U+0047"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 0.0012610340479192938,
+          "gt_character": "f",
+          "gt_codepoint": "U+0066"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 0.0012610340479192938,
+          "gt_character": "Ó",
+          "gt_codepoint": "U+00D3"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 0.0012610340479192938,
+          "gt_character": "á",
+          "gt_codepoint": "U+00E1"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 0.0012610340479192938,
+          "gt_character": "â",
+          "gt_codepoint": "U+00E2"
+        },
+        {
+          "count": 4,
+          "fraction_of_output": 0.005044136191677175,
+          "gt_character": "é",
+          "gt_codepoint": "U+00E9"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 0.0012610340479192938,
+          "gt_character": "ó",
+          "gt_codepoint": "U+00F3"
+        },
+        {
+          "count": 2,
+          "fraction_of_output": 0.0025220680958385876,
+          "gt_character": "ú",
+          "gt_codepoint": "U+00FA"
+        }
+      ],
+      "output_character": "6",
+      "output_codepoint": "U+0036",
+      "output_count": 793,
+      "output_insertion_count": 2,
+      "output_insertion_fraction_of_output": 0.0025220680958385876,
+      "unresolved_count": 4,
+      "unresolved_fraction_of_output": 0.005044136191677175
+    },
+    "7": {
+      "exact_count": 716,
+      "exact_fraction_of_output": 0.9754768392370572,
+      "gt_candidates": [
+        {
+          "count": 1,
+          "fraction_of_output": 0.0013623978201634877,
+          "gt_character": " ",
+          "gt_codepoint": "U+0020"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 0.0013623978201634877,
+          "gt_character": "/",
+          "gt_codepoint": "U+002F"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 0.0013623978201634877,
+          "gt_character": "2",
+          "gt_codepoint": "U+0032"
+        },
+        {
+          "count": 716,
+          "fraction_of_output": 0.9754768392370572,
+          "gt_character": "7",
+          "gt_codepoint": "U+0037"
+        },
+        {
+          "count": 2,
+          "fraction_of_output": 0.0027247956403269754,
+          "gt_character": "i",
+          "gt_codepoint": "U+0069"
+        },
+        {
+          "count": 2,
+          "fraction_of_output": 0.0027247956403269754,
+          "gt_character": "r",
+          "gt_codepoint": "U+0072"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 0.0013623978201634877,
+          "gt_character": "î",
+          "gt_codepoint": "U+00EE"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 0.0013623978201634877,
+          "gt_character": "ī",
+          "gt_codepoint": "U+012B"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 0.0013623978201634877,
+          "gt_character": "–",
+          "gt_codepoint": "U+2013"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 0.0013623978201634877,
+          "gt_character": "”",
+          "gt_codepoint": "U+201D"
+        }
+      ],
+      "output_character": "7",
+      "output_codepoint": "U+0037",
+      "output_count": 734,
+      "output_insertion_count": 5,
+      "output_insertion_fraction_of_output": 0.006811989100817439,
+      "unresolved_count": 2,
+      "unresolved_fraction_of_output": 0.0027247956403269754
+    },
+    "8": {
+      "exact_count": 628,
+      "exact_fraction_of_output": 0.9573170731707317,
+      "gt_candidates": [
+        {
+          "count": 3,
+          "fraction_of_output": 0.004573170731707317,
+          "gt_character": " ",
+          "gt_codepoint": "U+0020"
+        },
+        {
+          "count": 6,
+          "fraction_of_output": 0.009146341463414634,
+          "gt_character": "3",
+          "gt_codepoint": "U+0033"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 0.001524390243902439,
+          "gt_character": "4",
+          "gt_codepoint": "U+0034"
+        },
+        {
+          "count": 3,
+          "fraction_of_output": 0.004573170731707317,
+          "gt_character": "5",
+          "gt_codepoint": "U+0035"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 0.001524390243902439,
+          "gt_character": "6",
+          "gt_codepoint": "U+0036"
+        },
+        {
+          "count": 628,
+          "fraction_of_output": 0.9573170731707317,
+          "gt_character": "8",
+          "gt_codepoint": "U+0038"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 0.001524390243902439,
+          "gt_character": "f",
+          "gt_codepoint": "U+0066"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 0.001524390243902439,
+          "gt_character": "§",
+          "gt_codepoint": "U+00A7"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 0.001524390243902439,
+          "gt_character": "Å",
+          "gt_codepoint": "U+00C5"
+        },
+        {
+          "count": 3,
+          "fraction_of_output": 0.004573170731707317,
+          "gt_character": "à",
+          "gt_codepoint": "U+00E0"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 0.001524390243902439,
+          "gt_character": "Š",
+          "gt_codepoint": "U+0160"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 0.001524390243902439,
+          "gt_character": "ṣ",
+          "gt_codepoint": "U+1E63"
+        }
+      ],
+      "output_character": "8",
+      "output_codepoint": "U+0038",
+      "output_count": 656,
+      "output_insertion_count": 3,
+      "output_insertion_fraction_of_output": 0.004573170731707317,
+      "unresolved_count": 3,
+      "unresolved_fraction_of_output": 0.004573170731707317
+    },
+    "9": {
+      "exact_count": 904,
+      "exact_fraction_of_output": 0.9923161361141603,
+      "gt_candidates": [
+        {
+          "count": 1,
+          "fraction_of_output": 0.0010976948408342481,
+          "gt_character": "0",
+          "gt_codepoint": "U+0030"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 0.0010976948408342481,
+          "gt_character": "2",
+          "gt_codepoint": "U+0032"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 0.0010976948408342481,
+          "gt_character": "5",
+          "gt_codepoint": "U+0035"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 0.0010976948408342481,
+          "gt_character": "7",
+          "gt_codepoint": "U+0037"
+        },
+        {
+          "count": 904,
+          "fraction_of_output": 0.9923161361141603,
+          "gt_character": "9",
+          "gt_codepoint": "U+0039"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 0.0010976948408342481,
+          "gt_character": "ü",
+          "gt_codepoint": "U+00FC"
+        }
+      ],
+      "output_character": "9",
+      "output_codepoint": "U+0039",
+      "output_count": 911,
+      "output_insertion_count": 1,
+      "output_insertion_fraction_of_output": 0.0010976948408342481,
+      "unresolved_count": 1,
+      "unresolved_fraction_of_output": 0.0010976948408342481
+    },
+    ":": {
+      "exact_count": 679,
+      "exact_fraction_of_output": 0.9658605974395448,
+      "gt_candidates": [
+        {
+          "count": 1,
+          "fraction_of_output": 0.001422475106685633,
+          "gt_character": " ",
+          "gt_codepoint": "U+0020"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 0.001422475106685633,
+          "gt_character": "-",
+          "gt_codepoint": "U+002D"
+        },
+        {
+          "count": 2,
+          "fraction_of_output": 0.002844950213371266,
+          "gt_character": "1",
+          "gt_codepoint": "U+0031"
+        },
+        {
+          "count": 679,
+          "fraction_of_output": 0.9658605974395448,
+          "gt_character": ":",
+          "gt_codepoint": "U+003A"
+        },
+        {
+          "count": 5,
+          "fraction_of_output": 0.007112375533428165,
+          "gt_character": ";",
+          "gt_codepoint": "U+003B"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 0.001422475106685633,
+          "gt_character": "a",
+          "gt_codepoint": "U+0061"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 0.001422475106685633,
+          "gt_character": "i",
+          "gt_codepoint": "U+0069"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 0.001422475106685633,
+          "gt_character": "Ó",
+          "gt_codepoint": "U+00D3"
+        }
+      ],
+      "output_character": ":",
+      "output_codepoint": "U+003A",
+      "output_count": 703,
+      "output_insertion_count": 9,
+      "output_insertion_fraction_of_output": 0.012802275960170697,
+      "unresolved_count": 3,
+      "unresolved_fraction_of_output": 0.004267425320056899
+    },
+    ";": {
+      "exact_count": 305,
+      "exact_fraction_of_output": 0.9270516717325228,
+      "gt_candidates": [
+        {
+          "count": 1,
+          "fraction_of_output": 0.00303951367781155,
+          "gt_character": ",",
+          "gt_codepoint": "U+002C"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 0.00303951367781155,
+          "gt_character": "1",
+          "gt_codepoint": "U+0031"
+        },
+        {
+          "count": 2,
+          "fraction_of_output": 0.0060790273556231,
+          "gt_character": "2",
+          "gt_codepoint": "U+0032"
+        },
+        {
+          "count": 11,
+          "fraction_of_output": 0.03343465045592705,
+          "gt_character": ":",
+          "gt_codepoint": "U+003A"
+        },
+        {
+          "count": 305,
+          "fraction_of_output": 0.9270516717325228,
+          "gt_character": ";",
+          "gt_codepoint": "U+003B"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 0.00303951367781155,
+          "gt_character": "Ö",
+          "gt_codepoint": "U+00D6"
+        },
+        {
+          "count": 3,
+          "fraction_of_output": 0.00911854103343465,
+          "gt_character": "à",
+          "gt_codepoint": "U+00E0"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 0.00303951367781155,
+          "gt_character": "î",
+          "gt_codepoint": "U+00EE"
+        }
+      ],
+      "output_character": ";",
+      "output_codepoint": "U+003B",
+      "output_count": 329,
+      "output_insertion_count": 3,
+      "output_insertion_fraction_of_output": 0.00911854103343465,
+      "unresolved_count": 1,
+      "unresolved_fraction_of_output": 0.00303951367781155
+    },
+    "<": {
+      "exact_count": 3,
+      "exact_fraction_of_output": 1.0,
+      "gt_candidates": [
+        {
+          "count": 3,
+          "fraction_of_output": 1.0,
+          "gt_character": "<",
+          "gt_codepoint": "U+003C"
+        }
+      ],
+      "output_character": "<",
+      "output_codepoint": "U+003C",
+      "output_count": 3,
+      "output_insertion_count": 0,
+      "output_insertion_fraction_of_output": 0.0,
+      "unresolved_count": 0,
+      "unresolved_fraction_of_output": 0.0
+    },
+    "=": {
+      "exact_count": 70,
+      "exact_fraction_of_output": 0.9090909090909091,
+      "gt_candidates": [
+        {
+          "count": 70,
+          "fraction_of_output": 0.9090909090909091,
+          "gt_character": "=",
+          "gt_codepoint": "U+003D"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 0.012987012987012988,
+          "gt_character": "f",
+          "gt_codepoint": "U+0066"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 0.012987012987012988,
+          "gt_character": "m",
+          "gt_codepoint": "U+006D"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 0.012987012987012988,
+          "gt_character": "Ö",
+          "gt_codepoint": "U+00D6"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 0.012987012987012988,
+          "gt_character": "–",
+          "gt_codepoint": "U+2013"
+        }
+      ],
+      "output_character": "=",
+      "output_codepoint": "U+003D",
+      "output_count": 77,
+      "output_insertion_count": 1,
+      "output_insertion_fraction_of_output": 0.012987012987012988,
+      "unresolved_count": 2,
+      "unresolved_fraction_of_output": 0.025974025974025976
+    },
+    ">": {
+      "exact_count": 2,
+      "exact_fraction_of_output": 0.2,
+      "gt_candidates": [
+        {
+          "count": 2,
+          "fraction_of_output": 0.2,
+          "gt_character": ">",
+          "gt_codepoint": "U+003E"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 0.1,
+          "gt_character": "i",
+          "gt_codepoint": "U+0069"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 0.1,
+          "gt_character": "l",
+          "gt_codepoint": "U+006C"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 0.1,
+          "gt_character": "t",
+          "gt_codepoint": "U+0074"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 0.1,
+          "gt_character": "ú",
+          "gt_codepoint": "U+00FA"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 0.1,
+          "gt_character": "’",
+          "gt_codepoint": "U+2019"
+        }
+      ],
+      "output_character": ">",
+      "output_codepoint": "U+003E",
+      "output_count": 10,
+      "output_insertion_count": 0,
+      "output_insertion_fraction_of_output": 0.0,
+      "unresolved_count": 3,
+      "unresolved_fraction_of_output": 0.3
+    },
+    "?": {
+      "exact_count": 193,
+      "exact_fraction_of_output": 0.9507389162561576,
+      "gt_candidates": [
+        {
+          "count": 3,
+          "fraction_of_output": 0.014778325123152709,
+          "gt_character": "!",
+          "gt_codepoint": "U+0021"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 0.0049261083743842365,
+          "gt_character": "7",
+          "gt_codepoint": "U+0037"
+        },
+        {
+          "count": 193,
+          "fraction_of_output": 0.9507389162561576,
+          "gt_character": "?",
+          "gt_codepoint": "U+003F"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 0.0049261083743842365,
+          "gt_character": "t",
+          "gt_codepoint": "U+0074"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 0.0049261083743842365,
+          "gt_character": "ĭ",
+          "gt_codepoint": "U+012D"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 0.0049261083743842365,
+          "gt_character": "’",
+          "gt_codepoint": "U+2019"
+        }
+      ],
+      "output_character": "?",
+      "output_codepoint": "U+003F",
+      "output_count": 203,
+      "output_insertion_count": 1,
+      "output_insertion_fraction_of_output": 0.0049261083743842365,
+      "unresolved_count": 2,
+      "unresolved_fraction_of_output": 0.009852216748768473
+    },
+    "@": {
+      "exact_count": 4,
+      "exact_fraction_of_output": 1.0,
+      "gt_candidates": [
+        {
+          "count": 4,
+          "fraction_of_output": 1.0,
+          "gt_character": "@",
+          "gt_codepoint": "U+0040"
+        }
+      ],
+      "output_character": "@",
+      "output_codepoint": "U+0040",
+      "output_count": 4,
+      "output_insertion_count": 0,
+      "output_insertion_fraction_of_output": 0.0,
+      "unresolved_count": 0,
+      "unresolved_fraction_of_output": 0.0
+    },
+    "A": {
+      "exact_count": 1259,
+      "exact_fraction_of_output": 0.98359375,
+      "gt_candidates": [
+        {
+          "count": 1,
+          "fraction_of_output": 0.00078125,
+          "gt_character": "1",
+          "gt_codepoint": "U+0031"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 0.00078125,
+          "gt_character": "4",
+          "gt_codepoint": "U+0034"
+        },
+        {
+          "count": 1259,
+          "fraction_of_output": 0.98359375,
+          "gt_character": "A",
+          "gt_codepoint": "U+0041"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 0.00078125,
+          "gt_character": "À",
+          "gt_codepoint": "U+00C0"
+        },
+        {
+          "count": 4,
+          "fraction_of_output": 0.003125,
+          "gt_character": "Á",
+          "gt_codepoint": "U+00C1"
+        },
+        {
+          "count": 2,
+          "fraction_of_output": 0.0015625,
+          "gt_character": "Ä",
+          "gt_codepoint": "U+00C4"
+        },
+        {
+          "count": 3,
+          "fraction_of_output": 0.00234375,
+          "gt_character": "Å",
+          "gt_codepoint": "U+00C5"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 0.00078125,
+          "gt_character": "Ö",
+          "gt_codepoint": "U+00D6"
+        },
+        {
+          "count": 3,
+          "fraction_of_output": 0.00234375,
+          "gt_character": "à",
+          "gt_codepoint": "U+00E0"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 0.00078125,
+          "gt_character": "á",
+          "gt_codepoint": "U+00E1"
+        }
+      ],
+      "output_character": "A",
+      "output_codepoint": "U+0041",
+      "output_count": 1280,
+      "output_insertion_count": 1,
+      "output_insertion_fraction_of_output": 0.00078125,
+      "unresolved_count": 3,
+      "unresolved_fraction_of_output": 0.00234375
+    },
+    "B": {
+      "exact_count": 580,
+      "exact_fraction_of_output": 0.9965635738831615,
+      "gt_candidates": [
+        {
+          "count": 1,
+          "fraction_of_output": 0.001718213058419244,
+          "gt_character": "3",
+          "gt_codepoint": "U+0033"
+        },
+        {
+          "count": 580,
+          "fraction_of_output": 0.9965635738831615,
+          "gt_character": "B",
+          "gt_codepoint": "U+0042"
+        }
+      ],
+      "output_character": "B",
+      "output_codepoint": "U+0042",
+      "output_count": 582,
+      "output_insertion_count": 0,
+      "output_insertion_fraction_of_output": 0.0,
+      "unresolved_count": 1,
+      "unresolved_fraction_of_output": 0.001718213058419244
+    },
+    "C": {
+      "exact_count": 422,
+      "exact_fraction_of_output": 0.9745958429561201,
+      "gt_candidates": [
+        {
+          "count": 422,
+          "fraction_of_output": 0.9745958429561201,
+          "gt_character": "C",
+          "gt_codepoint": "U+0043"
+        },
+        {
+          "count": 2,
+          "fraction_of_output": 0.004618937644341801,
+          "gt_character": "c",
+          "gt_codepoint": "U+0063"
+        },
+        {
+          "count": 6,
+          "fraction_of_output": 0.013856812933025405,
+          "gt_character": "ʿ",
+          "gt_codepoint": "U+02BF"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 0.0023094688221709007,
+          "gt_character": "亡",
+          "gt_codepoint": "U+4EA1"
+        }
+      ],
+      "output_character": "C",
+      "output_codepoint": "U+0043",
+      "output_count": 433,
+      "output_insertion_count": 1,
+      "output_insertion_fraction_of_output": 0.0023094688221709007,
+      "unresolved_count": 1,
+      "unresolved_fraction_of_output": 0.0023094688221709007
+    },
+    "D": {
+      "exact_count": 333,
+      "exact_fraction_of_output": 0.9881305637982196,
+      "gt_candidates": [
+        {
+          "count": 333,
+          "fraction_of_output": 0.9881305637982196,
+          "gt_character": "D",
+          "gt_codepoint": "U+0044"
+        }
+      ],
+      "output_character": "D",
+      "output_codepoint": "U+0044",
+      "output_count": 337,
+      "output_insertion_count": 1,
+      "output_insertion_fraction_of_output": 0.002967359050445104,
+      "unresolved_count": 3,
+      "unresolved_fraction_of_output": 0.008902077151335312
+    },
+    "E": {
+      "exact_count": 909,
+      "exact_fraction_of_output": 0.9670212765957447,
+      "gt_candidates": [
+        {
+          "count": 909,
+          "fraction_of_output": 0.9670212765957447,
+          "gt_character": "E",
+          "gt_codepoint": "U+0045"
+        },
+        {
+          "count": 4,
+          "fraction_of_output": 0.00425531914893617,
+          "gt_character": "È",
+          "gt_codepoint": "U+00C8"
+        },
+        {
+          "count": 13,
+          "fraction_of_output": 0.013829787234042552,
+          "gt_character": "É",
+          "gt_codepoint": "U+00C9"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 0.0010638297872340426,
+          "gt_character": "ö",
+          "gt_codepoint": "U+00F6"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 0.0010638297872340426,
+          "gt_character": "ē",
+          "gt_codepoint": "U+0113"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 0.0010638297872340426,
+          "gt_character": "ī",
+          "gt_codepoint": "U+012B"
+        },
+        {
+          "count": 2,
+          "fraction_of_output": 0.002127659574468085,
+          "gt_character": "Ξ",
+          "gt_codepoint": "U+039E"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 0.0010638297872340426,
+          "gt_character": "Ḫ",
+          "gt_codepoint": "U+1E2A"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 0.0010638297872340426,
+          "gt_character": "簋",
+          "gt_codepoint": "U+7C0B"
+        }
+      ],
+      "output_character": "E",
+      "output_codepoint": "U+0045",
+      "output_count": 940,
+      "output_insertion_count": 3,
+      "output_insertion_fraction_of_output": 0.0031914893617021275,
+      "unresolved_count": 4,
+      "unresolved_fraction_of_output": 0.00425531914893617
+    },
+    "F": {
+      "exact_count": 219,
+      "exact_fraction_of_output": 0.9733333333333334,
+      "gt_candidates": [
+        {
+          "count": 1,
+          "fraction_of_output": 0.0044444444444444444,
+          "gt_character": "+",
+          "gt_codepoint": "U+002B"
+        },
+        {
+          "count": 219,
+          "fraction_of_output": 0.9733333333333334,
+          "gt_character": "F",
+          "gt_codepoint": "U+0046"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 0.0044444444444444444,
+          "gt_character": "J",
+          "gt_codepoint": "U+004A"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 0.0044444444444444444,
+          "gt_character": "Y",
+          "gt_codepoint": "U+0059"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 0.0044444444444444444,
+          "gt_character": "ī",
+          "gt_codepoint": "U+012B"
+        }
+      ],
+      "output_character": "F",
+      "output_codepoint": "U+0046",
+      "output_count": 225,
+      "output_insertion_count": 0,
+      "output_insertion_fraction_of_output": 0.0,
+      "unresolved_count": 2,
+      "unresolved_fraction_of_output": 0.008888888888888889
+    },
+    "G": {
+      "exact_count": 382,
+      "exact_fraction_of_output": 0.9794871794871794,
+      "gt_candidates": [
+        {
+          "count": 382,
+          "fraction_of_output": 0.9794871794871794,
+          "gt_character": "G",
+          "gt_codepoint": "U+0047"
+        },
+        {
+          "count": 2,
+          "fraction_of_output": 0.005128205128205128,
+          "gt_character": "Ú",
+          "gt_codepoint": "U+00DA"
+        },
+        {
+          "count": 2,
+          "fraction_of_output": 0.005128205128205128,
+          "gt_character": "Ü",
+          "gt_codepoint": "U+00DC"
+        },
+        {
+          "count": 2,
+          "fraction_of_output": 0.005128205128205128,
+          "gt_character": "ú",
+          "gt_codepoint": "U+00FA"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 0.002564102564102564,
+          "gt_character": "ū",
+          "gt_codepoint": "U+016B"
+        }
+      ],
+      "output_character": "G",
+      "output_codepoint": "U+0047",
+      "output_count": 390,
+      "output_insertion_count": 1,
+      "output_insertion_fraction_of_output": 0.002564102564102564,
+      "unresolved_count": 0,
+      "unresolved_fraction_of_output": 0.0
+    },
+    "H": {
+      "exact_count": 400,
+      "exact_fraction_of_output": 0.963855421686747,
+      "gt_candidates": [
+        {
+          "count": 400,
+          "fraction_of_output": 0.963855421686747,
+          "gt_character": "H",
+          "gt_codepoint": "U+0048"
+        },
+        {
+          "count": 6,
+          "fraction_of_output": 0.014457831325301205,
+          "gt_character": "Ó",
+          "gt_codepoint": "U+00D3"
+        },
+        {
+          "count": 6,
+          "fraction_of_output": 0.014457831325301205,
+          "gt_character": "Ḫ",
+          "gt_codepoint": "U+1E2A"
+        }
+      ],
+      "output_character": "H",
+      "output_codepoint": "U+0048",
+      "output_count": 415,
+      "output_insertion_count": 2,
+      "output_insertion_fraction_of_output": 0.004819277108433735,
+      "unresolved_count": 1,
+      "unresolved_fraction_of_output": 0.0024096385542168677
+    },
+    "I": {
+      "exact_count": 1378,
+      "exact_fraction_of_output": 0.9602787456445993,
+      "gt_candidates": [
+        {
+          "count": 5,
+          "fraction_of_output": 0.003484320557491289,
+          "gt_character": "1",
+          "gt_codepoint": "U+0031"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 0.0006968641114982578,
+          "gt_character": "4",
+          "gt_codepoint": "U+0034"
+        },
+        {
+          "count": 1378,
+          "fraction_of_output": 0.9602787456445993,
+          "gt_character": "I",
+          "gt_codepoint": "U+0049"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 0.0006968641114982578,
+          "gt_character": "J",
+          "gt_codepoint": "U+004A"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 0.0006968641114982578,
+          "gt_character": "[",
+          "gt_codepoint": "U+005B"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 0.0006968641114982578,
+          "gt_character": "i",
+          "gt_codepoint": "U+0069"
+        },
+        {
+          "count": 22,
+          "fraction_of_output": 0.015331010452961672,
+          "gt_character": "l",
+          "gt_codepoint": "U+006C"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 0.0006968641114982578,
+          "gt_character": "Ì",
+          "gt_codepoint": "U+00CC"
+        },
+        {
+          "count": 2,
+          "fraction_of_output": 0.0013937282229965157,
+          "gt_character": "Í",
+          "gt_codepoint": "U+00CD"
+        },
+        {
+          "count": 2,
+          "fraction_of_output": 0.0013937282229965157,
+          "gt_character": "ī",
+          "gt_codepoint": "U+012B"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 0.0006968641114982578,
+          "gt_character": "Γ",
+          "gt_codepoint": "U+0393"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 0.0006968641114982578,
+          "gt_character": "ṭ",
+          "gt_codepoint": "U+1E6D"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 0.0006968641114982578,
+          "gt_character": "⸢",
+          "gt_codepoint": "U+2E22"
+        }
+      ],
+      "output_character": "I",
+      "output_codepoint": "U+0049",
+      "output_count": 1435,
+      "output_insertion_count": 4,
+      "output_insertion_fraction_of_output": 0.0027874564459930314,
+      "unresolved_count": 14,
+      "unresolved_fraction_of_output": 0.00975609756097561
+    },
+    "J": {
+      "exact_count": 169,
+      "exact_fraction_of_output": 0.949438202247191,
+      "gt_candidates": [
+        {
+          "count": 1,
+          "fraction_of_output": 0.0056179775280898875,
+          "gt_character": "I",
+          "gt_codepoint": "U+0049"
+        },
+        {
+          "count": 169,
+          "fraction_of_output": 0.949438202247191,
+          "gt_character": "J",
+          "gt_codepoint": "U+004A"
+        },
+        {
+          "count": 2,
+          "fraction_of_output": 0.011235955056179775,
+          "gt_character": "]",
+          "gt_codepoint": "U+005D"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 0.0056179775280898875,
+          "gt_character": "l",
+          "gt_codepoint": "U+006C"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 0.0056179775280898875,
+          "gt_character": "Ḫ",
+          "gt_codepoint": "U+1E2A"
+        }
+      ],
+      "output_character": "J",
+      "output_codepoint": "U+004A",
+      "output_count": 178,
+      "output_insertion_count": 2,
+      "output_insertion_fraction_of_output": 0.011235955056179775,
+      "unresolved_count": 2,
+      "unresolved_fraction_of_output": 0.011235955056179775
+    },
+    "K": {
+      "exact_count": 251,
+      "exact_fraction_of_output": 0.9766536964980544,
+      "gt_candidates": [
+        {
+          "count": 251,
+          "fraction_of_output": 0.9766536964980544,
+          "gt_character": "K",
+          "gt_codepoint": "U+004B"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 0.0038910505836575876,
+          "gt_character": "k",
+          "gt_codepoint": "U+006B"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 0.0038910505836575876,
+          "gt_character": "Á",
+          "gt_codepoint": "U+00C1"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 0.0038910505836575876,
+          "gt_character": "天",
+          "gt_codepoint": "U+5929"
+        }
+      ],
+      "output_character": "K",
+      "output_codepoint": "U+004B",
+      "output_count": 257,
+      "output_insertion_count": 3,
+      "output_insertion_fraction_of_output": 0.011673151750972763,
+      "unresolved_count": 0,
+      "unresolved_fraction_of_output": 0.0
+    },
+    "L": {
+      "exact_count": 622,
+      "exact_fraction_of_output": 0.9967948717948718,
+      "gt_candidates": [
+        {
+          "count": 622,
+          "fraction_of_output": 0.9967948717948718,
+          "gt_character": "L",
+          "gt_codepoint": "U+004C"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 0.0016025641025641025,
+          "gt_character": "[",
+          "gt_codepoint": "U+005B"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 0.0016025641025641025,
+          "gt_character": "Ł",
+          "gt_codepoint": "U+0141"
+        }
+      ],
+      "output_character": "L",
+      "output_codepoint": "U+004C",
+      "output_count": 624,
+      "output_insertion_count": 0,
+      "output_insertion_fraction_of_output": 0.0,
+      "unresolved_count": 0,
+      "unresolved_fraction_of_output": 0.0
+    },
+    "M": {
+      "exact_count": 515,
+      "exact_fraction_of_output": 0.998062015503876,
+      "gt_candidates": [
+        {
+          "count": 515,
+          "fraction_of_output": 0.998062015503876,
+          "gt_character": "M",
+          "gt_codepoint": "U+004D"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 0.001937984496124031,
+          "gt_character": "á",
+          "gt_codepoint": "U+00E1"
+        }
+      ],
+      "output_character": "M",
+      "output_codepoint": "U+004D",
+      "output_count": 516,
+      "output_insertion_count": 0,
+      "output_insertion_fraction_of_output": 0.0,
+      "unresolved_count": 0,
+      "unresolved_fraction_of_output": 0.0
+    },
+    "N": {
+      "exact_count": 783,
+      "exact_fraction_of_output": 0.9987244897959183,
+      "gt_candidates": [
+        {
+          "count": 783,
+          "fraction_of_output": 0.9987244897959183,
+          "gt_character": "N",
+          "gt_codepoint": "U+004E"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 0.0012755102040816326,
+          "gt_character": "⸣",
+          "gt_codepoint": "U+2E23"
+        }
+      ],
+      "output_character": "N",
+      "output_codepoint": "U+004E",
+      "output_count": 784,
+      "output_insertion_count": 0,
+      "output_insertion_fraction_of_output": 0.0,
+      "unresolved_count": 0,
+      "unresolved_fraction_of_output": 0.0
+    },
+    "O": {
+      "exact_count": 410,
+      "exact_fraction_of_output": 0.9692671394799054,
+      "gt_candidates": [
+        {
+          "count": 2,
+          "fraction_of_output": 0.004728132387706856,
+          "gt_character": "0",
+          "gt_codepoint": "U+0030"
+        },
+        {
+          "count": 410,
+          "fraction_of_output": 0.9692671394799054,
+          "gt_character": "O",
+          "gt_codepoint": "U+004F"
+        },
+        {
+          "count": 3,
+          "fraction_of_output": 0.0070921985815602835,
+          "gt_character": "U",
+          "gt_codepoint": "U+0055"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 0.002364066193853428,
+          "gt_character": "o",
+          "gt_codepoint": "U+006F"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 0.002364066193853428,
+          "gt_character": "Ó",
+          "gt_codepoint": "U+00D3"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 0.002364066193853428,
+          "gt_character": "Ö",
+          "gt_codepoint": "U+00D6"
+        },
+        {
+          "count": 2,
+          "fraction_of_output": 0.004728132387706856,
+          "gt_character": "Ü",
+          "gt_codepoint": "U+00DC"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 0.002364066193853428,
+          "gt_character": "Ω",
+          "gt_codepoint": "U+03A9"
+        }
+      ],
+      "output_character": "O",
+      "output_codepoint": "U+004F",
+      "output_count": 423,
+      "output_insertion_count": 0,
+      "output_insertion_fraction_of_output": 0.0,
+      "unresolved_count": 2,
+      "unresolved_fraction_of_output": 0.004728132387706856
+    },
+    "P": {
+      "exact_count": 259,
+      "exact_fraction_of_output": 0.9847908745247148,
+      "gt_candidates": [
+        {
+          "count": 259,
+          "fraction_of_output": 0.9847908745247148,
+          "gt_character": "P",
+          "gt_codepoint": "U+0050"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 0.0038022813688212928,
+          "gt_character": "ú",
+          "gt_codepoint": "U+00FA"
+        }
+      ],
+      "output_character": "P",
+      "output_codepoint": "U+0050",
+      "output_count": 263,
+      "output_insertion_count": 2,
+      "output_insertion_fraction_of_output": 0.0076045627376425855,
+      "unresolved_count": 1,
+      "unresolved_fraction_of_output": 0.0038022813688212928
+    },
+    "Q": {
+      "exact_count": 17,
+      "exact_fraction_of_output": 1.0,
+      "gt_candidates": [
+        {
+          "count": 17,
+          "fraction_of_output": 1.0,
+          "gt_character": "Q",
+          "gt_codepoint": "U+0051"
+        }
+      ],
+      "output_character": "Q",
+      "output_codepoint": "U+0051",
+      "output_count": 17,
+      "output_insertion_count": 0,
+      "output_insertion_fraction_of_output": 0.0,
+      "unresolved_count": 0,
+      "unresolved_fraction_of_output": 0.0
+    },
+    "R": {
+      "exact_count": 507,
+      "exact_fraction_of_output": 0.990234375,
+      "gt_candidates": [
+        {
+          "count": 507,
+          "fraction_of_output": 0.990234375,
+          "gt_character": "R",
+          "gt_codepoint": "U+0052"
+        },
+        {
+          "count": 2,
+          "fraction_of_output": 0.00390625,
+          "gt_character": "ß",
+          "gt_codepoint": "U+00DF"
+        }
+      ],
+      "output_character": "R",
+      "output_codepoint": "U+0052",
+      "output_count": 512,
+      "output_insertion_count": 0,
+      "output_insertion_fraction_of_output": 0.0,
+      "unresolved_count": 3,
+      "unresolved_fraction_of_output": 0.005859375
+    },
+    "S": {
+      "exact_count": 957,
+      "exact_fraction_of_output": 0.9725609756097561,
+      "gt_candidates": [
+        {
+          "count": 2,
+          "fraction_of_output": 0.0020325203252032522,
+          "gt_character": "5",
+          "gt_codepoint": "U+0035"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 0.0010162601626016261,
+          "gt_character": "8",
+          "gt_codepoint": "U+0038"
+        },
+        {
+          "count": 957,
+          "fraction_of_output": 0.9725609756097561,
+          "gt_character": "S",
+          "gt_codepoint": "U+0053"
+        },
+        {
+          "count": 5,
+          "fraction_of_output": 0.00508130081300813,
+          "gt_character": "s",
+          "gt_codepoint": "U+0073"
+        },
+        {
+          "count": 8,
+          "fraction_of_output": 0.008130081300813009,
+          "gt_character": "Ó",
+          "gt_codepoint": "U+00D3"
+        },
+        {
+          "count": 4,
+          "fraction_of_output": 0.0040650406504065045,
+          "gt_character": "Š",
+          "gt_codepoint": "U+0160"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 0.0010162601626016261,
+          "gt_character": "Ṣ",
+          "gt_codepoint": "U+1E62"
+        }
+      ],
+      "output_character": "S",
+      "output_codepoint": "U+0053",
+      "output_count": 984,
+      "output_insertion_count": 5,
+      "output_insertion_fraction_of_output": 0.00508130081300813,
+      "unresolved_count": 1,
+      "unresolved_fraction_of_output": 0.0010162601626016261
+    },
+    "T": {
+      "exact_count": 973,
+      "exact_fraction_of_output": 0.9918450560652395,
+      "gt_candidates": [
+        {
+          "count": 2,
+          "fraction_of_output": 0.0020387359836901123,
+          "gt_character": "I",
+          "gt_codepoint": "U+0049"
+        },
+        {
+          "count": 973,
+          "fraction_of_output": 0.9918450560652395,
+          "gt_character": "T",
+          "gt_codepoint": "U+0054"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 0.0010193679918450561,
+          "gt_character": "ī",
+          "gt_codepoint": "U+012B"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 0.0010193679918450561,
+          "gt_character": "⸢",
+          "gt_codepoint": "U+2E22"
+        }
+      ],
+      "output_character": "T",
+      "output_codepoint": "U+0054",
+      "output_count": 981,
+      "output_insertion_count": 2,
+      "output_insertion_fraction_of_output": 0.0020387359836901123,
+      "unresolved_count": 2,
+      "unresolved_fraction_of_output": 0.0020387359836901123
+    },
+    "U": {
+      "exact_count": 370,
+      "exact_fraction_of_output": 0.9585492227979274,
+      "gt_candidates": [
+        {
+          "count": 370,
+          "fraction_of_output": 0.9585492227979274,
+          "gt_character": "U",
+          "gt_codepoint": "U+0055"
+        },
+        {
+          "count": 2,
+          "fraction_of_output": 0.0051813471502590676,
+          "gt_character": "u",
+          "gt_codepoint": "U+0075"
+        },
+        {
+          "count": 3,
+          "fraction_of_output": 0.007772020725388601,
+          "gt_character": "Ù",
+          "gt_codepoint": "U+00D9"
+        },
+        {
+          "count": 2,
+          "fraction_of_output": 0.0051813471502590676,
+          "gt_character": "Ú",
+          "gt_codepoint": "U+00DA"
+        },
+        {
+          "count": 2,
+          "fraction_of_output": 0.0051813471502590676,
+          "gt_character": "Ü",
+          "gt_codepoint": "U+00DC"
+        },
+        {
+          "count": 2,
+          "fraction_of_output": 0.0051813471502590676,
+          "gt_character": "ù",
+          "gt_codepoint": "U+00F9"
+        }
+      ],
+      "output_character": "U",
+      "output_codepoint": "U+0055",
+      "output_count": 386,
+      "output_insertion_count": 3,
+      "output_insertion_fraction_of_output": 0.007772020725388601,
+      "unresolved_count": 2,
+      "unresolved_fraction_of_output": 0.0051813471502590676
+    },
+    "V": {
+      "exact_count": 205,
+      "exact_fraction_of_output": 0.9447004608294931,
+      "gt_candidates": [
+        {
+          "count": 205,
+          "fraction_of_output": 0.9447004608294931,
+          "gt_character": "V",
+          "gt_codepoint": "U+0056"
+        },
+        {
+          "count": 9,
+          "fraction_of_output": 0.041474654377880185,
+          "gt_character": "v",
+          "gt_codepoint": "U+0076"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 0.004608294930875576,
+          "gt_character": "è",
+          "gt_codepoint": "U+00E8"
+        }
+      ],
+      "output_character": "V",
+      "output_codepoint": "U+0056",
+      "output_count": 217,
+      "output_insertion_count": 0,
+      "output_insertion_fraction_of_output": 0.0,
+      "unresolved_count": 2,
+      "unresolved_fraction_of_output": 0.009216589861751152
+    },
+    "W": {
+      "exact_count": 219,
+      "exact_fraction_of_output": 0.9776785714285714,
+      "gt_candidates": [
+        {
+          "count": 219,
+          "fraction_of_output": 0.9776785714285714,
+          "gt_character": "W",
+          "gt_codepoint": "U+0057"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 0.004464285714285714,
+          "gt_character": "w",
+          "gt_codepoint": "U+0077"
+        },
+        {
+          "count": 3,
+          "fraction_of_output": 0.013392857142857142,
+          "gt_character": "ù",
+          "gt_codepoint": "U+00F9"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 0.004464285714285714,
+          "gt_character": "⸣",
+          "gt_codepoint": "U+2E23"
+        }
+      ],
+      "output_character": "W",
+      "output_codepoint": "U+0057",
+      "output_count": 224,
+      "output_insertion_count": 0,
+      "output_insertion_fraction_of_output": 0.0,
+      "unresolved_count": 0,
+      "unresolved_fraction_of_output": 0.0
+    },
+    "X": {
+      "exact_count": 77,
+      "exact_fraction_of_output": 0.9390243902439024,
+      "gt_candidates": [
+        {
+          "count": 77,
+          "fraction_of_output": 0.9390243902439024,
+          "gt_character": "X",
+          "gt_codepoint": "U+0058"
+        },
+        {
+          "count": 3,
+          "fraction_of_output": 0.036585365853658534,
+          "gt_character": "x",
+          "gt_codepoint": "U+0078"
+        }
+      ],
+      "output_character": "X",
+      "output_codepoint": "U+0058",
+      "output_count": 82,
+      "output_insertion_count": 0,
+      "output_insertion_fraction_of_output": 0.0,
+      "unresolved_count": 2,
+      "unresolved_fraction_of_output": 0.024390243902439025
+    },
+    "Y": {
+      "exact_count": 64,
+      "exact_fraction_of_output": 0.9696969696969697,
+      "gt_candidates": [
+        {
+          "count": 64,
+          "fraction_of_output": 0.9696969696969697,
+          "gt_character": "Y",
+          "gt_codepoint": "U+0059"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 0.015151515151515152,
+          "gt_character": "Ó",
+          "gt_codepoint": "U+00D3"
+        }
+      ],
+      "output_character": "Y",
+      "output_codepoint": "U+0059",
+      "output_count": 66,
+      "output_insertion_count": 0,
+      "output_insertion_fraction_of_output": 0.0,
+      "unresolved_count": 1,
+      "unresolved_fraction_of_output": 0.015151515151515152
+    },
+    "Z": {
+      "exact_count": 83,
+      "exact_fraction_of_output": 0.8924731182795699,
+      "gt_candidates": [
+        {
+          "count": 1,
+          "fraction_of_output": 0.010752688172043012,
+          "gt_character": "-",
+          "gt_codepoint": "U+002D"
+        },
+        {
+          "count": 83,
+          "fraction_of_output": 0.8924731182795699,
+          "gt_character": "Z",
+          "gt_codepoint": "U+005A"
+        },
+        {
+          "count": 3,
+          "fraction_of_output": 0.03225806451612903,
+          "gt_character": "z",
+          "gt_codepoint": "U+007A"
+        },
+        {
+          "count": 2,
+          "fraction_of_output": 0.021505376344086023,
+          "gt_character": "ē",
+          "gt_codepoint": "U+0113"
+        }
+      ],
+      "output_character": "Z",
+      "output_codepoint": "U+005A",
+      "output_count": 93,
+      "output_insertion_count": 4,
+      "output_insertion_fraction_of_output": 0.043010752688172046,
+      "unresolved_count": 0,
+      "unresolved_fraction_of_output": 0.0
+    },
+    "[": {
+      "exact_count": 552,
+      "exact_fraction_of_output": 0.9735449735449735,
+      "gt_candidates": [
+        {
+          "count": 3,
+          "fraction_of_output": 0.005291005291005291,
+          "gt_character": "I",
+          "gt_codepoint": "U+0049"
+        },
+        {
+          "count": 552,
+          "fraction_of_output": 0.9735449735449735,
+          "gt_character": "[",
+          "gt_codepoint": "U+005B"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 0.001763668430335097,
+          "gt_character": "|",
+          "gt_codepoint": "U+007C"
+        },
+        {
+          "count": 3,
+          "fraction_of_output": 0.005291005291005291,
+          "gt_character": "í",
+          "gt_codepoint": "U+00ED"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 0.001763668430335097,
+          "gt_character": "Ξ",
+          "gt_codepoint": "U+039E"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 0.001763668430335097,
+          "gt_character": "Ω",
+          "gt_codepoint": "U+03A9"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 0.001763668430335097,
+          "gt_character": "⸢",
+          "gt_codepoint": "U+2E22"
+        }
+      ],
+      "output_character": "[",
+      "output_codepoint": "U+005B",
+      "output_count": 567,
+      "output_insertion_count": 1,
+      "output_insertion_fraction_of_output": 0.001763668430335097,
+      "unresolved_count": 4,
+      "unresolved_fraction_of_output": 0.007054673721340388
+    },
+    "]": {
+      "exact_count": 545,
+      "exact_fraction_of_output": 0.936426116838488,
+      "gt_candidates": [
+        {
+          "count": 1,
+          "fraction_of_output": 0.001718213058419244,
+          "gt_character": " ",
+          "gt_codepoint": "U+0020"
+        },
+        {
+          "count": 3,
+          "fraction_of_output": 0.005154639175257732,
+          "gt_character": "1",
+          "gt_codepoint": "U+0031"
+        },
+        {
+          "count": 545,
+          "fraction_of_output": 0.936426116838488,
+          "gt_character": "]",
+          "gt_codepoint": "U+005D"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 0.001718213058419244,
+          "gt_character": "g",
+          "gt_codepoint": "U+0067"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 0.001718213058419244,
+          "gt_character": "i",
+          "gt_codepoint": "U+0069"
+        },
+        {
+          "count": 5,
+          "fraction_of_output": 0.00859106529209622,
+          "gt_character": "l",
+          "gt_codepoint": "U+006C"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 0.001718213058419244,
+          "gt_character": "à",
+          "gt_codepoint": "U+00E0"
+        },
+        {
+          "count": 8,
+          "fraction_of_output": 0.013745704467353952,
+          "gt_character": "è",
+          "gt_codepoint": "U+00E8"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 0.001718213058419244,
+          "gt_character": "ʿ",
+          "gt_codepoint": "U+02BF"
+        },
+        {
+          "count": 4,
+          "fraction_of_output": 0.006872852233676976,
+          "gt_character": "⸣",
+          "gt_codepoint": "U+2E23"
+        }
+      ],
+      "output_character": "]",
+      "output_codepoint": "U+005D",
+      "output_count": 582,
+      "output_insertion_count": 2,
+      "output_insertion_fraction_of_output": 0.003436426116838488,
+      "unresolved_count": 10,
+      "unresolved_fraction_of_output": 0.01718213058419244
+    },
+    "_": {
+      "exact_count": 4,
+      "exact_fraction_of_output": 1.0,
+      "gt_candidates": [
+        {
+          "count": 4,
+          "fraction_of_output": 1.0,
+          "gt_character": "_",
+          "gt_codepoint": "U+005F"
+        }
+      ],
+      "output_character": "_",
+      "output_codepoint": "U+005F",
+      "output_count": 4,
+      "output_insertion_count": 0,
+      "output_insertion_fraction_of_output": 0.0,
+      "unresolved_count": 0,
+      "unresolved_fraction_of_output": 0.0
+    },
+    "a": {
+      "exact_count": 17267,
+      "exact_fraction_of_output": 0.9963646855164455,
+      "gt_candidates": [
+        {
+          "count": 8,
+          "fraction_of_output": 0.0004616272360069244,
+          "gt_character": "A",
+          "gt_codepoint": "U+0041"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 5.770340450086555e-05,
+          "gt_character": "G",
+          "gt_codepoint": "U+0047"
+        },
+        {
+          "count": 17267,
+          "fraction_of_output": 0.9963646855164455,
+          "gt_character": "a",
+          "gt_codepoint": "U+0061"
+        },
+        {
+          "count": 2,
+          "fraction_of_output": 0.0001154068090017311,
+          "gt_character": "d",
+          "gt_codepoint": "U+0064"
+        },
+        {
+          "count": 2,
+          "fraction_of_output": 0.0001154068090017311,
+          "gt_character": "i",
+          "gt_codepoint": "U+0069"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 5.770340450086555e-05,
+          "gt_character": "m",
+          "gt_codepoint": "U+006D"
+        },
+        {
+          "count": 2,
+          "fraction_of_output": 0.0001154068090017311,
+          "gt_character": "q",
+          "gt_codepoint": "U+0071"
+        },
+        {
+          "count": 7,
+          "fraction_of_output": 0.0004039238315060589,
+          "gt_character": "u",
+          "gt_codepoint": "U+0075"
+        },
+        {
+          "count": 3,
+          "fraction_of_output": 0.00017311021350259665,
+          "gt_character": "à",
+          "gt_codepoint": "U+00E0"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 5.770340450086555e-05,
+          "gt_character": "á",
+          "gt_codepoint": "U+00E1"
+        },
+        {
+          "count": 3,
+          "fraction_of_output": 0.00017311021350259665,
+          "gt_character": "ù",
+          "gt_codepoint": "U+00F9"
+        },
+        {
+          "count": 2,
+          "fraction_of_output": 0.0001154068090017311,
+          "gt_character": "û",
+          "gt_codepoint": "U+00FB"
+        },
+        {
+          "count": 10,
+          "fraction_of_output": 0.0005770340450086555,
+          "gt_character": "ā",
+          "gt_codepoint": "U+0101"
+        }
+      ],
+      "output_character": "a",
+      "output_codepoint": "U+0061",
+      "output_count": 17330,
+      "output_insertion_count": 11,
+      "output_insertion_fraction_of_output": 0.0006347374495095211,
+      "unresolved_count": 10,
+      "unresolved_fraction_of_output": 0.0005770340450086555
+    },
+    "b": {
+      "exact_count": 3472,
+      "exact_fraction_of_output": 0.9937034917000572,
+      "gt_candidates": [
+        {
+          "count": 3472,
+          "fraction_of_output": 0.9937034917000572,
+          "gt_character": "b",
+          "gt_codepoint": "U+0062"
+        },
+        {
+          "count": 4,
+          "fraction_of_output": 0.0011448196908986834,
+          "gt_character": "h",
+          "gt_codepoint": "U+0068"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 0.00028620492272467084,
+          "gt_character": "É",
+          "gt_codepoint": "U+00C9"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 0.00028620492272467084,
+          "gt_character": "é",
+          "gt_codepoint": "U+00E9"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 0.00028620492272467084,
+          "gt_character": "ê",
+          "gt_codepoint": "U+00EA"
+        },
+        {
+          "count": 2,
+          "fraction_of_output": 0.0005724098454493417,
+          "gt_character": "ó",
+          "gt_codepoint": "U+00F3"
+        },
+        {
+          "count": 2,
+          "fraction_of_output": 0.0005724098454493417,
+          "gt_character": "ö",
+          "gt_codepoint": "U+00F6"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 0.00028620492272467084,
+          "gt_character": "ù",
+          "gt_codepoint": "U+00F9"
+        },
+        {
+          "count": 2,
+          "fraction_of_output": 0.0005724098454493417,
+          "gt_character": "ú",
+          "gt_codepoint": "U+00FA"
+        },
+        {
+          "count": 2,
+          "fraction_of_output": 0.0005724098454493417,
+          "gt_character": "ḫ",
+          "gt_codepoint": "U+1E2B"
+        }
+      ],
+      "output_character": "b",
+      "output_codepoint": "U+0062",
+      "output_count": 3494,
+      "output_insertion_count": 6,
+      "output_insertion_fraction_of_output": 0.0017172295363480253,
+      "unresolved_count": 0,
+      "unresolved_fraction_of_output": 0.0
+    },
+    "c": {
+      "exact_count": 4754,
+      "exact_fraction_of_output": 0.9943526458899812,
+      "gt_candidates": [
+        {
+          "count": 14,
+          "fraction_of_output": 0.0029282576866764276,
+          "gt_character": "C",
+          "gt_codepoint": "U+0043"
+        },
+        {
+          "count": 4754,
+          "fraction_of_output": 0.9943526458899812,
+          "gt_character": "c",
+          "gt_codepoint": "U+0063"
+        },
+        {
+          "count": 2,
+          "fraction_of_output": 0.0004183225266680611,
+          "gt_character": "e",
+          "gt_codepoint": "U+0065"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 0.00020916126333403055,
+          "gt_character": "Ç",
+          "gt_codepoint": "U+00C7"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 0.00020916126333403055,
+          "gt_character": "Ĝ",
+          "gt_codepoint": "U+011C"
+        },
+        {
+          "count": 6,
+          "fraction_of_output": 0.0012549675800041832,
+          "gt_character": "ʿ",
+          "gt_codepoint": "U+02BF"
+        }
+      ],
+      "output_character": "c",
+      "output_codepoint": "U+0063",
+      "output_count": 4781,
+      "output_insertion_count": 2,
+      "output_insertion_fraction_of_output": 0.0004183225266680611,
+      "unresolved_count": 1,
+      "unresolved_fraction_of_output": 0.00020916126333403055
+    },
+    "d": {
+      "exact_count": 6895,
+      "exact_fraction_of_output": 0.9955241120415824,
+      "gt_candidates": [
+        {
+          "count": 1,
+          "fraction_of_output": 0.00014438348252959862,
+          "gt_character": "4",
+          "gt_codepoint": "U+0034"
+        },
+        {
+          "count": 3,
+          "fraction_of_output": 0.0004331504475887958,
+          "gt_character": "a",
+          "gt_codepoint": "U+0061"
+        },
+        {
+          "count": 6895,
+          "fraction_of_output": 0.9955241120415824,
+          "gt_character": "d",
+          "gt_codepoint": "U+0064"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 0.00014438348252959862,
+          "gt_character": "u",
+          "gt_codepoint": "U+0075"
+        },
+        {
+          "count": 2,
+          "fraction_of_output": 0.00028876696505919725,
+          "gt_character": "à",
+          "gt_codepoint": "U+00E0"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 0.00014438348252959862,
+          "gt_character": "á",
+          "gt_codepoint": "U+00E1"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 0.00014438348252959862,
+          "gt_character": "è",
+          "gt_codepoint": "U+00E8"
+        },
+        {
+          "count": 2,
+          "fraction_of_output": 0.00028876696505919725,
+          "gt_character": "í",
+          "gt_codepoint": "U+00ED"
+        },
+        {
+          "count": 2,
+          "fraction_of_output": 0.00028876696505919725,
+          "gt_character": "ù",
+          "gt_codepoint": "U+00F9"
+        },
+        {
+          "count": 4,
+          "fraction_of_output": 0.0005775339301183945,
+          "gt_character": "ú",
+          "gt_codepoint": "U+00FA"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 0.00014438348252959862,
+          "gt_character": "û",
+          "gt_codepoint": "U+00FB"
+        }
+      ],
+      "output_character": "d",
+      "output_codepoint": "U+0064",
+      "output_count": 6926,
+      "output_insertion_count": 1,
+      "output_insertion_fraction_of_output": 0.00014438348252959862,
+      "unresolved_count": 12,
+      "unresolved_fraction_of_output": 0.0017326017903551833
+    },
+    "e": {
+      "exact_count": 21847,
+      "exact_fraction_of_output": 0.996169805298436,
+      "gt_candidates": [
+        {
+          "count": 1,
+          "fraction_of_output": 4.5597555970999955e-05,
+          "gt_character": "4",
+          "gt_codepoint": "U+0034"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 4.5597555970999955e-05,
+          "gt_character": "8",
+          "gt_codepoint": "U+0038"
+        },
+        {
+          "count": 23,
+          "fraction_of_output": 0.001048743787332999,
+          "gt_character": "E",
+          "gt_codepoint": "U+0045"
+        },
+        {
+          "count": 28,
+          "fraction_of_output": 0.0012767315671879987,
+          "gt_character": "c",
+          "gt_codepoint": "U+0063"
+        },
+        {
+          "count": 21847,
+          "fraction_of_output": 0.996169805298436,
+          "gt_character": "e",
+          "gt_codepoint": "U+0065"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 4.5597555970999955e-05,
+          "gt_character": "g",
+          "gt_codepoint": "U+0067"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 4.5597555970999955e-05,
+          "gt_character": "k",
+          "gt_codepoint": "U+006B"
+        },
+        {
+          "count": 2,
+          "fraction_of_output": 9.119511194199991e-05,
+          "gt_character": "t",
+          "gt_codepoint": "U+0074"
+        },
+        {
+          "count": 7,
+          "fraction_of_output": 0.0003191828917969997,
+          "gt_character": "è",
+          "gt_codepoint": "U+00E8"
+        },
+        {
+          "count": 2,
+          "fraction_of_output": 9.119511194199991e-05,
+          "gt_character": "ø",
+          "gt_codepoint": "U+00F8"
+        },
+        {
+          "count": 4,
+          "fraction_of_output": 0.00018239022388399982,
+          "gt_character": "ē",
+          "gt_codepoint": "U+0113"
+        }
+      ],
+      "output_character": "e",
+      "output_codepoint": "U+0065",
+      "output_count": 21931,
+      "output_insertion_count": 3,
+      "output_insertion_fraction_of_output": 0.00013679266791299987,
+      "unresolved_count": 11,
+      "unresolved_fraction_of_output": 0.0005015731156809995
+    },
+    "f": {
+      "exact_count": 3724,
+      "exact_fraction_of_output": 0.9914802981895634,
+      "gt_candidates": [
+        {
+          "count": 2,
+          "fraction_of_output": 0.0005324813631522897,
+          "gt_character": "1",
+          "gt_codepoint": "U+0031"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 0.00026624068157614486,
+          "gt_character": "I",
+          "gt_codepoint": "U+0049"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 0.00026624068157614486,
+          "gt_character": "[",
+          "gt_codepoint": "U+005B"
+        },
+        {
+          "count": 3724,
+          "fraction_of_output": 0.9914802981895634,
+          "gt_character": "f",
+          "gt_codepoint": "U+0066"
+        },
+        {
+          "count": 9,
+          "fraction_of_output": 0.0023961661341853034,
+          "gt_character": "r",
+          "gt_codepoint": "U+0072"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 0.00026624068157614486,
+          "gt_character": "t",
+          "gt_codepoint": "U+0074"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 0.00026624068157614486,
+          "gt_character": "£",
+          "gt_codepoint": "U+00A3"
+        },
+        {
+          "count": 5,
+          "fraction_of_output": 0.0013312034078807242,
+          "gt_character": "Í",
+          "gt_codepoint": "U+00CD"
+        },
+        {
+          "count": 9,
+          "fraction_of_output": 0.0023961661341853034,
+          "gt_character": "í",
+          "gt_codepoint": "U+00ED"
+        }
+      ],
+      "output_character": "f",
+      "output_codepoint": "U+0066",
+      "output_count": 3756,
+      "output_insertion_count": 0,
+      "output_insertion_fraction_of_output": 0.0,
+      "unresolved_count": 3,
+      "unresolved_fraction_of_output": 0.0007987220447284345
+    },
+    "g": {
+      "exact_count": 3784,
+      "exact_fraction_of_output": 0.9900575614861329,
+      "gt_candidates": [
+        {
+          "count": 1,
+          "fraction_of_output": 0.00026164311878597594,
+          "gt_character": "3",
+          "gt_codepoint": "U+0033"
+        },
+        {
+          "count": 2,
+          "fraction_of_output": 0.0005232862375719519,
+          "gt_character": "8",
+          "gt_codepoint": "U+0038"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 0.00026164311878597594,
+          "gt_character": ":",
+          "gt_codepoint": "U+003A"
+        },
+        {
+          "count": 7,
+          "fraction_of_output": 0.0018315018315018315,
+          "gt_character": "G",
+          "gt_codepoint": "U+0047"
+        },
+        {
+          "count": 3784,
+          "fraction_of_output": 0.9900575614861329,
+          "gt_character": "g",
+          "gt_codepoint": "U+0067"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 0.00026164311878597594,
+          "gt_character": "i",
+          "gt_codepoint": "U+0069"
+        },
+        {
+          "count": 4,
+          "fraction_of_output": 0.0010465724751439038,
+          "gt_character": "q",
+          "gt_codepoint": "U+0071"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 0.00026164311878597594,
+          "gt_character": "t",
+          "gt_codepoint": "U+0074"
+        },
+        {
+          "count": 3,
+          "fraction_of_output": 0.0007849293563579278,
+          "gt_character": "ç",
+          "gt_codepoint": "U+00E7"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 0.00026164311878597594,
+          "gt_character": "ē",
+          "gt_codepoint": "U+0113"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 0.00026164311878597594,
+          "gt_character": "ĝ",
+          "gt_codepoint": "U+011D"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 0.00026164311878597594,
+          "gt_character": "Ḫ",
+          "gt_codepoint": "U+1E2A"
+        },
+        {
+          "count": 5,
+          "fraction_of_output": 0.0013082155939298796,
+          "gt_character": "ṣ",
+          "gt_codepoint": "U+1E63"
+        }
+      ],
+      "output_character": "g",
+      "output_codepoint": "U+0067",
+      "output_count": 3822,
+      "output_insertion_count": 5,
+      "output_insertion_fraction_of_output": 0.0013082155939298796,
+      "unresolved_count": 5,
+      "unresolved_fraction_of_output": 0.0013082155939298796
+    },
+    "h": {
+      "exact_count": 8201,
+      "exact_fraction_of_output": 0.9974458769155923,
+      "gt_candidates": [
+        {
+          "count": 1,
+          "fraction_of_output": 0.00012162490878131841,
+          "gt_character": "2",
+          "gt_codepoint": "U+0032"
+        },
+        {
+          "count": 5,
+          "fraction_of_output": 0.0006081245439065921,
+          "gt_character": "H",
+          "gt_codepoint": "U+0048"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 0.00012162490878131841,
+          "gt_character": "a",
+          "gt_codepoint": "U+0061"
+        },
+        {
+          "count": 8201,
+          "fraction_of_output": 0.9974458769155923,
+          "gt_character": "h",
+          "gt_codepoint": "U+0068"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 0.00012162490878131841,
+          "gt_character": "á",
+          "gt_codepoint": "U+00E1"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 0.00012162490878131841,
+          "gt_character": "ḥ",
+          "gt_codepoint": "U+1E25"
+        },
+        {
+          "count": 2,
+          "fraction_of_output": 0.00024324981756263683,
+          "gt_character": "ḫ",
+          "gt_codepoint": "U+1E2B"
+        }
+      ],
+      "output_character": "h",
+      "output_codepoint": "U+0068",
+      "output_count": 8222,
+      "output_insertion_count": 7,
+      "output_insertion_fraction_of_output": 0.0008513743614692289,
+      "unresolved_count": 3,
+      "unresolved_fraction_of_output": 0.00036487472634395525
+    },
+    "i": {
+      "exact_count": 15881,
+      "exact_fraction_of_output": 0.992128443805835,
+      "gt_candidates": [
+        {
+          "count": 5,
+          "fraction_of_output": 0.00031236334103829577,
+          "gt_character": "1",
+          "gt_codepoint": "U+0031"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 6.247266820765915e-05,
+          "gt_character": ":",
+          "gt_codepoint": "U+003A"
+        },
+        {
+          "count": 17,
+          "fraction_of_output": 0.0010620353595302055,
+          "gt_character": "I",
+          "gt_codepoint": "U+0049"
+        },
+        {
+          "count": 15881,
+          "fraction_of_output": 0.992128443805835,
+          "gt_character": "i",
+          "gt_codepoint": "U+0069"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 6.247266820765915e-05,
+          "gt_character": "l",
+          "gt_codepoint": "U+006C"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 6.247266820765915e-05,
+          "gt_character": "t",
+          "gt_codepoint": "U+0074"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 6.247266820765915e-05,
+          "gt_character": "u",
+          "gt_codepoint": "U+0075"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 6.247266820765915e-05,
+          "gt_character": "Í",
+          "gt_codepoint": "U+00CD"
+        },
+        {
+          "count": 29,
+          "fraction_of_output": 0.0018117073780221154,
+          "gt_character": "ì",
+          "gt_codepoint": "U+00EC"
+        },
+        {
+          "count": 24,
+          "fraction_of_output": 0.0014993440369838195,
+          "gt_character": "í",
+          "gt_codepoint": "U+00ED"
+        },
+        {
+          "count": 2,
+          "fraction_of_output": 0.0001249453364153183,
+          "gt_character": "î",
+          "gt_codepoint": "U+00EE"
+        },
+        {
+          "count": 2,
+          "fraction_of_output": 0.0001249453364153183,
+          "gt_character": "ù",
+          "gt_codepoint": "U+00F9"
+        },
+        {
+          "count": 3,
+          "fraction_of_output": 0.00018741800462297744,
+          "gt_character": "ú",
+          "gt_codepoint": "U+00FA"
+        },
+        {
+          "count": 2,
+          "fraction_of_output": 0.0001249453364153183,
+          "gt_character": "ü",
+          "gt_codepoint": "U+00FC"
+        },
+        {
+          "count": 5,
+          "fraction_of_output": 0.00031236334103829577,
+          "gt_character": "ī",
+          "gt_codepoint": "U+012B"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 6.247266820765915e-05,
+          "gt_character": "ṭ",
+          "gt_codepoint": "U+1E6D"
+        }
+      ],
+      "output_character": "i",
+      "output_codepoint": "U+0069",
+      "output_count": 16007,
+      "output_insertion_count": 7,
+      "output_insertion_fraction_of_output": 0.00043730867745361406,
+      "unresolved_count": 24,
+      "unresolved_fraction_of_output": 0.0014993440369838195
+    },
+    "j": {
+      "exact_count": 138,
+      "exact_fraction_of_output": 0.971830985915493,
+      "gt_candidates": [
+        {
+          "count": 1,
+          "fraction_of_output": 0.007042253521126761,
+          "gt_character": "1",
+          "gt_codepoint": "U+0031"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 0.007042253521126761,
+          "gt_character": "J",
+          "gt_codepoint": "U+004A"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 0.007042253521126761,
+          "gt_character": "]",
+          "gt_codepoint": "U+005D"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 0.007042253521126761,
+          "gt_character": "i",
+          "gt_codepoint": "U+0069"
+        },
+        {
+          "count": 138,
+          "fraction_of_output": 0.971830985915493,
+          "gt_character": "j",
+          "gt_codepoint": "U+006A"
+        }
+      ],
+      "output_character": "j",
+      "output_codepoint": "U+006A",
+      "output_count": 142,
+      "output_insertion_count": 0,
+      "output_insertion_fraction_of_output": 0.0,
+      "unresolved_count": 0,
+      "unresolved_fraction_of_output": 0.0
+    },
+    "k": {
+      "exact_count": 1858,
+      "exact_fraction_of_output": 0.9898774640383591,
+      "gt_candidates": [
+        {
+          "count": 1,
+          "fraction_of_output": 0.0005327650506126798,
+          "gt_character": "4",
+          "gt_codepoint": "U+0034"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 0.0005327650506126798,
+          "gt_character": "E",
+          "gt_codepoint": "U+0045"
+        },
+        {
+          "count": 7,
+          "fraction_of_output": 0.0037293553542887587,
+          "gt_character": "K",
+          "gt_codepoint": "U+004B"
+        },
+        {
+          "count": 1858,
+          "fraction_of_output": 0.9898774640383591,
+          "gt_character": "k",
+          "gt_codepoint": "U+006B"
+        }
+      ],
+      "output_character": "k",
+      "output_codepoint": "U+006B",
+      "output_count": 1877,
+      "output_insertion_count": 2,
+      "output_insertion_fraction_of_output": 0.0010655301012253596,
+      "unresolved_count": 8,
+      "unresolved_fraction_of_output": 0.004262120404901438
+    },
+    "l": {
+      "exact_count": 8010,
+      "exact_fraction_of_output": 0.9913366336633663,
+      "gt_candidates": [
+        {
+          "count": 1,
+          "fraction_of_output": 0.00012376237623762376,
+          "gt_character": " ",
+          "gt_codepoint": "U+0020"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 0.00012376237623762376,
+          "gt_character": "!",
+          "gt_codepoint": "U+0021"
+        },
+        {
+          "count": 3,
+          "fraction_of_output": 0.0003712871287128713,
+          "gt_character": "/",
+          "gt_codepoint": "U+002F"
+        },
+        {
+          "count": 4,
+          "fraction_of_output": 0.0004950495049504951,
+          "gt_character": "1",
+          "gt_codepoint": "U+0031"
+        },
+        {
+          "count": 2,
+          "fraction_of_output": 0.00024752475247524753,
+          "gt_character": "I",
+          "gt_codepoint": "U+0049"
+        },
+        {
+          "count": 9,
+          "fraction_of_output": 0.0011138613861386138,
+          "gt_character": "L",
+          "gt_codepoint": "U+004C"
+        },
+        {
+          "count": 2,
+          "fraction_of_output": 0.00024752475247524753,
+          "gt_character": "[",
+          "gt_codepoint": "U+005B"
+        },
+        {
+          "count": 2,
+          "fraction_of_output": 0.00024752475247524753,
+          "gt_character": "]",
+          "gt_codepoint": "U+005D"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 0.00012376237623762376,
+          "gt_character": "b",
+          "gt_codepoint": "U+0062"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 0.00012376237623762376,
+          "gt_character": "f",
+          "gt_codepoint": "U+0066"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 0.00012376237623762376,
+          "gt_character": "i",
+          "gt_codepoint": "U+0069"
+        },
+        {
+          "count": 8010,
+          "fraction_of_output": 0.9913366336633663,
+          "gt_character": "l",
+          "gt_codepoint": "U+006C"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 0.00012376237623762376,
+          "gt_character": "ú",
+          "gt_codepoint": "U+00FA"
+        },
+        {
+          "count": 2,
+          "fraction_of_output": 0.00024752475247524753,
+          "gt_character": "ē",
+          "gt_codepoint": "U+0113"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 0.00012376237623762376,
+          "gt_character": "ʿ",
+          "gt_codepoint": "U+02BF"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 0.00012376237623762376,
+          "gt_character": "Ḫ",
+          "gt_codepoint": "U+1E2A"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 0.00012376237623762376,
+          "gt_character": "ṭ",
+          "gt_codepoint": "U+1E6D"
+        },
+        {
+          "count": 14,
+          "fraction_of_output": 0.0017326732673267327,
+          "gt_character": "⸣",
+          "gt_codepoint": "U+2E23"
+        }
+      ],
+      "output_character": "l",
+      "output_codepoint": "U+006C",
+      "output_count": 8080,
+      "output_insertion_count": 6,
+      "output_insertion_fraction_of_output": 0.0007425742574257426,
+      "unresolved_count": 17,
+      "unresolved_fraction_of_output": 0.002103960396039604
+    },
+    "m": {
+      "exact_count": 5448,
+      "exact_fraction_of_output": 0.9939792008757526,
+      "gt_candidates": [
+        {
+          "count": 1,
+          "fraction_of_output": 0.00018244845831052726,
+          "gt_character": "7",
+          "gt_codepoint": "U+0037"
+        },
+        {
+          "count": 2,
+          "fraction_of_output": 0.00036489691662105453,
+          "gt_character": "I",
+          "gt_codepoint": "U+0049"
+        },
+        {
+          "count": 5,
+          "fraction_of_output": 0.0009122422915526364,
+          "gt_character": "M",
+          "gt_codepoint": "U+004D"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 0.00018244845831052726,
+          "gt_character": "i",
+          "gt_codepoint": "U+0069"
+        },
+        {
+          "count": 5448,
+          "fraction_of_output": 0.9939792008757526,
+          "gt_character": "m",
+          "gt_codepoint": "U+006D"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 0.00018244845831052726,
+          "gt_character": "n",
+          "gt_codepoint": "U+006E"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 0.00018244845831052726,
+          "gt_character": "r",
+          "gt_codepoint": "U+0072"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 0.00018244845831052726,
+          "gt_character": "ī",
+          "gt_codepoint": "U+012B"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 0.00018244845831052726,
+          "gt_character": "”",
+          "gt_codepoint": "U+201D"
+        }
+      ],
+      "output_character": "m",
+      "output_codepoint": "U+006D",
+      "output_count": 5481,
+      "output_insertion_count": 4,
+      "output_insertion_fraction_of_output": 0.0007297938332421091,
+      "unresolved_count": 16,
+      "unresolved_fraction_of_output": 0.0029191753329684362
+    },
+    "n": {
+      "exact_count": 14724,
+      "exact_fraction_of_output": 0.9969530773918343,
+      "gt_candidates": [
+        {
+          "count": 1,
+          "fraction_of_output": 6.770939129257228e-05,
+          "gt_character": "1",
+          "gt_codepoint": "U+0031"
+        },
+        {
+          "count": 22,
+          "fraction_of_output": 0.0014896066084365903,
+          "gt_character": "N",
+          "gt_codepoint": "U+004E"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 6.770939129257228e-05,
+          "gt_character": "k",
+          "gt_codepoint": "U+006B"
+        },
+        {
+          "count": 3,
+          "fraction_of_output": 0.00020312817387771684,
+          "gt_character": "m",
+          "gt_codepoint": "U+006D"
+        },
+        {
+          "count": 14724,
+          "fraction_of_output": 0.9969530773918343,
+          "gt_character": "n",
+          "gt_codepoint": "U+006E"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 6.770939129257228e-05,
+          "gt_character": "t",
+          "gt_codepoint": "U+0074"
+        }
+      ],
+      "output_character": "n",
+      "output_codepoint": "U+006E",
+      "output_count": 14769,
+      "output_insertion_count": 2,
+      "output_insertion_fraction_of_output": 0.00013541878258514455,
+      "unresolved_count": 15,
+      "unresolved_fraction_of_output": 0.0010156408693885843
+    },
+    "o": {
+      "exact_count": 12006,
+      "exact_fraction_of_output": 0.9956875103665617,
+      "gt_candidates": [
+        {
+          "count": 5,
+          "fraction_of_output": 0.0004146624647536905,
+          "gt_character": "0",
+          "gt_codepoint": "U+0030"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 8.29324929507381e-05,
+          "gt_character": "9",
+          "gt_codepoint": "U+0039"
+        },
+        {
+          "count": 32,
+          "fraction_of_output": 0.0026538397744236193,
+          "gt_character": "O",
+          "gt_codepoint": "U+004F"
+        },
+        {
+          "count": 12006,
+          "fraction_of_output": 0.9956875103665617,
+          "gt_character": "o",
+          "gt_codepoint": "U+006F"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 8.29324929507381e-05,
+          "gt_character": "Ó",
+          "gt_codepoint": "U+00D3"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 8.29324929507381e-05,
+          "gt_character": "ö",
+          "gt_codepoint": "U+00F6"
+        }
+      ],
+      "output_character": "o",
+      "output_codepoint": "U+006F",
+      "output_count": 12058,
+      "output_insertion_count": 2,
+      "output_insertion_fraction_of_output": 0.0001658649859014762,
+      "unresolved_count": 10,
+      "unresolved_fraction_of_output": 0.000829324929507381
+    },
+    "p": {
+      "exact_count": 3474,
+      "exact_fraction_of_output": 0.9985628054038517,
+      "gt_candidates": [
+        {
+          "count": 1,
+          "fraction_of_output": 0.0002874389192296637,
+          "gt_character": "P",
+          "gt_codepoint": "U+0050"
+        },
+        {
+          "count": 2,
+          "fraction_of_output": 0.0005748778384593274,
+          "gt_character": "l",
+          "gt_codepoint": "U+006C"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 0.0002874389192296637,
+          "gt_character": "o",
+          "gt_codepoint": "U+006F"
+        },
+        {
+          "count": 3474,
+          "fraction_of_output": 0.9985628054038517,
+          "gt_character": "p",
+          "gt_codepoint": "U+0070"
+        }
+      ],
+      "output_character": "p",
+      "output_codepoint": "U+0070",
+      "output_count": 3479,
+      "output_insertion_count": 1,
+      "output_insertion_fraction_of_output": 0.0002874389192296637,
+      "unresolved_count": 0,
+      "unresolved_fraction_of_output": 0.0
+    },
+    "q": {
+      "exact_count": 308,
+      "exact_fraction_of_output": 0.9716088328075709,
+      "gt_candidates": [
+        {
+          "count": 1,
+          "fraction_of_output": 0.0031545741324921135,
+          "gt_character": "a",
+          "gt_codepoint": "U+0061"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 0.0031545741324921135,
+          "gt_character": "d",
+          "gt_codepoint": "U+0064"
+        },
+        {
+          "count": 308,
+          "fraction_of_output": 0.9716088328075709,
+          "gt_character": "q",
+          "gt_codepoint": "U+0071"
+        },
+        {
+          "count": 2,
+          "fraction_of_output": 0.006309148264984227,
+          "gt_character": "è",
+          "gt_codepoint": "U+00E8"
+        }
+      ],
+      "output_character": "q",
+      "output_codepoint": "U+0071",
+      "output_count": 317,
+      "output_insertion_count": 4,
+      "output_insertion_fraction_of_output": 0.012618296529968454,
+      "unresolved_count": 1,
+      "unresolved_fraction_of_output": 0.0031545741324921135
+    },
+    "r": {
+      "exact_count": 12282,
+      "exact_fraction_of_output": 0.997158398960786,
+      "gt_candidates": [
+        {
+          "count": 1,
+          "fraction_of_output": 8.118860112040269e-05,
+          "gt_character": "1",
+          "gt_codepoint": "U+0031"
+        },
+        {
+          "count": 2,
+          "fraction_of_output": 0.00016237720224080538,
+          "gt_character": "I",
+          "gt_codepoint": "U+0049"
+        },
+        {
+          "count": 6,
+          "fraction_of_output": 0.0004871316067224162,
+          "gt_character": "R",
+          "gt_codepoint": "U+0052"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 8.118860112040269e-05,
+          "gt_character": "T",
+          "gt_codepoint": "U+0054"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 8.118860112040269e-05,
+          "gt_character": "l",
+          "gt_codepoint": "U+006C"
+        },
+        {
+          "count": 12282,
+          "fraction_of_output": 0.997158398960786,
+          "gt_character": "r",
+          "gt_codepoint": "U+0072"
+        },
+        {
+          "count": 3,
+          "fraction_of_output": 0.0002435658033612081,
+          "gt_character": "t",
+          "gt_codepoint": "U+0074"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 8.118860112040269e-05,
+          "gt_character": "x",
+          "gt_codepoint": "U+0078"
+        },
+        {
+          "count": 2,
+          "fraction_of_output": 0.00016237720224080538,
+          "gt_character": "Γ",
+          "gt_codepoint": "U+0393"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 8.118860112040269e-05,
+          "gt_character": "ṭ",
+          "gt_codepoint": "U+1E6D"
+        }
+      ],
+      "output_character": "r",
+      "output_codepoint": "U+0072",
+      "output_count": 12317,
+      "output_insertion_count": 9,
+      "output_insertion_fraction_of_output": 0.0007306974100836243,
+      "unresolved_count": 8,
+      "unresolved_fraction_of_output": 0.0006495088089632215
+    },
+    "s": {
+      "exact_count": 11387,
+      "exact_fraction_of_output": 0.9955411785277146,
+      "gt_candidates": [
+        {
+          "count": 3,
+          "fraction_of_output": 0.0002622836160167862,
+          "gt_character": "8",
+          "gt_codepoint": "U+0038"
+        },
+        {
+          "count": 29,
+          "fraction_of_output": 0.002535408288162266,
+          "gt_character": "S",
+          "gt_codepoint": "U+0053"
+        },
+        {
+          "count": 11387,
+          "fraction_of_output": 0.9955411785277146,
+          "gt_character": "s",
+          "gt_codepoint": "U+0073"
+        },
+        {
+          "count": 2,
+          "fraction_of_output": 0.00017485574401119076,
+          "gt_character": "š",
+          "gt_codepoint": "U+0161"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 8.742787200559538e-05,
+          "gt_character": "Ṣ",
+          "gt_codepoint": "U+1E62"
+        },
+        {
+          "count": 6,
+          "fraction_of_output": 0.0005245672320335723,
+          "gt_character": "ṣ",
+          "gt_codepoint": "U+1E63"
+        }
+      ],
+      "output_character": "s",
+      "output_codepoint": "U+0073",
+      "output_count": 11438,
+      "output_insertion_count": 5,
+      "output_insertion_fraction_of_output": 0.0004371393600279769,
+      "unresolved_count": 5,
+      "unresolved_fraction_of_output": 0.0004371393600279769
+    },
+    "t": {
+      "exact_count": 15783,
+      "exact_fraction_of_output": 0.9959613807029721,
+      "gt_candidates": [
+        {
+          "count": 1,
+          "fraction_of_output": 6.310342651605982e-05,
+          "gt_character": "1",
+          "gt_codepoint": "U+0031"
+        },
+        {
+          "count": 5,
+          "fraction_of_output": 0.0003155171325802991,
+          "gt_character": "T",
+          "gt_codepoint": "U+0054"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 6.310342651605982e-05,
+          "gt_character": "[",
+          "gt_codepoint": "U+005B"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 6.310342651605982e-05,
+          "gt_character": "c",
+          "gt_codepoint": "U+0063"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 6.310342651605982e-05,
+          "gt_character": "f",
+          "gt_codepoint": "U+0066"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 6.310342651605982e-05,
+          "gt_character": "i",
+          "gt_codepoint": "U+0069"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 6.310342651605982e-05,
+          "gt_character": "l",
+          "gt_codepoint": "U+006C"
+        },
+        {
+          "count": 9,
+          "fraction_of_output": 0.0005679308386445384,
+          "gt_character": "r",
+          "gt_codepoint": "U+0072"
+        },
+        {
+          "count": 15783,
+          "fraction_of_output": 0.9959613807029721,
+          "gt_character": "t",
+          "gt_codepoint": "U+0074"
+        },
+        {
+          "count": 3,
+          "fraction_of_output": 0.00018931027954817946,
+          "gt_character": "í",
+          "gt_codepoint": "U+00ED"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 6.310342651605982e-05,
+          "gt_character": "î",
+          "gt_codepoint": "U+00EE"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 6.310342651605982e-05,
+          "gt_character": "ù",
+          "gt_codepoint": "U+00F9"
+        },
+        {
+          "count": 3,
+          "fraction_of_output": 0.00018931027954817946,
+          "gt_character": "ú",
+          "gt_codepoint": "U+00FA"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 6.310342651605982e-05,
+          "gt_character": "ī",
+          "gt_codepoint": "U+012B"
+        },
+        {
+          "count": 15,
+          "fraction_of_output": 0.0009465513977408973,
+          "gt_character": "ṭ",
+          "gt_codepoint": "U+1E6D"
+        }
+      ],
+      "output_character": "t",
+      "output_codepoint": "U+0074",
+      "output_count": 15847,
+      "output_insertion_count": 8,
+      "output_insertion_fraction_of_output": 0.0005048274121284786,
+      "unresolved_count": 12,
+      "unresolved_fraction_of_output": 0.0007572411181927178
+    },
+    "u": {
+      "exact_count": 7365,
+      "exact_fraction_of_output": 0.9937930103899608,
+      "gt_candidates": [
+        {
+          "count": 2,
+          "fraction_of_output": 0.00026986911347996224,
+          "gt_character": "U",
+          "gt_codepoint": "U+0055"
+        },
+        {
+          "count": 5,
+          "fraction_of_output": 0.0006746727836999055,
+          "gt_character": "a",
+          "gt_codepoint": "U+0061"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 0.00013493455673998112,
+          "gt_character": "n",
+          "gt_codepoint": "U+006E"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 0.00013493455673998112,
+          "gt_character": "t",
+          "gt_codepoint": "U+0074"
+        },
+        {
+          "count": 7365,
+          "fraction_of_output": 0.9937930103899608,
+          "gt_character": "u",
+          "gt_codepoint": "U+0075"
+        },
+        {
+          "count": 11,
+          "fraction_of_output": 0.0014842801241397921,
+          "gt_character": "ù",
+          "gt_codepoint": "U+00F9"
+        },
+        {
+          "count": 7,
+          "fraction_of_output": 0.0009445418971798677,
+          "gt_character": "ú",
+          "gt_codepoint": "U+00FA"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 0.00013493455673998112,
+          "gt_character": "ü",
+          "gt_codepoint": "U+00FC"
+        },
+        {
+          "count": 2,
+          "fraction_of_output": 0.00026986911347996224,
+          "gt_character": "Σ",
+          "gt_codepoint": "U+03A3"
+        }
+      ],
+      "output_character": "u",
+      "output_codepoint": "U+0075",
+      "output_count": 7411,
+      "output_insertion_count": 8,
+      "output_insertion_fraction_of_output": 0.001079476453919849,
+      "unresolved_count": 8,
+      "unresolved_fraction_of_output": 0.001079476453919849
+    },
+    "v": {
+      "exact_count": 1640,
+      "exact_fraction_of_output": 0.9939393939393939,
+      "gt_candidates": [
+        {
+          "count": 8,
+          "fraction_of_output": 0.0048484848484848485,
+          "gt_character": "V",
+          "gt_codepoint": "U+0056"
+        },
+        {
+          "count": 1640,
+          "fraction_of_output": 0.9939393939393939,
+          "gt_character": "v",
+          "gt_codepoint": "U+0076"
+        }
+      ],
+      "output_character": "v",
+      "output_codepoint": "U+0076",
+      "output_count": 1650,
+      "output_insertion_count": 2,
+      "output_insertion_fraction_of_output": 0.0012121212121212121,
+      "unresolved_count": 0,
+      "unresolved_fraction_of_output": 0.0
+    },
+    "w": {
+      "exact_count": 2169,
+      "exact_fraction_of_output": 0.9972413793103448,
+      "gt_candidates": [
+        {
+          "count": 2,
+          "fraction_of_output": 0.0009195402298850574,
+          "gt_character": "W",
+          "gt_codepoint": "U+0057"
+        },
+        {
+          "count": 2,
+          "fraction_of_output": 0.0009195402298850574,
+          "gt_character": "r",
+          "gt_codepoint": "U+0072"
+        },
+        {
+          "count": 2169,
+          "fraction_of_output": 0.9972413793103448,
+          "gt_character": "w",
+          "gt_codepoint": "U+0077"
+        }
+      ],
+      "output_character": "w",
+      "output_codepoint": "U+0077",
+      "output_count": 2175,
+      "output_insertion_count": 1,
+      "output_insertion_fraction_of_output": 0.0004597701149425287,
+      "unresolved_count": 1,
+      "unresolved_fraction_of_output": 0.0004597701149425287
+    },
+    "x": {
+      "exact_count": 612,
+      "exact_fraction_of_output": 0.972972972972973,
+      "gt_candidates": [
+        {
+          "count": 1,
+          "fraction_of_output": 0.001589825119236884,
+          "gt_character": "4",
+          "gt_codepoint": "U+0034"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 0.001589825119236884,
+          "gt_character": "8",
+          "gt_codepoint": "U+0038"
+        },
+        {
+          "count": 4,
+          "fraction_of_output": 0.006359300476947536,
+          "gt_character": "X",
+          "gt_codepoint": "U+0058"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 0.001589825119236884,
+          "gt_character": "s",
+          "gt_codepoint": "U+0073"
+        },
+        {
+          "count": 612,
+          "fraction_of_output": 0.972972972972973,
+          "gt_character": "x",
+          "gt_codepoint": "U+0078"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 0.001589825119236884,
+          "gt_character": "z",
+          "gt_codepoint": "U+007A"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 0.001589825119236884,
+          "gt_character": "×",
+          "gt_codepoint": "U+00D7"
+        }
+      ],
+      "output_character": "x",
+      "output_codepoint": "U+0078",
+      "output_count": 629,
+      "output_insertion_count": 4,
+      "output_insertion_fraction_of_output": 0.006359300476947536,
+      "unresolved_count": 4,
+      "unresolved_fraction_of_output": 0.006359300476947536
+    },
+    "y": {
+      "exact_count": 2477,
+      "exact_fraction_of_output": 0.9939807383627608,
+      "gt_candidates": [
+        {
+          "count": 1,
+          "fraction_of_output": 0.0004012841091492777,
+          "gt_character": "U",
+          "gt_codepoint": "U+0055"
+        },
+        {
+          "count": 5,
+          "fraction_of_output": 0.0020064205457463883,
+          "gt_character": "Y",
+          "gt_codepoint": "U+0059"
+        },
+        {
+          "count": 3,
+          "fraction_of_output": 0.001203852327447833,
+          "gt_character": "r",
+          "gt_codepoint": "U+0072"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 0.0004012841091492777,
+          "gt_character": "v",
+          "gt_codepoint": "U+0076"
+        },
+        {
+          "count": 2477,
+          "fraction_of_output": 0.9939807383627608,
+          "gt_character": "y",
+          "gt_codepoint": "U+0079"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 0.0004012841091492777,
+          "gt_character": "ṭ",
+          "gt_codepoint": "U+1E6D"
+        }
+      ],
+      "output_character": "y",
+      "output_codepoint": "U+0079",
+      "output_count": 2492,
+      "output_insertion_count": 2,
+      "output_insertion_fraction_of_output": 0.0008025682182985554,
+      "unresolved_count": 2,
+      "unresolved_fraction_of_output": 0.0008025682182985554
+    },
+    "z": {
+      "exact_count": 504,
+      "exact_fraction_of_output": 0.9438202247191011,
+      "gt_candidates": [
+        {
+          "count": 12,
+          "fraction_of_output": 0.02247191011235955,
+          "gt_character": "Z",
+          "gt_codepoint": "U+005A"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 0.0018726591760299626,
+          "gt_character": "a",
+          "gt_codepoint": "U+0061"
+        },
+        {
+          "count": 2,
+          "fraction_of_output": 0.003745318352059925,
+          "gt_character": "r",
+          "gt_codepoint": "U+0072"
+        },
+        {
+          "count": 2,
+          "fraction_of_output": 0.003745318352059925,
+          "gt_character": "t",
+          "gt_codepoint": "U+0074"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 0.0018726591760299626,
+          "gt_character": "x",
+          "gt_codepoint": "U+0078"
+        },
+        {
+          "count": 504,
+          "fraction_of_output": 0.9438202247191011,
+          "gt_character": "z",
+          "gt_codepoint": "U+007A"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 0.0018726591760299626,
+          "gt_character": "ē",
+          "gt_codepoint": "U+0113"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 0.0018726591760299626,
+          "gt_character": "Ξ",
+          "gt_codepoint": "U+039E"
+        },
+        {
+          "count": 3,
+          "fraction_of_output": 0.0056179775280898875,
+          "gt_character": "ṭ",
+          "gt_codepoint": "U+1E6D"
+        }
+      ],
+      "output_character": "z",
+      "output_codepoint": "U+007A",
+      "output_count": 534,
+      "output_insertion_count": 4,
+      "output_insertion_fraction_of_output": 0.00749063670411985,
+      "unresolved_count": 3,
+      "unresolved_fraction_of_output": 0.0056179775280898875
+    },
+    "|": {
+      "exact_count": 0,
+      "exact_fraction_of_output": 0.0,
+      "gt_candidates": [
+        {
+          "count": 1,
+          "fraction_of_output": 1.0,
+          "gt_character": "ā",
+          "gt_codepoint": "U+0101"
+        }
+      ],
+      "output_character": "|",
+      "output_codepoint": "U+007C",
+      "output_count": 1,
+      "output_insertion_count": 0,
+      "output_insertion_fraction_of_output": 0.0,
+      "unresolved_count": 0,
+      "unresolved_fraction_of_output": 0.0
+    },
+    "©": {
+      "exact_count": 1,
+      "exact_fraction_of_output": 0.5,
+      "gt_candidates": [
+        {
+          "count": 1,
+          "fraction_of_output": 0.5,
+          "gt_character": "©",
+          "gt_codepoint": "U+00A9"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 0.5,
+          "gt_character": "Ê",
+          "gt_codepoint": "U+00CA"
+        }
+      ],
+      "output_character": "©",
+      "output_codepoint": "U+00A9",
+      "output_count": 2,
+      "output_insertion_count": 0,
+      "output_insertion_fraction_of_output": 0.0,
+      "unresolved_count": 0,
+      "unresolved_fraction_of_output": 0.0
+    },
+    "«": {
+      "exact_count": 4,
+      "exact_fraction_of_output": 1.0,
+      "gt_candidates": [
+        {
+          "count": 4,
+          "fraction_of_output": 1.0,
+          "gt_character": "«",
+          "gt_codepoint": "U+00AB"
+        }
+      ],
+      "output_character": "«",
+      "output_codepoint": "U+00AB",
+      "output_count": 4,
+      "output_insertion_count": 0,
+      "output_insertion_fraction_of_output": 0.0,
+      "unresolved_count": 0,
+      "unresolved_fraction_of_output": 0.0
+    },
+    "»": {
+      "exact_count": 4,
+      "exact_fraction_of_output": 1.0,
+      "gt_candidates": [
+        {
+          "count": 4,
+          "fraction_of_output": 1.0,
+          "gt_character": "»",
+          "gt_codepoint": "U+00BB"
+        }
+      ],
+      "output_character": "»",
+      "output_codepoint": "U+00BB",
+      "output_count": 4,
+      "output_insertion_count": 0,
+      "output_insertion_fraction_of_output": 0.0,
+      "unresolved_count": 0,
+      "unresolved_fraction_of_output": 0.0
+    },
+    "Á": {
+      "exact_count": 19,
+      "exact_fraction_of_output": 1.0,
+      "gt_candidates": [
+        {
+          "count": 19,
+          "fraction_of_output": 1.0,
+          "gt_character": "Á",
+          "gt_codepoint": "U+00C1"
+        }
+      ],
+      "output_character": "Á",
+      "output_codepoint": "U+00C1",
+      "output_count": 19,
+      "output_insertion_count": 0,
+      "output_insertion_fraction_of_output": 0.0,
+      "unresolved_count": 0,
+      "unresolved_fraction_of_output": 0.0
+    },
+    "Ó": {
+      "exact_count": 4,
+      "exact_fraction_of_output": 1.0,
+      "gt_candidates": [
+        {
+          "count": 4,
+          "fraction_of_output": 1.0,
+          "gt_character": "Ó",
+          "gt_codepoint": "U+00D3"
+        }
+      ],
+      "output_character": "Ó",
+      "output_codepoint": "U+00D3",
+      "output_count": 4,
+      "output_insertion_count": 0,
+      "output_insertion_fraction_of_output": 0.0,
+      "unresolved_count": 0,
+      "unresolved_fraction_of_output": 0.0
+    },
+    "Ö": {
+      "exact_count": 3,
+      "exact_fraction_of_output": 1.0,
+      "gt_candidates": [
+        {
+          "count": 3,
+          "fraction_of_output": 1.0,
+          "gt_character": "Ö",
+          "gt_codepoint": "U+00D6"
+        }
+      ],
+      "output_character": "Ö",
+      "output_codepoint": "U+00D6",
+      "output_count": 3,
+      "output_insertion_count": 0,
+      "output_insertion_fraction_of_output": 0.0,
+      "unresolved_count": 0,
+      "unresolved_fraction_of_output": 0.0
+    },
+    "à": {
+      "exact_count": 25,
+      "exact_fraction_of_output": 1.0,
+      "gt_candidates": [
+        {
+          "count": 25,
+          "fraction_of_output": 1.0,
+          "gt_character": "à",
+          "gt_codepoint": "U+00E0"
+        }
+      ],
+      "output_character": "à",
+      "output_codepoint": "U+00E0",
+      "output_count": 25,
+      "output_insertion_count": 0,
+      "output_insertion_fraction_of_output": 0.0,
+      "unresolved_count": 0,
+      "unresolved_fraction_of_output": 0.0
+    },
+    "á": {
+      "exact_count": 274,
+      "exact_fraction_of_output": 0.5995623632385121,
+      "gt_candidates": [
+        {
+          "count": 2,
+          "fraction_of_output": 0.00437636761487965,
+          "gt_character": "a",
+          "gt_codepoint": "U+0061"
+        },
+        {
+          "count": 4,
+          "fraction_of_output": 0.0087527352297593,
+          "gt_character": "Á",
+          "gt_codepoint": "U+00C1"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 0.002188183807439825,
+          "gt_character": "Ä",
+          "gt_codepoint": "U+00C4"
+        },
+        {
+          "count": 3,
+          "fraction_of_output": 0.006564551422319475,
+          "gt_character": "Å",
+          "gt_codepoint": "U+00C5"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 0.002188183807439825,
+          "gt_character": "Ó",
+          "gt_codepoint": "U+00D3"
+        },
+        {
+          "count": 80,
+          "fraction_of_output": 0.175054704595186,
+          "gt_character": "à",
+          "gt_codepoint": "U+00E0"
+        },
+        {
+          "count": 274,
+          "fraction_of_output": 0.5995623632385121,
+          "gt_character": "á",
+          "gt_codepoint": "U+00E1"
+        },
+        {
+          "count": 19,
+          "fraction_of_output": 0.04157549234135667,
+          "gt_character": "â",
+          "gt_codepoint": "U+00E2"
+        },
+        {
+          "count": 21,
+          "fraction_of_output": 0.045951859956236324,
+          "gt_character": "ä",
+          "gt_codepoint": "U+00E4"
+        },
+        {
+          "count": 3,
+          "fraction_of_output": 0.006564551422319475,
+          "gt_character": "è",
+          "gt_codepoint": "U+00E8"
+        },
+        {
+          "count": 4,
+          "fraction_of_output": 0.0087527352297593,
+          "gt_character": "é",
+          "gt_codepoint": "U+00E9"
+        },
+        {
+          "count": 5,
+          "fraction_of_output": 0.010940919037199124,
+          "gt_character": "ê",
+          "gt_codepoint": "U+00EA"
+        },
+        {
+          "count": 6,
+          "fraction_of_output": 0.01312910284463895,
+          "gt_character": "í",
+          "gt_codepoint": "U+00ED"
+        },
+        {
+          "count": 6,
+          "fraction_of_output": 0.01312910284463895,
+          "gt_character": "ó",
+          "gt_codepoint": "U+00F3"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 0.002188183807439825,
+          "gt_character": "ö",
+          "gt_codepoint": "U+00F6"
+        },
+        {
+          "count": 9,
+          "fraction_of_output": 0.019693654266958426,
+          "gt_character": "ú",
+          "gt_codepoint": "U+00FA"
+        },
+        {
+          "count": 2,
+          "fraction_of_output": 0.00437636761487965,
+          "gt_character": "û",
+          "gt_codepoint": "U+00FB"
+        },
+        {
+          "count": 7,
+          "fraction_of_output": 0.015317286652078774,
+          "gt_character": "ā",
+          "gt_codepoint": "U+0101"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 0.002188183807439825,
+          "gt_character": "ē",
+          "gt_codepoint": "U+0113"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 0.002188183807439825,
+          "gt_character": "Ĝ",
+          "gt_codepoint": "U+011C"
+        }
+      ],
+      "output_character": "á",
+      "output_codepoint": "U+00E1",
+      "output_count": 457,
+      "output_insertion_count": 1,
+      "output_insertion_fraction_of_output": 0.002188183807439825,
+      "unresolved_count": 6,
+      "unresolved_fraction_of_output": 0.01312910284463895
+    },
+    "è": {
+      "exact_count": 101,
+      "exact_fraction_of_output": 0.9528301886792453,
+      "gt_candidates": [
+        {
+          "count": 101,
+          "fraction_of_output": 0.9528301886792453,
+          "gt_character": "è",
+          "gt_codepoint": "U+00E8"
+        },
+        {
+          "count": 3,
+          "fraction_of_output": 0.02830188679245283,
+          "gt_character": "é",
+          "gt_codepoint": "U+00E9"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 0.009433962264150943,
+          "gt_character": "ê",
+          "gt_codepoint": "U+00EA"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 0.009433962264150943,
+          "gt_character": "ú",
+          "gt_codepoint": "U+00FA"
+        }
+      ],
+      "output_character": "è",
+      "output_codepoint": "U+00E8",
+      "output_count": 106,
+      "output_insertion_count": 0,
+      "output_insertion_fraction_of_output": 0.0,
+      "unresolved_count": 0,
+      "unresolved_fraction_of_output": 0.0
+    },
+    "é": {
+      "exact_count": 166,
+      "exact_fraction_of_output": 0.7477477477477478,
+      "gt_candidates": [
+        {
+          "count": 1,
+          "fraction_of_output": 0.0045045045045045045,
+          "gt_character": "d",
+          "gt_codepoint": "U+0064"
+        },
+        {
+          "count": 2,
+          "fraction_of_output": 0.009009009009009009,
+          "gt_character": "i",
+          "gt_codepoint": "U+0069"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 0.0045045045045045045,
+          "gt_character": "à",
+          "gt_codepoint": "U+00E0"
+        },
+        {
+          "count": 3,
+          "fraction_of_output": 0.013513513513513514,
+          "gt_character": "á",
+          "gt_codepoint": "U+00E1"
+        },
+        {
+          "count": 4,
+          "fraction_of_output": 0.018018018018018018,
+          "gt_character": "ä",
+          "gt_codepoint": "U+00E4"
+        },
+        {
+          "count": 15,
+          "fraction_of_output": 0.06756756756756757,
+          "gt_character": "è",
+          "gt_codepoint": "U+00E8"
+        },
+        {
+          "count": 166,
+          "fraction_of_output": 0.7477477477477478,
+          "gt_character": "é",
+          "gt_codepoint": "U+00E9"
+        },
+        {
+          "count": 6,
+          "fraction_of_output": 0.02702702702702703,
+          "gt_character": "ê",
+          "gt_codepoint": "U+00EA"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 0.0045045045045045045,
+          "gt_character": "í",
+          "gt_codepoint": "U+00ED"
+        },
+        {
+          "count": 2,
+          "fraction_of_output": 0.009009009009009009,
+          "gt_character": "ó",
+          "gt_codepoint": "U+00F3"
+        },
+        {
+          "count": 2,
+          "fraction_of_output": 0.009009009009009009,
+          "gt_character": "ú",
+          "gt_codepoint": "U+00FA"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 0.0045045045045045045,
+          "gt_character": "û",
+          "gt_codepoint": "U+00FB"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 0.0045045045045045045,
+          "gt_character": "ā",
+          "gt_codepoint": "U+0101"
+        },
+        {
+          "count": 6,
+          "fraction_of_output": 0.02702702702702703,
+          "gt_character": "ē",
+          "gt_codepoint": "U+0113"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 0.0045045045045045045,
+          "gt_character": "ī",
+          "gt_codepoint": "U+012B"
+        },
+        {
+          "count": 2,
+          "fraction_of_output": 0.009009009009009009,
+          "gt_character": "ő",
+          "gt_codepoint": "U+0151"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 0.0045045045045045045,
+          "gt_character": "‘",
+          "gt_codepoint": "U+2018"
+        }
+      ],
+      "output_character": "é",
+      "output_codepoint": "U+00E9",
+      "output_count": 222,
+      "output_insertion_count": 2,
+      "output_insertion_fraction_of_output": 0.009009009009009009,
+      "unresolved_count": 5,
+      "unresolved_fraction_of_output": 0.02252252252252252
+    },
+    "í": {
+      "exact_count": 52,
+      "exact_fraction_of_output": 0.9454545454545454,
+      "gt_candidates": [
+        {
+          "count": 1,
+          "fraction_of_output": 0.01818181818181818,
+          "gt_character": "i",
+          "gt_codepoint": "U+0069"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 0.01818181818181818,
+          "gt_character": "Í",
+          "gt_codepoint": "U+00CD"
+        },
+        {
+          "count": 52,
+          "fraction_of_output": 0.9454545454545454,
+          "gt_character": "í",
+          "gt_codepoint": "U+00ED"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 0.01818181818181818,
+          "gt_character": "ī",
+          "gt_codepoint": "U+012B"
+        }
+      ],
+      "output_character": "í",
+      "output_codepoint": "U+00ED",
+      "output_count": 55,
+      "output_insertion_count": 0,
+      "output_insertion_fraction_of_output": 0.0,
+      "unresolved_count": 0,
+      "unresolved_fraction_of_output": 0.0
+    },
+    "ö": {
+      "exact_count": 45,
+      "exact_fraction_of_output": 0.8035714285714286,
+      "gt_candidates": [
+        {
+          "count": 1,
+          "fraction_of_output": 0.017857142857142856,
+          "gt_character": "b",
+          "gt_codepoint": "U+0062"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 0.017857142857142856,
+          "gt_character": "Ó",
+          "gt_codepoint": "U+00D3"
+        },
+        {
+          "count": 4,
+          "fraction_of_output": 0.07142857142857142,
+          "gt_character": "Ö",
+          "gt_codepoint": "U+00D6"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 0.017857142857142856,
+          "gt_character": "ê",
+          "gt_codepoint": "U+00EA"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 0.017857142857142856,
+          "gt_character": "ô",
+          "gt_codepoint": "U+00F4"
+        },
+        {
+          "count": 45,
+          "fraction_of_output": 0.8035714285714286,
+          "gt_character": "ö",
+          "gt_codepoint": "U+00F6"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 0.017857142857142856,
+          "gt_character": "ō",
+          "gt_codepoint": "U+014D"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 0.017857142857142856,
+          "gt_character": "Ǧ",
+          "gt_codepoint": "U+01E6"
+        }
+      ],
+      "output_character": "ö",
+      "output_codepoint": "U+00F6",
+      "output_count": 56,
+      "output_insertion_count": 0,
+      "output_insertion_fraction_of_output": 0.0,
+      "unresolved_count": 1,
+      "unresolved_fraction_of_output": 0.017857142857142856
+    },
+    "ú": {
+      "exact_count": 248,
+      "exact_fraction_of_output": 0.6739130434782609,
+      "gt_candidates": [
+        {
+          "count": 1,
+          "fraction_of_output": 0.002717391304347826,
+          "gt_character": "a",
+          "gt_codepoint": "U+0061"
+        },
+        {
+          "count": 2,
+          "fraction_of_output": 0.005434782608695652,
+          "gt_character": "u",
+          "gt_codepoint": "U+0075"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 0.002717391304347826,
+          "gt_character": "à",
+          "gt_codepoint": "U+00E0"
+        },
+        {
+          "count": 2,
+          "fraction_of_output": 0.005434782608695652,
+          "gt_character": "á",
+          "gt_codepoint": "U+00E1"
+        },
+        {
+          "count": 85,
+          "fraction_of_output": 0.23097826086956522,
+          "gt_character": "ù",
+          "gt_codepoint": "U+00F9"
+        },
+        {
+          "count": 248,
+          "fraction_of_output": 0.6739130434782609,
+          "gt_character": "ú",
+          "gt_codepoint": "U+00FA"
+        },
+        {
+          "count": 17,
+          "fraction_of_output": 0.04619565217391304,
+          "gt_character": "û",
+          "gt_codepoint": "U+00FB"
+        },
+        {
+          "count": 7,
+          "fraction_of_output": 0.019021739130434784,
+          "gt_character": "ü",
+          "gt_codepoint": "U+00FC"
+        }
+      ],
+      "output_character": "ú",
+      "output_codepoint": "U+00FA",
+      "output_count": 368,
+      "output_insertion_count": 0,
+      "output_insertion_fraction_of_output": 0.0,
+      "unresolved_count": 5,
+      "unresolved_fraction_of_output": 0.01358695652173913
+    },
+    "û": {
+      "exact_count": 60,
+      "exact_fraction_of_output": 0.6896551724137931,
+      "gt_candidates": [
+        {
+          "count": 8,
+          "fraction_of_output": 0.09195402298850575,
+          "gt_character": "ù",
+          "gt_codepoint": "U+00F9"
+        },
+        {
+          "count": 7,
+          "fraction_of_output": 0.08045977011494253,
+          "gt_character": "ú",
+          "gt_codepoint": "U+00FA"
+        },
+        {
+          "count": 60,
+          "fraction_of_output": 0.6896551724137931,
+          "gt_character": "û",
+          "gt_codepoint": "U+00FB"
+        },
+        {
+          "count": 3,
+          "fraction_of_output": 0.034482758620689655,
+          "gt_character": "ü",
+          "gt_codepoint": "U+00FC"
+        }
+      ],
+      "output_character": "û",
+      "output_codepoint": "U+00FB",
+      "output_count": 87,
+      "output_insertion_count": 0,
+      "output_insertion_fraction_of_output": 0.0,
+      "unresolved_count": 9,
+      "unresolved_fraction_of_output": 0.10344827586206896
+    },
+    "ā": {
+      "exact_count": 98,
+      "exact_fraction_of_output": 0.7903225806451613,
+      "gt_candidates": [
+        {
+          "count": 1,
+          "fraction_of_output": 0.008064516129032258,
+          "gt_character": "à",
+          "gt_codepoint": "U+00E0"
+        },
+        {
+          "count": 2,
+          "fraction_of_output": 0.016129032258064516,
+          "gt_character": "â",
+          "gt_codepoint": "U+00E2"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 0.008064516129032258,
+          "gt_character": "ä",
+          "gt_codepoint": "U+00E4"
+        },
+        {
+          "count": 8,
+          "fraction_of_output": 0.06451612903225806,
+          "gt_character": "û",
+          "gt_codepoint": "U+00FB"
+        },
+        {
+          "count": 98,
+          "fraction_of_output": 0.7903225806451613,
+          "gt_character": "ā",
+          "gt_codepoint": "U+0101"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 0.008064516129032258,
+          "gt_character": "ē",
+          "gt_codepoint": "U+0113"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 0.008064516129032258,
+          "gt_character": "ī",
+          "gt_codepoint": "U+012B"
+        },
+        {
+          "count": 12,
+          "fraction_of_output": 0.0967741935483871,
+          "gt_character": "ū",
+          "gt_codepoint": "U+016B"
+        }
+      ],
+      "output_character": "ā",
+      "output_codepoint": "U+0101",
+      "output_count": 124,
+      "output_insertion_count": 0,
+      "output_insertion_fraction_of_output": 0.0,
+      "unresolved_count": 0,
+      "unresolved_fraction_of_output": 0.0
+    },
+    "ē": {
+      "exact_count": 15,
+      "exact_fraction_of_output": 0.8823529411764706,
+      "gt_candidates": [
+        {
+          "count": 1,
+          "fraction_of_output": 0.058823529411764705,
+          "gt_character": "e",
+          "gt_codepoint": "U+0065"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 0.058823529411764705,
+          "gt_character": "è",
+          "gt_codepoint": "U+00E8"
+        },
+        {
+          "count": 15,
+          "fraction_of_output": 0.8823529411764706,
+          "gt_character": "ē",
+          "gt_codepoint": "U+0113"
+        }
+      ],
+      "output_character": "ē",
+      "output_codepoint": "U+0113",
+      "output_count": 17,
+      "output_insertion_count": 0,
+      "output_insertion_fraction_of_output": 0.0,
+      "unresolved_count": 0,
+      "unresolved_fraction_of_output": 0.0
+    },
+    "ĝ": {
+      "exact_count": 60,
+      "exact_fraction_of_output": 0.6818181818181818,
+      "gt_candidates": [
+        {
+          "count": 10,
+          "fraction_of_output": 0.11363636363636363,
+          "gt_character": "5",
+          "gt_codepoint": "U+0035"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 0.011363636363636364,
+          "gt_character": "É",
+          "gt_codepoint": "U+00C9"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 0.011363636363636364,
+          "gt_character": "á",
+          "gt_codepoint": "U+00E1"
+        },
+        {
+          "count": 60,
+          "fraction_of_output": 0.6818181818181818,
+          "gt_character": "ĝ",
+          "gt_codepoint": "U+011D"
+        }
+      ],
+      "output_character": "ĝ",
+      "output_codepoint": "U+011D",
+      "output_count": 88,
+      "output_insertion_count": 0,
+      "output_insertion_fraction_of_output": 0.0,
+      "unresolved_count": 16,
+      "unresolved_fraction_of_output": 0.18181818181818182
+    },
+    "ī": {
+      "exact_count": 89,
+      "exact_fraction_of_output": 0.5114942528735632,
+      "gt_candidates": [
+        {
+          "count": 39,
+          "fraction_of_output": 0.22413793103448276,
+          "gt_character": "i",
+          "gt_codepoint": "U+0069"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 0.005747126436781609,
+          "gt_character": "ä",
+          "gt_codepoint": "U+00E4"
+        },
+        {
+          "count": 5,
+          "fraction_of_output": 0.028735632183908046,
+          "gt_character": "ì",
+          "gt_codepoint": "U+00EC"
+        },
+        {
+          "count": 14,
+          "fraction_of_output": 0.08045977011494253,
+          "gt_character": "í",
+          "gt_codepoint": "U+00ED"
+        },
+        {
+          "count": 4,
+          "fraction_of_output": 0.022988505747126436,
+          "gt_character": "î",
+          "gt_codepoint": "U+00EE"
+        },
+        {
+          "count": 2,
+          "fraction_of_output": 0.011494252873563218,
+          "gt_character": "ù",
+          "gt_codepoint": "U+00F9"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 0.005747126436781609,
+          "gt_character": "û",
+          "gt_codepoint": "U+00FB"
+        },
+        {
+          "count": 6,
+          "fraction_of_output": 0.034482758620689655,
+          "gt_character": "ü",
+          "gt_codepoint": "U+00FC"
+        },
+        {
+          "count": 89,
+          "fraction_of_output": 0.5114942528735632,
+          "gt_character": "ī",
+          "gt_codepoint": "U+012B"
+        },
+        {
+          "count": 3,
+          "fraction_of_output": 0.017241379310344827,
+          "gt_character": "ū",
+          "gt_codepoint": "U+016B"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 0.005747126436781609,
+          "gt_character": "‹",
+          "gt_codepoint": "U+2039"
+        }
+      ],
+      "output_character": "ī",
+      "output_codepoint": "U+012B",
+      "output_count": 174,
+      "output_insertion_count": 1,
+      "output_insertion_fraction_of_output": 0.005747126436781609,
+      "unresolved_count": 8,
+      "unresolved_fraction_of_output": 0.04597701149425287
+    },
+    "Š": {
+      "exact_count": 119,
+      "exact_fraction_of_output": 0.7345679012345679,
+      "gt_candidates": [
+        {
+          "count": 2,
+          "fraction_of_output": 0.012345679012345678,
+          "gt_character": "S",
+          "gt_codepoint": "U+0053"
+        },
+        {
+          "count": 26,
+          "fraction_of_output": 0.16049382716049382,
+          "gt_character": "§",
+          "gt_codepoint": "U+00A7"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 0.006172839506172839,
+          "gt_character": "è",
+          "gt_codepoint": "U+00E8"
+        },
+        {
+          "count": 2,
+          "fraction_of_output": 0.012345679012345678,
+          "gt_character": "ù",
+          "gt_codepoint": "U+00F9"
+        },
+        {
+          "count": 119,
+          "fraction_of_output": 0.7345679012345679,
+          "gt_character": "Š",
+          "gt_codepoint": "U+0160"
+        },
+        {
+          "count": 3,
+          "fraction_of_output": 0.018518518518518517,
+          "gt_character": "š",
+          "gt_codepoint": "U+0161"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 0.006172839506172839,
+          "gt_character": "Ξ",
+          "gt_codepoint": "U+039E"
+        },
+        {
+          "count": 2,
+          "fraction_of_output": 0.012345679012345678,
+          "gt_character": "Σ",
+          "gt_codepoint": "U+03A3"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 0.006172839506172839,
+          "gt_character": "Ḫ",
+          "gt_codepoint": "U+1E2A"
+        },
+        {
+          "count": 3,
+          "fraction_of_output": 0.018518518518518517,
+          "gt_character": "Ṣ",
+          "gt_codepoint": "U+1E62"
+        }
+      ],
+      "output_character": "Š",
+      "output_codepoint": "U+0160",
+      "output_count": 162,
+      "output_insertion_count": 0,
+      "output_insertion_fraction_of_output": 0.0,
+      "unresolved_count": 2,
+      "unresolved_fraction_of_output": 0.012345679012345678
+    },
+    "š": {
+      "exact_count": 1514,
+      "exact_fraction_of_output": 0.9087635054021609,
+      "gt_candidates": [
+        {
+          "count": 2,
+          "fraction_of_output": 0.0012004801920768306,
+          "gt_character": "*",
+          "gt_codepoint": "U+002A"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 0.0006002400960384153,
+          "gt_character": "-",
+          "gt_codepoint": "U+002D"
+        },
+        {
+          "count": 3,
+          "fraction_of_output": 0.001800720288115246,
+          "gt_character": "3",
+          "gt_codepoint": "U+0033"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 0.0006002400960384153,
+          "gt_character": "5",
+          "gt_codepoint": "U+0035"
+        },
+        {
+          "count": 2,
+          "fraction_of_output": 0.0012004801920768306,
+          "gt_character": "8",
+          "gt_codepoint": "U+0038"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 0.0006002400960384153,
+          "gt_character": "b",
+          "gt_codepoint": "U+0062"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 0.0006002400960384153,
+          "gt_character": "d",
+          "gt_codepoint": "U+0064"
+        },
+        {
+          "count": 4,
+          "fraction_of_output": 0.0024009603841536613,
+          "gt_character": "i",
+          "gt_codepoint": "U+0069"
+        },
+        {
+          "count": 2,
+          "fraction_of_output": 0.0012004801920768306,
+          "gt_character": "l",
+          "gt_codepoint": "U+006C"
+        },
+        {
+          "count": 5,
+          "fraction_of_output": 0.003001200480192077,
+          "gt_character": "s",
+          "gt_codepoint": "U+0073"
+        },
+        {
+          "count": 2,
+          "fraction_of_output": 0.0012004801920768306,
+          "gt_character": "x",
+          "gt_codepoint": "U+0078"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 0.0006002400960384153,
+          "gt_character": "Ì",
+          "gt_codepoint": "U+00CC"
+        },
+        {
+          "count": 2,
+          "fraction_of_output": 0.0012004801920768306,
+          "gt_character": "á",
+          "gt_codepoint": "U+00E1"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 0.0006002400960384153,
+          "gt_character": "ä",
+          "gt_codepoint": "U+00E4"
+        },
+        {
+          "count": 11,
+          "fraction_of_output": 0.006602641056422569,
+          "gt_character": "è",
+          "gt_codepoint": "U+00E8"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 0.0006002400960384153,
+          "gt_character": "é",
+          "gt_codepoint": "U+00E9"
+        },
+        {
+          "count": 25,
+          "fraction_of_output": 0.015006002400960384,
+          "gt_character": "ì",
+          "gt_codepoint": "U+00EC"
+        },
+        {
+          "count": 4,
+          "fraction_of_output": 0.0024009603841536613,
+          "gt_character": "í",
+          "gt_codepoint": "U+00ED"
+        },
+        {
+          "count": 4,
+          "fraction_of_output": 0.0024009603841536613,
+          "gt_character": "î",
+          "gt_codepoint": "U+00EE"
+        },
+        {
+          "count": 8,
+          "fraction_of_output": 0.004801920768307323,
+          "gt_character": "ù",
+          "gt_codepoint": "U+00F9"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 0.0006002400960384153,
+          "gt_character": "ú",
+          "gt_codepoint": "U+00FA"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 0.0006002400960384153,
+          "gt_character": "ÿ",
+          "gt_codepoint": "U+00FF"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 0.0006002400960384153,
+          "gt_character": "ā",
+          "gt_codepoint": "U+0101"
+        },
+        {
+          "count": 2,
+          "fraction_of_output": 0.0012004801920768306,
+          "gt_character": "ē",
+          "gt_codepoint": "U+0113"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 0.0006002400960384153,
+          "gt_character": "ğ",
+          "gt_codepoint": "U+011F"
+        },
+        {
+          "count": 5,
+          "fraction_of_output": 0.003001200480192077,
+          "gt_character": "ī",
+          "gt_codepoint": "U+012B"
+        },
+        {
+          "count": 2,
+          "fraction_of_output": 0.0012004801920768306,
+          "gt_character": "ś",
+          "gt_codepoint": "U+015B"
+        },
+        {
+          "count": 27,
+          "fraction_of_output": 0.016206482593037214,
+          "gt_character": "Š",
+          "gt_codepoint": "U+0160"
+        },
+        {
+          "count": 1514,
+          "fraction_of_output": 0.9087635054021609,
+          "gt_character": "š",
+          "gt_codepoint": "U+0161"
+        },
+        {
+          "count": 2,
+          "fraction_of_output": 0.0012004801920768306,
+          "gt_character": "Σ",
+          "gt_codepoint": "U+03A3"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 0.0006002400960384153,
+          "gt_character": "ḫ",
+          "gt_codepoint": "U+1E2B"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 0.0006002400960384153,
+          "gt_character": "“",
+          "gt_codepoint": "U+201C"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 0.0006002400960384153,
+          "gt_character": "⸢",
+          "gt_codepoint": "U+2E22"
+        }
+      ],
+      "output_character": "š",
+      "output_codepoint": "U+0161",
+      "output_count": 1666,
+      "output_insertion_count": 5,
+      "output_insertion_fraction_of_output": 0.003001200480192077,
+      "unresolved_count": 21,
+      "unresolved_fraction_of_output": 0.012605042016806723
+    },
+    "ū": {
+      "exact_count": 57,
+      "exact_fraction_of_output": 0.95,
+      "gt_candidates": [
+        {
+          "count": 2,
+          "fraction_of_output": 0.03333333333333333,
+          "gt_character": "ù",
+          "gt_codepoint": "U+00F9"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 0.016666666666666666,
+          "gt_character": "ü",
+          "gt_codepoint": "U+00FC"
+        },
+        {
+          "count": 57,
+          "fraction_of_output": 0.95,
+          "gt_character": "ū",
+          "gt_codepoint": "U+016B"
+        }
+      ],
+      "output_character": "ū",
+      "output_codepoint": "U+016B",
+      "output_count": 60,
+      "output_insertion_count": 0,
+      "output_insertion_fraction_of_output": 0.0,
+      "unresolved_count": 0,
+      "unresolved_fraction_of_output": 0.0
+    },
+    "Ḫ": {
+      "exact_count": 5,
+      "exact_fraction_of_output": 1.0,
+      "gt_candidates": [
+        {
+          "count": 5,
+          "fraction_of_output": 1.0,
+          "gt_character": "Ḫ",
+          "gt_codepoint": "U+1E2A"
+        }
+      ],
+      "output_character": "Ḫ",
+      "output_codepoint": "U+1E2A",
+      "output_count": 5,
+      "output_insertion_count": 0,
+      "output_insertion_fraction_of_output": 0.0,
+      "unresolved_count": 0,
+      "unresolved_fraction_of_output": 0.0
+    },
+    "ḫ": {
+      "exact_count": 354,
+      "exact_fraction_of_output": 0.921875,
+      "gt_candidates": [
+        {
+          "count": 1,
+          "fraction_of_output": 0.0026041666666666665,
+          "gt_character": " ",
+          "gt_codepoint": "U+0020"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 0.0026041666666666665,
+          "gt_character": "J",
+          "gt_codepoint": "U+004A"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 0.0026041666666666665,
+          "gt_character": "h",
+          "gt_codepoint": "U+0068"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 0.0026041666666666665,
+          "gt_character": "l",
+          "gt_codepoint": "U+006C"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 0.0026041666666666665,
+          "gt_character": "n",
+          "gt_codepoint": "U+006E"
+        },
+        {
+          "count": 16,
+          "fraction_of_output": 0.041666666666666664,
+          "gt_character": "ù",
+          "gt_codepoint": "U+00F9"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 0.0026041666666666665,
+          "gt_character": "û",
+          "gt_codepoint": "U+00FB"
+        },
+        {
+          "count": 354,
+          "fraction_of_output": 0.921875,
+          "gt_character": "ḫ",
+          "gt_codepoint": "U+1E2B"
+        }
+      ],
+      "output_character": "ḫ",
+      "output_codepoint": "U+1E2B",
+      "output_count": 384,
+      "output_insertion_count": 2,
+      "output_insertion_fraction_of_output": 0.005208333333333333,
+      "unresolved_count": 6,
+      "unresolved_fraction_of_output": 0.015625
+    },
+    "ṣ": {
+      "exact_count": 88,
+      "exact_fraction_of_output": 0.946236559139785,
+      "gt_candidates": [
+        {
+          "count": 1,
+          "fraction_of_output": 0.010752688172043012,
+          "gt_character": "8",
+          "gt_codepoint": "U+0038"
+        },
+        {
+          "count": 3,
+          "fraction_of_output": 0.03225806451612903,
+          "gt_character": "s",
+          "gt_codepoint": "U+0073"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 0.010752688172043012,
+          "gt_character": "ḫ",
+          "gt_codepoint": "U+1E2B"
+        },
+        {
+          "count": 88,
+          "fraction_of_output": 0.946236559139785,
+          "gt_character": "ṣ",
+          "gt_codepoint": "U+1E63"
+        }
+      ],
+      "output_character": "ṣ",
+      "output_codepoint": "U+1E63",
+      "output_count": 93,
+      "output_insertion_count": 0,
+      "output_insertion_fraction_of_output": 0.0,
+      "unresolved_count": 0,
+      "unresolved_fraction_of_output": 0.0
+    },
+    "ṭ": {
+      "exact_count": 34,
+      "exact_fraction_of_output": 0.3695652173913043,
+      "gt_candidates": [
+        {
+          "count": 1,
+          "fraction_of_output": 0.010869565217391304,
+          "gt_character": " ",
+          "gt_codepoint": "U+0020"
+        },
+        {
+          "count": 5,
+          "fraction_of_output": 0.05434782608695652,
+          "gt_character": "i",
+          "gt_codepoint": "U+0069"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 0.010869565217391304,
+          "gt_character": "t",
+          "gt_codepoint": "U+0074"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 0.010869565217391304,
+          "gt_character": "Ì",
+          "gt_codepoint": "U+00CC"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 0.010869565217391304,
+          "gt_character": "Í",
+          "gt_codepoint": "U+00CD"
+        },
+        {
+          "count": 2,
+          "fraction_of_output": 0.021739130434782608,
+          "gt_character": "ì",
+          "gt_codepoint": "U+00EC"
+        },
+        {
+          "count": 42,
+          "fraction_of_output": 0.45652173913043476,
+          "gt_character": "í",
+          "gt_codepoint": "U+00ED"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 0.010869565217391304,
+          "gt_character": "ú",
+          "gt_codepoint": "U+00FA"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 0.010869565217391304,
+          "gt_character": "ī",
+          "gt_codepoint": "U+012B"
+        },
+        {
+          "count": 34,
+          "fraction_of_output": 0.3695652173913043,
+          "gt_character": "ṭ",
+          "gt_codepoint": "U+1E6D"
+        }
+      ],
+      "output_character": "ṭ",
+      "output_codepoint": "U+1E6D",
+      "output_count": 92,
+      "output_insertion_count": 1,
+      "output_insertion_fraction_of_output": 0.010869565217391304,
+      "unresolved_count": 2,
+      "unresolved_fraction_of_output": 0.021739130434782608
+    },
+    "–": {
+      "exact_count": 421,
+      "exact_fraction_of_output": 0.9355555555555556,
+      "gt_candidates": [
+        {
+          "count": 18,
+          "fraction_of_output": 0.04,
+          "gt_character": "-",
+          "gt_codepoint": "U+002D"
+        },
+        {
+          "count": 421,
+          "fraction_of_output": 0.9355555555555556,
+          "gt_character": "–",
+          "gt_codepoint": "U+2013"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 0.0022222222222222222,
+          "gt_character": "—",
+          "gt_codepoint": "U+2014"
+        }
+      ],
+      "output_character": "–",
+      "output_codepoint": "U+2013",
+      "output_count": 450,
+      "output_insertion_count": 7,
+      "output_insertion_fraction_of_output": 0.015555555555555555,
+      "unresolved_count": 3,
+      "unresolved_fraction_of_output": 0.006666666666666667
+    },
+    "—": {
+      "exact_count": 41,
+      "exact_fraction_of_output": 0.8723404255319149,
+      "gt_candidates": [
+        {
+          "count": 1,
+          "fraction_of_output": 0.02127659574468085,
+          "gt_character": "-",
+          "gt_codepoint": "U+002D"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 0.02127659574468085,
+          "gt_character": "Ü",
+          "gt_codepoint": "U+00DC"
+        },
+        {
+          "count": 3,
+          "fraction_of_output": 0.06382978723404255,
+          "gt_character": "ù",
+          "gt_codepoint": "U+00F9"
+        },
+        {
+          "count": 41,
+          "fraction_of_output": 0.8723404255319149,
+          "gt_character": "—",
+          "gt_codepoint": "U+2014"
+        }
+      ],
+      "output_character": "—",
+      "output_codepoint": "U+2014",
+      "output_count": 47,
+      "output_insertion_count": 1,
+      "output_insertion_fraction_of_output": 0.02127659574468085,
+      "unresolved_count": 0,
+      "unresolved_fraction_of_output": 0.0
+    },
+    "‘": {
+      "exact_count": 96,
+      "exact_fraction_of_output": 0.8888888888888888,
+      "gt_candidates": [
+        {
+          "count": 1,
+          "fraction_of_output": 0.009259259259259259,
+          "gt_character": "'",
+          "gt_codepoint": "U+0027"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 0.009259259259259259,
+          "gt_character": "i",
+          "gt_codepoint": "U+0069"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 0.009259259259259259,
+          "gt_character": "u",
+          "gt_codepoint": "U+0075"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 0.009259259259259259,
+          "gt_character": "ē",
+          "gt_codepoint": "U+0113"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 0.009259259259259259,
+          "gt_character": "ʿ",
+          "gt_codepoint": "U+02BF"
+        },
+        {
+          "count": 96,
+          "fraction_of_output": 0.8888888888888888,
+          "gt_character": "‘",
+          "gt_codepoint": "U+2018"
+        }
+      ],
+      "output_character": "‘",
+      "output_codepoint": "U+2018",
+      "output_count": 108,
+      "output_insertion_count": 5,
+      "output_insertion_fraction_of_output": 0.046296296296296294,
+      "unresolved_count": 2,
+      "unresolved_fraction_of_output": 0.018518518518518517
+    },
+    "’": {
+      "exact_count": 352,
+      "exact_fraction_of_output": 0.9166666666666666,
+      "gt_candidates": [
+        {
+          "count": 2,
+          "fraction_of_output": 0.005208333333333333,
+          "gt_character": " ",
+          "gt_codepoint": "U+0020"
+        },
+        {
+          "count": 5,
+          "fraction_of_output": 0.013020833333333334,
+          "gt_character": "'",
+          "gt_codepoint": "U+0027"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 0.0026041666666666665,
+          "gt_character": "ù",
+          "gt_codepoint": "U+00F9"
+        },
+        {
+          "count": 352,
+          "fraction_of_output": 0.9166666666666666,
+          "gt_character": "’",
+          "gt_codepoint": "U+2019"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 0.0026041666666666665,
+          "gt_character": "”",
+          "gt_codepoint": "U+201D"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 0.0026041666666666665,
+          "gt_character": "⸢",
+          "gt_codepoint": "U+2E22"
+        }
+      ],
+      "output_character": "’",
+      "output_codepoint": "U+2019",
+      "output_count": 384,
+      "output_insertion_count": 14,
+      "output_insertion_fraction_of_output": 0.036458333333333336,
+      "unresolved_count": 8,
+      "unresolved_fraction_of_output": 0.020833333333333332
+    },
+    "“": {
+      "exact_count": 277,
+      "exact_fraction_of_output": 0.8343373493975904,
+      "gt_candidates": [
+        {
+          "count": 1,
+          "fraction_of_output": 0.0030120481927710845,
+          "gt_character": "\"",
+          "gt_codepoint": "U+0022"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 0.0030120481927710845,
+          "gt_character": "-",
+          "gt_codepoint": "U+002D"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 0.0030120481927710845,
+          "gt_character": "f",
+          "gt_codepoint": "U+0066"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 0.0030120481927710845,
+          "gt_character": "z",
+          "gt_codepoint": "U+007A"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 0.0030120481927710845,
+          "gt_character": "û",
+          "gt_codepoint": "U+00FB"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 0.0030120481927710845,
+          "gt_character": "ē",
+          "gt_codepoint": "U+0113"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 0.0030120481927710845,
+          "gt_character": "š",
+          "gt_codepoint": "U+0161"
+        },
+        {
+          "count": 2,
+          "fraction_of_output": 0.006024096385542169,
+          "gt_character": "ʿ",
+          "gt_codepoint": "U+02BF"
+        },
+        {
+          "count": 16,
+          "fraction_of_output": 0.04819277108433735,
+          "gt_character": "‘",
+          "gt_codepoint": "U+2018"
+        },
+        {
+          "count": 277,
+          "fraction_of_output": 0.8343373493975904,
+          "gt_character": "“",
+          "gt_codepoint": "U+201C"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 0.0030120481927710845,
+          "gt_character": "”",
+          "gt_codepoint": "U+201D"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 0.0030120481927710845,
+          "gt_character": "•",
+          "gt_codepoint": "U+2022"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 0.0030120481927710845,
+          "gt_character": "↔",
+          "gt_codepoint": "U+2194"
+        }
+      ],
+      "output_character": "“",
+      "output_codepoint": "U+201C",
+      "output_count": 332,
+      "output_insertion_count": 7,
+      "output_insertion_fraction_of_output": 0.02108433734939759,
+      "unresolved_count": 20,
+      "unresolved_fraction_of_output": 0.060240963855421686
+    },
+    "”": {
+      "exact_count": 258,
+      "exact_fraction_of_output": 0.8543046357615894,
+      "gt_candidates": [
+        {
+          "count": 1,
+          "fraction_of_output": 0.0033112582781456954,
+          "gt_character": "\"",
+          "gt_codepoint": "U+0022"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 0.0033112582781456954,
+          "gt_character": "*",
+          "gt_codepoint": "U+002A"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 0.0033112582781456954,
+          "gt_character": "7",
+          "gt_codepoint": "U+0037"
+        },
+        {
+          "count": 9,
+          "fraction_of_output": 0.029801324503311258,
+          "gt_character": "Ö",
+          "gt_codepoint": "U+00D6"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 0.0033112582781456954,
+          "gt_character": "ú",
+          "gt_codepoint": "U+00FA"
+        },
+        {
+          "count": 11,
+          "fraction_of_output": 0.03642384105960265,
+          "gt_character": "’",
+          "gt_codepoint": "U+2019"
+        },
+        {
+          "count": 258,
+          "fraction_of_output": 0.8543046357615894,
+          "gt_character": "”",
+          "gt_codepoint": "U+201D"
+        }
+      ],
+      "output_character": "”",
+      "output_codepoint": "U+201D",
+      "output_count": 302,
+      "output_insertion_count": 2,
+      "output_insertion_fraction_of_output": 0.006622516556291391,
+      "unresolved_count": 18,
+      "unresolved_fraction_of_output": 0.059602649006622516
+    },
+    "•": {
+      "exact_count": 55,
+      "exact_fraction_of_output": 1.0,
+      "gt_candidates": [
+        {
+          "count": 55,
+          "fraction_of_output": 1.0,
+          "gt_character": "•",
+          "gt_codepoint": "U+2022"
+        }
+      ],
+      "output_character": "•",
+      "output_codepoint": "U+2022",
+      "output_count": 55,
+      "output_insertion_count": 0,
+      "output_insertion_fraction_of_output": 0.0,
+      "unresolved_count": 0,
+      "unresolved_fraction_of_output": 0.0
+    },
+    "…": {
+      "exact_count": 0,
+      "exact_fraction_of_output": 0.0,
+      "gt_candidates": [
+        {
+          "count": 1,
+          "fraction_of_output": 1.0,
+          "gt_character": ".",
+          "gt_codepoint": "U+002E"
+        }
+      ],
+      "output_character": "…",
+      "output_codepoint": "U+2026",
+      "output_count": 1,
+      "output_insertion_count": 0,
+      "output_insertion_fraction_of_output": 0.0,
+      "unresolved_count": 0,
+      "unresolved_fraction_of_output": 0.0
+    },
+    "⸢": {
+      "exact_count": 111,
+      "exact_fraction_of_output": 0.925,
+      "gt_candidates": [
+        {
+          "count": 1,
+          "fraction_of_output": 0.008333333333333333,
+          "gt_character": "I",
+          "gt_codepoint": "U+0049"
+        },
+        {
+          "count": 4,
+          "fraction_of_output": 0.03333333333333333,
+          "gt_character": "f",
+          "gt_codepoint": "U+0066"
+        },
+        {
+          "count": 2,
+          "fraction_of_output": 0.016666666666666666,
+          "gt_character": "Γ",
+          "gt_codepoint": "U+0393"
+        },
+        {
+          "count": 111,
+          "fraction_of_output": 0.925,
+          "gt_character": "⸢",
+          "gt_codepoint": "U+2E22"
+        }
+      ],
+      "output_character": "⸢",
+      "output_codepoint": "U+2E22",
+      "output_count": 120,
+      "output_insertion_count": 0,
+      "output_insertion_fraction_of_output": 0.0,
+      "unresolved_count": 2,
+      "unresolved_fraction_of_output": 0.016666666666666666
+    },
+    "⸣": {
+      "exact_count": 97,
+      "exact_fraction_of_output": 0.9065420560747663,
+      "gt_candidates": [
+        {
+          "count": 4,
+          "fraction_of_output": 0.037383177570093455,
+          "gt_character": "1",
+          "gt_codepoint": "U+0031"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 0.009345794392523364,
+          "gt_character": "7",
+          "gt_codepoint": "U+0037"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 0.009345794392523364,
+          "gt_character": "l",
+          "gt_codepoint": "U+006C"
+        },
+        {
+          "count": 3,
+          "fraction_of_output": 0.028037383177570093,
+          "gt_character": "ì",
+          "gt_codepoint": "U+00EC"
+        },
+        {
+          "count": 1,
+          "fraction_of_output": 0.009345794392523364,
+          "gt_character": "ń",
+          "gt_codepoint": "U+0144"
+        },
+        {
+          "count": 97,
+          "fraction_of_output": 0.9065420560747663,
+          "gt_character": "⸣",
+          "gt_codepoint": "U+2E23"
+        }
+      ],
+      "output_character": "⸣",
+      "output_codepoint": "U+2E23",
+      "output_count": 107,
+      "output_insertion_count": 0,
+      "output_insertion_fraction_of_output": 0.0,
+      "unresolved_count": 0,
+      "unresolved_fraction_of_output": 0.0
+    }
+  },
+  "schema_version": 1,
+  "totals": {
+    "distinct_output_codepoints": 122,
+    "output_codepoint_count": 276370
+  },
+  "unit": {
+    "input_normalization": "NFC",
+    "kind": "unicode_code_point",
+    "note": "NFC may retain combining code points; this is not a grapheme-cluster schema."
+  }
+}

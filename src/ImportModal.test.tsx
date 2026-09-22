@@ -45,19 +45,19 @@ describe("ImportModal validation", () => {
     await act(async () => root.render(<ImportModal pdfPath="book.pdf" pdf={source} onCancel={vi.fn()} onConfirm={vi.fn()}/>));
     await vi.waitFor(() => expect(mocks.processCanvas).toHaveBeenCalled());
     const baseline = mocks.processCanvas.mock.calls.length;
-    await changeInput(input("開始ページ"), "3");
+    await changeInput(input("Start page"), "3");
     await vi.waitFor(() => expect(mocks.processCanvas.mock.calls.length).toBeGreaterThan(baseline));
     const afterValidRange = mocks.processCanvas.mock.calls.length;
-    await changeInput(input("終了ページ"), "2");
-    expect(container.textContent).toContain("開始・終了ページ");
+    await changeInput(input("End page"), "2");
+    expect(container.textContent).toContain("Start and end pages");
     expect(mocks.processCanvas).toHaveBeenCalledTimes(afterValidRange);
-    await changeInput(input("終了ページ"), "3");
+    await changeInput(input("End page"), "3");
     await vi.waitFor(() => expect(mocks.processCanvas.mock.calls.length).toBeGreaterThan(baseline));
   });
 
   it("accepts a raw DPI while typing and blocks invalid DPI", async () => {
     await act(async () => root.render(<ImportModal pdfPath="book.pdf" pdf={pdf()} onCancel={vi.fn()} onConfirm={vi.fn()}/>));
-    const mode = container.querySelector<HTMLSelectElement>("select[aria-label=読み込み方法]")!;
+    const mode = container.querySelector<HTMLSelectElement>('select[aria-label="Import method"]')!;
     await act(async () => { mode.value = "render"; mode.dispatchEvent(new Event("change", { bubbles: true })); });
     await changeInput(input("DPI"), "2");
     expect(input("DPI").value).toBe("2");
@@ -67,18 +67,18 @@ describe("ImportModal validation", () => {
   it("renders two labelled transformed previews for both sides", async () => {
     mocks.processCanvas.mockReturnValue({ pages: canvases(2) });
     await act(async () => root.render(<ImportModal pdfPath="book.pdf" pdf={pdf()} onCancel={vi.fn()} onConfirm={vi.fn()}/>));
-    const split = container.querySelector<HTMLInputElement>("input[aria-label=見開きを左右に分割]")!;
+    const split = container.querySelector<HTMLInputElement>('input[aria-label="Split spread into left and right"]')!;
     await act(async () => split.click());
-    await vi.waitFor(() => expect(container.textContent).toContain("左"));
-    expect(container.textContent).toContain("右");
+    await vi.waitFor(() => expect(container.textContent).toContain("Left"));
+    expect(container.textContent).toContain("Right");
     expect(container.querySelectorAll(".preview-canvases canvas")).toHaveLength(2);
   });
   it("mirrors outer and inner exclusion overlays across split previews", async () => {
     mocks.processCanvas.mockReturnValue({ pages: canvases(2) });
     await act(async () => root.render(<ImportModal pdfPath="book.pdf" pdf={pdf()} onCancel={vi.fn()} onConfirm={vi.fn()}/>));
-    await act(async () => container.querySelector<HTMLInputElement>("input[aria-label=見開きを左右に分割]")!.click());
-    await changeInput(input("小口"), "12");
-    await changeInput(input("ノド"), "7");
+    await act(async () => container.querySelector<HTMLInputElement>('input[aria-label="Split spread into left and right"]')!.click());
+    await changeInput(input("Outer"), "12");
+    await changeInput(input("Inner"), "7");
     await vi.waitFor(() => expect(container.querySelectorAll(".preview-canvases figure")).toHaveLength(2));
     const [left, right] = Array.from(container.querySelectorAll<HTMLElement>(".preview-canvases figure"));
     expect(left.querySelector<HTMLElement>(".margin-left")!.style.width).toBe("12%");
@@ -89,7 +89,7 @@ describe("ImportModal validation", () => {
 
   it("keeps the modal mounted and disables save for invalid active margins", async () => {
     await act(async () => root.render(<ImportModal pdfPath="book.pdf" pdf={pdf()} onCancel={vi.fn()} onConfirm={vi.fn()}/>));
-    await changeInput(input("天"), "100");
+    await changeInput(input("Top"), "100");
     expect(container.querySelector('[role="dialog"]')).toBeTruthy();
     expect(container.querySelector<HTMLButtonElement>(".modal-actions .primary")!.disabled).toBe(true);
   });
@@ -98,7 +98,7 @@ describe("ImportModal validation", () => {
     await act(async () => root.render(<ImportModal pdfPath="book.pdf" pdf={pdf()} onCancel={vi.fn()} onConfirm={vi.fn()}/>));
     const dpi = input("DPI");
     expect(dpi.disabled).toBe(true);
-    const mode = container.querySelector<HTMLSelectElement>("select[aria-label=読み込み方法]")!;
+    const mode = container.querySelector<HTMLSelectElement>('select[aria-label="Import method"]')!;
     await act(async () => { mode.value = "render"; mode.dispatchEvent(new Event("change", { bubbles: true })); });
     expect(dpi.disabled).toBe(false);
     await changeInput(dpi, "2");
@@ -111,9 +111,9 @@ describe("ImportModal validation", () => {
   it("shows per-page extraction dimensions and fallback reason", async () => {
     mocks.loadPageImage.mockResolvedValueOnce({ canvas: Object.assign(document.createElement("canvas"), { width: 2480, height: 3504 }), modeUsed: "extract", dpiX: 299.8, dpiY: 299.7, sourceWidth: 2480, sourceHeight: 3504 }).mockResolvedValueOnce({ canvas: Object.assign(document.createElement("canvas"), { width: 1200, height: 1600 }), modeUsed: "render", dpiX: 300, dpiY: 300, reason: "複雑なクリッピング" });
     await act(async () => root.render(<ImportModal pdfPath="book.pdf" pdf={pdf(2)} onCancel={vi.fn()} onConfirm={vi.fn()}/>));
-    await vi.waitFor(() => expect(container.textContent).toContain("元画像 2480×3504px"));
+    await vi.waitFor(() => expect(container.textContent).toContain("Original image 2480×3504 px"));
     const next = container.querySelectorAll<HTMLButtonElement>(".preview-nav button")[1];
     await act(async () => next.click());
-    await vi.waitFor(() => expect(container.textContent).toContain("画像化 300 DPI: 複雑なクリッピング"));
+    await vi.waitFor(() => expect(container.textContent).toContain("Rendered at 300 DPI: 複雑なクリッピング"));
   });
 });

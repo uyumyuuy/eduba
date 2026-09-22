@@ -1,4 +1,5 @@
 import { OPS, type PDFPageProxy } from "pdfjs-dist";
+import { t } from "./i18n";
 
 export type ImportMode = "extract" | "render";
 export type PageImageResult = {
@@ -59,7 +60,7 @@ const orthogonal = (m: M) =>
   (Math.abs(m[2]) < 0.0001 || Math.abs(m[3]) < 0.0001);
 function canvas(w: number, h: number) {
   if (!finite(w) || !finite(h) || w * h > MAX_PIXELS)
-    throw new Error("画像サイズが大きすぎます");
+    throw new Error(t("errors.imageTooLarge", { pixels: MAX_PIXELS }));
   const c = document.createElement("canvas");
   c.width = Math.ceil(w);
   c.height = Math.ceil(h);
@@ -73,7 +74,7 @@ async function fallback(
   const v = page.getViewport({ scale: dpi / 72 }),
     c = canvas(v.width, v.height),
     x = c.getContext("2d");
-  if (!x) throw new Error("描画用キャンバスを作成できません");
+  if (!x) throw new Error(t("errors.canvasContext"));
   await page.render({ canvasContext: x, viewport: v }).promise;
   return { canvas: c, modeUsed: "render", dpiX: dpi, dpiY: dpi, reason };
 }
@@ -218,7 +219,7 @@ export async function loadPageImage(
 ): Promise<PageImageResult> {
   if (mode === "render") {
     if (!Number.isInteger(dpi) || dpi < 72 || dpi > 600)
-      throw new Error("描画 DPI は 72 から 600 の整数にしてください");
+      throw new Error(t("errors.renderDpi"));
     return fallback(page, dpi, "");
   }
   const fallbackDpi = EXTRACT_FALLBACK_DPI;
@@ -240,14 +241,14 @@ export async function loadPageImage(
     }
     if (op === OPS.restore) {
       const s = stack.pop();
-      if (!s) return fallback(page, fallbackDpi, "PDF の状態を解析できません");
+      if (!s) return fallback(page, fallbackDpi, t("errors.pdfState"));
       m = s.m;
       clip = s.clip;
       continue;
     }
     if (op === OPS.transform) {
       if (!(args as number[]).every(Number.isFinite))
-        return fallback(page, fallbackDpi, "画像変換を解析できません");
+        return fallback(page, fallbackDpi, t("errors.imageTransform"));
       m = mul(m, args as M);
       continue;
     }
@@ -261,14 +262,14 @@ export async function loadPageImage(
         return fallback(
           page,
           fallbackDpi,
-          "矩形以外のクリッピングには対応していません",
+          t("errors.unsupportedClip"),
         );
       pending = r;
       continue;
     }
     if (op === OPS.clip || op === OPS.eoClip) {
       if (!pending)
-        return fallback(page, fallbackDpi, "クリッピング領域を解析できません");
+        return fallback(page, fallbackDpi, t("errors.pdfState"));
       const cm = mul(
         vm,
         mul(m, [
@@ -284,7 +285,7 @@ export async function loadPageImage(
         return fallback(
           page,
           fallbackDpi,
-          "回転したクリッピングには対応していません",
+          t("errors.clippedRotation"),
         );
       const b = bounds(cm);
       clip = clip
@@ -309,7 +310,7 @@ export async function loadPageImage(
         return fallback(
           page,
           fallbackDpi,
-          "埋め込み画像を安全に復元できないため描画します",
+          t("errors.imageRestore"),
         );
       const imageBounds = hit(bounds(im), pageBox);
       const visible =
@@ -318,13 +319,13 @@ export async function loadPageImage(
         return fallback(
           page,
           fallbackDpi,
-          "ページを十分に覆う画像が見つかりません",
+          t("errors.pageCoverage"),
         );
       if (candidate)
         return fallback(
           page,
           fallbackDpi,
-          "複数の可視画像があるため描画します",
+          t("errors.multipleImages"),
         );
       candidate = { image, m, clip };
       continue;
@@ -345,23 +346,23 @@ export async function loadPageImage(
       return fallback(
         page,
         fallbackDpi,
-        "画像以外の可視要素があるため描画します",
+        t("errors.visibleElements"),
       );
     return fallback(
       page,
       fallbackDpi,
-      "未対応の PDF 描画命令があるため描画します",
+      t("errors.unsupportedOperator"),
     );
   }
   if (!candidate)
-    return fallback(page, fallbackDpi, "埋め込み画像が見つかりません");
+    return fallback(page, fallbackDpi, t("errors.noEmbeddedImage"));
   const im = mul(vm, candidate.m),
     w = candidate.image.width!,
     h = candidate.image.height!,
     xAxis = length(im[0], im[1]),
     yAxis = length(im[2], im[3]);
   if (!finite(xAxis) || !finite(yAxis))
-    return fallback(page, fallbackDpi, "画像解像度を解析できません");
+    return fallback(page, fallbackDpi, t("errors.imageResolution"));
   let sx: number, sy: number;
   if (Math.abs(im[0]) >= Math.abs(im[1])) {
     sx = w / xAxis;
@@ -371,15 +372,15 @@ export async function loadPageImage(
     sy = w / xAxis;
   }
   if (!finite(sx) || !finite(sy))
-    return fallback(page, fallbackDpi, "画像解像度を解析できません");
+    return fallback(page, fallbackDpi, t("errors.imageResolution"));
   let out: HTMLCanvasElement;
   try {
     out = canvas(view.width * sx, view.height * sy);
   } catch {
-    return fallback(page, fallbackDpi, "抽出画像が大きすぎるため描画します");
+    return fallback(page, fallbackDpi, t("errors.extractedTooLarge"));
   }
   const ctx = out.getContext("2d");
-  if (!ctx) throw new Error("抽出用キャンバスを作成できません");
+  if (!ctx) throw new Error(t("errors.extractionCanvas"));
   ctx.fillStyle = "#fff";
   ctx.fillRect(0, 0, out.width, out.height);
   ctx.imageSmoothingEnabled = false;

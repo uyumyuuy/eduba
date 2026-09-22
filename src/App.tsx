@@ -1,4 +1,6 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
+import { applyLanguage, t as globalT, type LocalePreference } from "./i18n";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import {
@@ -27,14 +29,20 @@ import {
   exportHocr,
   exportSvg,
   exportText,
+  formattedSegments,
   parseHocr,
   processCanvas,
   updateLineText,
+  updateLineFormatting,
+  type TextFormatKind,
   type DocumentPage,
   type LogicalPageProvenance,
 } from "./domain";
 import type { PDFDocumentProxy } from "pdfjs-dist";
 import { ImportModal } from "./ImportModal";
+import { BulkReplaceDialog, type BulkMatch, type BulkReplaceRequest } from "./BulkReplaceDialog";
+import { prepareBulkUpdates } from "./bulkApply";
+import { candidatesForSelection } from "./correctionCandidates";
 import { importEntries, type ImportConfig } from "./importConfig";
 import { loadPageImage, type ImportMode } from "./pageImage";
 import {
@@ -58,6 +66,9 @@ type Entry = LogicalPageProvenance & {
 };
 type Settings = { modelPath: string; psm: 3 | 6 | 11; dpi: number };
 type Manifest = { version: 1; pages: Entry[]; settings: Settings };
+type HistoryChange = { pageId: string; beforeData: string; afterData: string };
+type LineEditSession = { id: number; pageId: string; lineId: string; beforeData: string };
+type HistoryOperation = { changes: HistoryChange[]; targetPageId: string; lineEditSessionId?: number };
 type RenderedEntry = { canvas: HTMLCanvasElement; modeUsed: ImportMode; dpiX: number; dpiY: number; reason?: string; sourceWidth?: number; sourceHeight?: number; };
 const defaultSettings: Settings = { modelPath: "", psm: 3, dpi: 300 };
 const errorText = (error: unknown) =>
@@ -97,9 +108,9 @@ function parseManifest(raw: string | null): Manifest {
   try {
     const data = JSON.parse(raw) as Partial<Manifest>;
     if (data.version !== undefined && data.version !== 1)
-      throw new Error("unsupported project version");
+      throw new Error(globalT("appErrors.unsupportedVersion"));
     if (!data?.pages?.length)
-      throw new Error("プロジェクトのページ情報がありません");
+      throw new Error(globalT("appErrors.missingPages"));
     return {
       version: 1,
       settings: { ...defaultSettings, ...data.settings },
@@ -145,12 +156,44 @@ function parseManifest(raw: string | null): Manifest {
     };
   } catch {
     throw new Error(
-      "プロジェクトのページ情報を読み取れません。保存ファイルは変更していません。",
+      globalT("appErrors.invalidManifest"),
     );
   }
 }
 
-export default function App() {
+type LineOverlayProps = { value:string; left:number; top:number; width:number; height:number; fontSize:number; onChange:(value:string)=>void; onFinish:()=>void; onUndo:()=>void; onRedo:()=>void; onFormat:(start:number,end:number,kind:TextFormatKind)=>void; onOpenBulk:(selection:string,start:number,end:number)=>void; };
+function LineOverlay({value,left,top,width,height,fontSize:naturalFontSize,onChange,onFinish,onUndo,onRedo,onFormat,onOpenBulk}:LineOverlayProps) {
+ const { t } = useTranslation(); const inputRef=useRef<HTMLTextAreaElement>(null); const [selection,setSelection]=useState({start:0,end:0}); const [ctrl,setCtrl]=useState(false);
+ const selected=value.slice(selection.start,selection.end); const candidates=selected?candidatesForSelection(selected):[];
+ useLayoutEffect(()=>{const input=inputRef.current;if(!input)return;input.style.fontSize=`${naturalFontSize}px`;const ratio=Math.min(1,Math.max(1,input.clientWidth-4)/Math.max(1,input.scrollWidth-4),Math.max(1,input.clientHeight-2)/Math.max(1,input.scrollHeight-2));input.style.fontSize=`${Math.max(1,naturalFontSize*(ratio<1?ratio*.98:1))}px`;},[height,naturalFontSize,value,width]);
+ useEffect(()=>{const up=(event:KeyboardEvent)=>{if(event.key==='Control'||!event.ctrlKey)setCtrl(false)};const blur=()=>setCtrl(false);document.addEventListener('keyup',up);window.addEventListener('blur',blur);return()=>{document.removeEventListener('keyup',up);window.removeEventListener('blur',blur)}},[]);
+ const capture=()=>{const input=inputRef.current;if(input)setSelection({start:input.selectionStart,end:input.selectionEnd})};
+ const format=(kind:TextFormatKind)=>{if(selection.start<selection.end)onFormat(selection.start,selection.end,kind)};
+ const replace=(text:string)=>{onChange(value.slice(0,selection.start)+text+value.slice(selection.end));setSelection({start:selection.start,end:selection.start+text.length})};
+ return <><textarea ref={inputRef} autoFocus wrap="off" className="line-overlay" value={value} onChange={event=>onChange(event.currentTarget.value)} onSelect={capture} onKeyDown={event=>{setCtrl(event.ctrlKey);const key=event.key.toLowerCase();if(event.ctrlKey&&!event.nativeEvent.isComposing&&(key==='z'||key==='y')){event.preventDefault();if(key==='y'||event.shiftKey)onRedo();else onUndo();return}if(event.key==='Escape'||(event.key==='Enter'&&!event.nativeEvent.isComposing&&event.keyCode!==229)){event.preventDefault();onFinish();return}if(event.ctrlKey&&selection.start<selection.end){const kind=key==='b'?'bold':key==='i'?'italic':event.key==='ArrowUp'?'superscript':event.key==='ArrowDown'?'subscript':null;if(kind){event.preventDefault();format(kind)}else if(/^[1-9]$/.test(key)&&candidates[Number(key)-1]){event.preventDefault();replace(candidates[Number(key)-1])}else if(key==='g'){event.preventDefault();onOpenBulk(selected,selection.start,selection.end)}}}} onKeyUp={event=>setCtrl(event.ctrlKey)} onBlur={onFinish} style={{left,top,width,height,fontSize:naturalFontSize}} />
+ {selected&&<div className="selection-toolbar" style={{left,top:Math.max(0,top-34)}} onMouseDown={event=>event.preventDefault()} role="toolbar" aria-label="Selected text tools"><button onClick={()=>format('bold')} aria-label={t("toolbar.bold")}>{ctrl?'Ctrl+B':t('toolbar.bold')}</button><button onClick={()=>format('italic')} aria-label={t("toolbar.italic")}>{ctrl?'Ctrl+I':t('toolbar.italic')}</button><button onClick={()=>format('superscript')} aria-label={t("toolbar.superscript")}>{ctrl?'Ctrl+↑':t('toolbar.superscript')}</button><button onClick={()=>format('subscript')} aria-label={t("toolbar.subscript")}>{ctrl?'Ctrl+↓':t('toolbar.subscript')}</button><button onClick={()=>onOpenBulk(selected,selection.start,selection.end)} aria-label={t("toolbar.bulkReplace")}>{ctrl?"Ctrl+G":t("toolbar.bulkReplace") }</button>{candidates.map((candidate,index)=><button key={candidate} onClick={()=>replace(candidate)} aria-label={candidate}>{candidate}{ctrl && index < 9 ? ` (Ctrl+${index+1})` : ""}</button>)}</div>}</>;
+}
+export default function App({ initialLanguage = "auto", initialOsLocale = null }: { initialLanguage?: LocalePreference; initialOsLocale?: string | null } = {}) {
+  const { t } = useTranslation();
+  const [language, setLanguage] = useState<LocalePreference>(initialLanguage);
+  const [languageSaving, setLanguageSaving] = useState(false);
+  const osLocale = useRef<string | null>(initialOsLocale);
+  const changeLanguage = useCallback(async (preference: LocalePreference) => {
+    setLanguageSaving(true);
+    try {
+      if (isTauri) await invokeCommand("save_user_preferences", { language: preference });
+      const resolved = await applyLanguage(preference, osLocale.current);
+      document.documentElement.lang = resolved;
+      setLanguage(preference);
+      setStartupWarning(null);
+      if (isTauri) {
+        try { await invokeCommand("set_ui_language", { language: resolved }); }
+        catch (error) { setNotice("notices.menuFailed", { error: errorText(error) }); }
+      }
+    } catch (error) {
+      setNotice("notices.languageSaveFailed", { error: errorText(error) });
+    } finally { setLanguageSaving(false); }
+  }, []);
   const [project, setProject] = useState<ProjectInfo | null>(null);
   const [manifest, setManifest] = useState<Manifest>(makeManifest);
   const [index, setIndex] = useState(0);
@@ -159,18 +202,19 @@ export default function App() {
   const [canvasSize, setCanvasSize] = useState({ width: 0, height: 0 });
   const [selected, setSelected] = useState<string | null>(null);
   const [editing, setEditing] = useState<string | null>(null);
-  const [undoStack, setUndoStack] = useState<DocumentPage[]>([]);
-  const [redoStack, setRedoStack] = useState<DocumentPage[]>([]);
+  const [undoStack, setUndoStack] = useState<HistoryOperation[]>([]);
+  const [redoStack, setRedoStack] = useState<HistoryOperation[]>([]);
   const [zoom, setZoom] = useState(0.42);
   const [busy, setBusy] = useState<"open" | "save" | "ocr" | null>(null);
   const [progress, setProgress] = useState<{
     done: number;
     total: number;
   } | null>(null);
-  const [notice, setNotice] = useState(
-    "PDF を読み込み、OCR 結果を校正します。",
-  );
+  const [notice, updateNotice] = useState<{ key: string; values?: Record<string, string | number> }>({ key: "notice.welcome" });
+  const [startupWarning, setStartupWarning] = useState<{ key: string; values: { error: string } } | null>(null);
+  const setNotice = useCallback((key: string, values?: Record<string, string | number>) => updateNotice({ key, values }), []);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [bulkReplace, setBulkReplace] = useState<{ search: string } | null>(null);
   const [importSource, setImportSource] = useState<{
     path: string;
     pdf: PDFDocumentProxy;
@@ -195,7 +239,12 @@ export default function App() {
     importActive = useRef(false),
     importCreatingRef = useRef(false),
     importSession = useRef(0),
-    sourcePdfRef = useRef<PDFDocumentProxy | null>(null);
+    sourcePdfRef = useRef<PDFDocumentProxy | null>(null),
+    bulkSnippetCanvases = useRef(new Map<string, Promise<HTMLCanvasElement | null>>()),
+    lineEditSession = useRef<LineEditSession | null>(null),
+    nextLineEditSession = useRef(0),
+    finishLineEditRef = useRef<(lineId?: string) => void>(() => undefined),
+    historyApplying = useRef(false);
   const current = manifest.pages[index] ?? null;
   const putProject = useCallback((value: ProjectInfo | null) => {
     projectRef.current = value;
@@ -243,8 +292,8 @@ export default function App() {
       setBusy("save");
       flush()
         .then(
-          () => setNotice("保存済み"),
-          (e) => setNotice(`保存に失敗しました: ${errorText(e)}`),
+          () => setNotice("notices.saved"),
+          (e) => setNotice("notices.saveFailed", { error: errorText(e) }),
         )
         .finally(() => {
           if (!working.current) setBusy(null);
@@ -258,6 +307,7 @@ export default function App() {
       token: number,
       sourcePdf = pdf,
       destination?: HTMLCanvasElement,
+      respectOcrCancellation = true,
     ): Promise<RenderedEntry | undefined> => {
       if (!sourcePdf) return;
       const source = await sourcePdf.getPage(entry.sourcePage);
@@ -265,7 +315,11 @@ export default function App() {
       const requestedMode = entry.resolvedImportMode ?? entry.importMode ?? "render";
       const loaded = await loadPageImage(source, requestedMode, requestedDpi);
       if (entry.resolvedImportMode === "extract" && loaded.modeUsed !== "extract") {
-        throw new Error(`PDF の抽出画像を利用できません: ${loaded.reason ?? "抽出に失敗しました"}`);
+        throw new Error(
+          globalT("appErrors.extractFailed", {
+            reason: loaded.reason ?? globalT("appErrors.extractReason"),
+          }),
+        );
       }
       const result = processCanvas(loaded.canvas, {
         sourcePage: entry.sourcePage,
@@ -277,13 +331,13 @@ export default function App() {
       });
       if (
         (!destination && (token !== loading.current || !canvasRef.current)) ||
-        (destination && cancelled.current)
+        (destination && respectOcrCancellation && cancelled.current)
       )
         return;
       const image = result.pages[0]?.canvas;
-      if (!image) throw new Error("処理済みページを作成できません");
+      if (!image) throw new Error(globalT("appErrors.processedPage"));
       if (entry.resolvedImportMode && entry.width && entry.height && (entry.width !== image.width || entry.height !== image.height)) {
-        throw new Error("保存済み OCR 座標と画像解像度が一致しません");
+        throw new Error(globalT("appErrors.coordinateMismatch"));
       }
       const target = destination ?? canvasRef.current!;
       target.width = image.width;
@@ -300,8 +354,6 @@ export default function App() {
     putDoc(null);
     setSelected(null);
     setEditing(null);
-    setUndoStack([]);
-    setRedoStack([]);
     setCanvasSize({ width: 0, height: 0 });
     invokeCommand("load_page", {
       projectPath: project.path,
@@ -314,7 +366,7 @@ export default function App() {
       .catch(
         (e) =>
           token === documentLoading.current &&
-          setNotice(`ページを読み込めません: ${errorText(e)}`),
+          setNotice("notices.pageLoadFailed", { error: errorText(e) }),
       );
   }, [project, index, current?.id, putDoc]);
   useEffect(() => {
@@ -323,7 +375,7 @@ export default function App() {
     renderEntry(current, token).catch(
       (e) =>
         token === loading.current &&
-        setNotice(`PDF を描画できません: ${errorText(e)}`),
+        setNotice("notices.pdfRenderFailed", { error: errorText(e) }),
     );
     // Transform changes redraw only the processed image; they do not discard a loaded document or its undo stack.
   }, [
@@ -348,7 +400,7 @@ export default function App() {
       try {
         existing = parseManifest(info.manifest);
       } catch (e) {
-        setNotice(errorText(e));
+        setNotice("notices.genericError", { error: errorText(e) });
         setBusy(null);
         working.current = false;
         return;
@@ -361,6 +413,11 @@ export default function App() {
         setPdf(null);
         if (oldPdf) await oldPdf.destroy();
         putProject(info);
+        bulkSnippetCanvases.current.clear();
+        lineEditSession.current = null;
+        setEditing(null);
+        setUndoStack([]);
+        setRedoStack([]);
         putManifest(existing);
         putIndex(0);
         putDoc(null);
@@ -374,9 +431,9 @@ export default function App() {
             manifest: JSON.stringify(next),
           });
         }
-        setNotice(`${info.name} を開きました。`);
+        setNotice("notices.opened", { name: info.name });
       } catch (e) {
-        setNotice(`PDF を読み込めません: ${errorText(e)}`);
+        setNotice("notices.pdfLoadFailed", { error: errorText(e) });
       } finally {
         setBusy(null);
         working.current = false;
@@ -419,7 +476,7 @@ export default function App() {
       if (source) await source.destroy().catch(() => undefined);
       if (session === importSession.current) {
         importActive.current = false;
-        setNotice(`PDF を確認できません: ${errorText(e)}`);
+        setNotice("notices.pdfInspectFailed", { error: errorText(e) });
       }
     }
   }, [flush]);
@@ -454,7 +511,7 @@ export default function App() {
         await source.destroy();
         await openInfo(info);
       } catch (e) {
-        setNotice(`インポートできません: ${errorText(e)}`);
+        setNotice("notices.importFailed", { error: errorText(e) });
       } finally {
         importCreatingRef.current = false;
         setImportCreating(false);
@@ -475,73 +532,141 @@ export default function App() {
           await invokeCommand("open_project", { projectPath: path }),
         );
     } catch (e) {
-      setNotice(`プロジェクトを開けません: ${errorText(e)}`);
+      setNotice("notices.projectOpenFailed", { error: errorText(e) });
     }
   }, [flush, openInfo]);
+  const finishLineEdit = useCallback((lineId?: string) => {
+    const session = lineEditSession.current;
+    if (!session || (lineId && session.lineId !== lineId)) return;
+    lineEditSession.current = null;
+    setUndoStack((old) => {
+      let start = old.length;
+      while (start > 0 && old[start - 1].lineEditSessionId === session.id) start -= 1;
+      const stable = old.slice(0, start);
+      const afterData = JSON.stringify(docRef.current);
+      if (session.beforeData === afterData) return stable.slice(-100);
+      return [...stable.slice(-99), {
+        targetPageId: session.pageId,
+        changes: [{ pageId: session.pageId, beforeData: session.beforeData, afterData }],
+      }];
+    });
+    setRedoStack((old) => old.filter((operation) => operation.lineEditSessionId !== session.id));
+    setEditing((current) => current === session.lineId ? null : current);
+  }, []);
+  finishLineEditRef.current = finishLineEdit;
+  const beginLineEdit = useCallback((lineId: string) => {
+    finishLineEditRef.current();
+    const pageId = manifestRef.current.pages[indexRef.current]?.id;
+    if (!pageId) return;
+    const before = docRef.current;
+    if (!before) return;
+    lineEditSession.current = { id: ++nextLineEditSession.current, pageId, lineId, beforeData: JSON.stringify(before) };
+    setSelected(lineId);
+    setEditing(lineId);
+  }, []);
+  const commitLineEdit = useCallback((lineId: string, update: (before: DocumentPage) => DocumentPage) => {
+    if (working.current || importActive.current) return;
+    const before = docRef.current;
+    const session = lineEditSession.current;
+    if (!before || !session || session.lineId !== lineId || session.pageId !== manifestRef.current.pages[indexRef.current]?.id) return;
+    const after = update(before);
+    setUndoStack((old) => {
+      let start = old.length;
+      while (start > 0 && old[start - 1].lineEditSessionId === session.id) start -= 1;
+      const stable = old.slice(0, start).slice(-99);
+      const sessionEdits = old.slice(start).slice(-99);
+      return [...stable, ...sessionEdits, {
+        targetPageId: session.pageId,
+        changes: [{ pageId: session.pageId, beforeData: JSON.stringify(before), afterData: JSON.stringify(after) }],
+        lineEditSessionId: session.id,
+      }];
+    });
+    setRedoStack([]);
+    putDoc(after);
+    scheduleSave();
+  }, [putDoc, scheduleSave]);
   const go = useCallback(
     async (next: number) => {
       if (working.current || importActive.current) {
-        setNotice("処理中はページを移動できません。");
+        setNotice("notices.navigationBusy");
         return;
       }
-      if (
-        next < 0 ||
-        next >= manifestRef.current.pages.length ||
-        next === indexRef.current
-      )
-        return;
+      if (next < 0 || next >= manifestRef.current.pages.length || next === indexRef.current) return;
+      finishLineEditRef.current();
       try {
         setBusy("save");
         await flush();
         putIndex(next);
       } catch (e) {
-        setNotice(`保存できないため移動できません: ${errorText(e)}`);
+        setNotice("notices.navigationSaveFailed", { error: errorText(e) });
       } finally {
         setBusy(null);
       }
     },
     [flush, putIndex],
   );
-  const editLine = useCallback(
-    (id: string, text: string) => {
-      if (working.current || importActive.current) return;
-      const before = docRef.current;
-      if (!before) return;
-      const after = updateLineText(before, id, text);
-      setUndoStack((old) => [...old.slice(-99), before]);
-      setRedoStack([]);
-      putDoc(after);
-      scheduleSave();
-    },
-    [putDoc, scheduleSave],
-  );
-  const undo = useCallback(() => {
-    if (working.current || importActive.current) return;
-    const now = docRef.current,
-      prior = undoStack.at(-1);
-    if (!now || !prior) return;
-    setUndoStack((old) => old.slice(0, -1));
-    setRedoStack((old) => [now, ...old].slice(0, 100));
-    putDoc(prior);
-    scheduleSave();
-  }, [putDoc, scheduleSave, undoStack]);
-  const redo = useCallback(() => {
-    if (working.current || importActive.current) return;
-    const now = docRef.current,
-      next = redoStack[0];
-    if (!now || !next) return;
-    setRedoStack((old) => old.slice(1));
-    setUndoStack((old) => [...old, now].slice(-100));
-    putDoc(next);
-    scheduleSave();
-  }, [putDoc, redoStack, scheduleSave]);
+  const editLine = useCallback((id: string, text: string) => {
+    commitLineEdit(id, (before) => updateLineText(before, id, text));
+  }, [commitLineEdit]);
+  const applyHistory = useCallback(async (operation: HistoryOperation, reverse: boolean) => {
+    const projectInfo = projectRef.current;
+    if (!projectInfo) return;
+    await flush();
+    const updates = operation.changes.map((change) => ({
+      pageId: change.pageId,
+      expectedData: reverse ? change.afterData : change.beforeData,
+      data: reverse ? change.beforeData : change.afterData,
+    }));
+    await invokeCommand("apply_bulk_corrections", { projectPath: projectInfo.path, updates });
+    const target = manifestRef.current.pages.findIndex((page) => page.id === operation.targetPageId);
+    if (target < 0) return;
+    const targetChange = operation.changes.find((change) => change.pageId === operation.targetPageId);
+    if (target === indexRef.current && targetChange) putDoc(JSON.parse(reverse ? targetChange.beforeData : targetChange.afterData) as DocumentPage);
+    else putIndex(target);
+  }, [flush, putDoc, putIndex]);
+  const undo = useCallback(async () => {
+    if (working.current || importActive.current || historyApplying.current) return;
+    const operation = undoStack.at(-1);
+    const session = lineEditSession.current;
+    if (session && (!operation || operation.lineEditSessionId !== session.id)) {
+      finishLineEditRef.current();
+      return;
+    }
+    if (!operation) return;
+    historyApplying.current = true;
+    setBusy("save");
+    try {
+      await applyHistory(operation, true);
+      setUndoStack((old) => old.slice(0, -1));
+      setRedoStack((old) => [operation, ...old].slice(0, 100));
+    } catch (error) { setNotice("notices.saveFailed", { error: errorText(error) }); }
+    finally { historyApplying.current = false; setBusy(null); }
+  }, [applyHistory, undoStack, setNotice]);
+  const redo = useCallback(async () => {
+    if (working.current || importActive.current || historyApplying.current) return;
+    const operation = redoStack[0];
+    const session = lineEditSession.current;
+    if (session && (!operation || operation.lineEditSessionId !== session.id)) {
+      finishLineEditRef.current();
+      return;
+    }
+    if (!operation) return;
+    historyApplying.current = true;
+    setBusy("save");
+    try {
+      await applyHistory(operation, false);
+      setRedoStack((old) => old.slice(1));
+      setUndoStack((old) => [...old, operation].slice(-100));
+    } catch (error) { setNotice("notices.saveFailed", { error: errorText(error) }); }
+    finally { historyApplying.current = false; setBusy(null); }
+  }, [applyHistory, redoStack, setNotice]);
   const recognize = useCallback(
     async (entry: Entry, token: number) => {
       const worker = document.createElement("canvas");
       const rendered = await renderEntry(entry, token, undefined, worker);
-      if (!rendered) throw new Error("画像を作成できません");
+      if (!rendered) throw new Error(globalT("appErrors.imageCreate"));
       if (cancelled.current || token !== ocrLoading.current)
-        throw new Error("OCR を中止しました");
+        throw new Error(globalT("appErrors.ocrCancelled"));
       const sourceDpiX = entry.rotation === 90 || entry.rotation === 270 ? rendered.dpiY : rendered.dpiX;
       const sourceDpiY = entry.rotation === 90 || entry.rotation === 270 ? rendered.dpiX : rendered.dpiY;
       const renderDpi = Math.max(70, Math.min(2400, Math.round(Math.sqrt(sourceDpiX * sourceDpiY))));
@@ -553,12 +678,12 @@ export default function App() {
         psm: manifestRef.current.settings.psm,
         dpi: renderDpi,
       });
-      if (cancelled.current) throw new Error("OCR を中止しました");
+      if (cancelled.current) throw new Error(globalT("appErrors.ocrCancelled"));
       const parsed = parseHocr(hocr, {
         sourcePage: entry.sourcePage,
         pageId: entry.id,
       })[0];
-      if (!parsed) throw new Error("hOCR にページがありません");
+      if (!parsed) throw new Error(globalT("appErrors.hocrMissingPage"));
       return {
         ...parsed,
         id: entry.id,
@@ -582,12 +707,13 @@ export default function App() {
     async (scope: "current" | "all") => {
       if (!projectRef.current || working.current || importActive.current)
         return;
+      finishLineEditRef.current();
       working.current = true;
       try {
         await flush();
       } catch (error) {
         working.current = false;
-        setNotice(`保存できないため OCR を開始できません: ${errorText(error)}`);
+        setNotice("notices.ocrSaveFailed", { error: errorText(error) });
         return;
       }
       const targets =
@@ -596,7 +722,7 @@ export default function App() {
           : manifestRef.current.pages.filter((p) => p.status !== "review");
       if (!targets.length) {
         working.current = false;
-        setNotice("OCR 待ちのページはありません。");
+        setNotice("notices.noPendingOcr");
         return;
       }
       cancelled.current = false;
@@ -647,12 +773,10 @@ export default function App() {
           setProgress({ done: i + 1, total: targets.length });
         }
         setNotice(
-          cancelled.current
-            ? "OCR を中止しました。保存済みの結果は残っています。"
-            : "OCR が完了しました。",
+          cancelled.current ? "notices.ocrCancelled" : "notices.ocrComplete",
         );
       } catch (e) {
-        setNotice(`OCR に失敗しました: ${errorText(e)}`);
+        setNotice("notices.ocrFailed", { error: errorText(e) });
       } finally {
         working.current = false;
         setBusy(null);
@@ -706,7 +830,7 @@ export default function App() {
           if (saved) pages.push(JSON.parse(saved) as DocumentPage);
         }
         if (!pages.length)
-          throw new Error("エクスポートできる OCR 結果がありません");
+          throw new Error(globalT("appErrors.noExport"));
         let content = "",
           suffix = type === "txt" ? "txt" : type === "hocr" ? "html" : "svg",
           readyBase64 = false;
@@ -731,9 +855,9 @@ export default function App() {
             path,
             contentBase64: readyBase64 ? content : encode(content),
           });
-        setNotice("エクスポートしました。");
+        setNotice("notices.exported");
       } catch (e) {
-        setNotice(`エクスポートできません: ${errorText(e)}`);
+        setNotice("notices.exportFailed", { error: errorText(e) });
       } finally {
         working.current = false;
         setBusy(null);
@@ -765,7 +889,7 @@ export default function App() {
           importActive.current ||
           importCreatingRef.current
         ) {
-          setNotice("インポートまたは保存処理が完了するまで閉じられません。");
+          setNotice("notices.closeBusy");
           return;
         }
         try {
@@ -775,7 +899,7 @@ export default function App() {
           closing.current = true;
           await getCurrentWindow().destroy();
         } catch (error) {
-          setNotice(`閉じる前に保存できません: ${errorText(error)}`);
+          setNotice("notices.closeSaveFailed", { error: errorText(error) });
         }
       })
       .then((value) => {
@@ -811,6 +935,80 @@ export default function App() {
       })
       .catch(() => undefined);
   }, [putManifest]);
+  useEffect(() => {
+    const key = "eduba-language-error";
+    const raw = window.sessionStorage.getItem(key);
+    if (!raw) return;
+    window.sessionStorage.removeItem(key);
+    try {
+      const saved = JSON.parse(raw) as { kind?: "load" | "menu"; error?: string };
+      setStartupWarning({
+        key: saved.kind === "menu" ? "notices.menuFailed" : "notices.languageLoadFailed",
+        values: { error: saved.error ?? raw },
+      });
+    } catch {
+      setStartupWarning({ key: "notices.languageLoadFailed", values: { error: raw } });
+    }
+  }, [setNotice]);
+  const openBulkReplace = useCallback(async (search: string) => {
+    if (!project || working.current || importActive.current || !search) return;
+    try {
+      finishLineEditRef.current();
+      await flush();
+      bulkSnippetCanvases.current.clear();
+      setBulkReplace({ search });
+    } catch (error) {
+      setNotice("notices.saveFailed", { error: errorText(error) });
+    }
+  }, [flush, project, setNotice]);
+  const getBulkSnippet = useCallback(async (pageId: string, bbox?: BulkMatch["bbox"]) => {
+    if (!pdf || !bbox) return null;
+    const entry = manifestRef.current.pages.find((candidate) => candidate.id === pageId);
+    if (!entry) return null;
+    let sourcePromise = bulkSnippetCanvases.current.get(pageId);
+    if (!sourcePromise) {
+      sourcePromise = (async () => {
+        const target = document.createElement("canvas");
+        const rendered = await renderEntry(entry, loading.current, pdf, target, false);
+        return rendered?.canvas ?? null;
+      })();
+      bulkSnippetCanvases.current.set(pageId, sourcePromise);
+    }
+    const source = await sourcePromise;
+    if (!source) return null;
+    const left = Math.max(0, Math.floor(bbox.left));
+    const top = Math.max(0, Math.floor(bbox.top));
+    const right = Math.min(source.width, Math.ceil(bbox.right));
+    const bottom = Math.min(source.height, Math.ceil(bbox.bottom));
+    if (right <= left || bottom <= top) return null;
+    const crop = document.createElement("canvas");
+    crop.width = right - left;
+    crop.height = bottom - top;
+    crop.getContext("2d")?.drawImage(source, left, top, crop.width, crop.height, 0, 0, crop.width, crop.height);
+    return "data:image/png;base64," + canvasToBase64(crop);
+  }, [pdf, renderEntry]);
+
+  const applyBulkReplace = useCallback(async ({ search, replacement, selections }: BulkReplaceRequest) => {
+    if (!project || !selections.length) return;
+    await flush();
+    const updates = await prepareBulkUpdates({ selections, search, replacement, loadPage: async (pageId) => {
+      const saved = await invokeCommand("load_page", { projectPath: project.path, pageId });
+      if (!saved) throw new Error("Page data is unavailable.");
+      return saved;
+    }});
+    const changes = await invokeCommand("apply_bulk_corrections", { projectPath: project.path, updates });
+    const currentId = manifestRef.current.pages[indexRef.current]?.id;
+    const targetPageId = changes.some((item) => item.pageId === currentId)
+      ? currentId!
+      : changes[0]?.pageId;
+    if (targetPageId) {
+      setUndoStack((old) => [...old.slice(-99), { targetPageId, changes }]);
+      setRedoStack([]);
+    }
+    const change = changes.find((item) => item.pageId === currentId);
+    if (change?.afterData && docRef.current) putDoc(JSON.parse(change.afterData) as DocumentPage);
+    setBulkReplace(null);
+  }, [flush, project, putDoc]);
   const lines = useMemo(() => (doc ? allLines(doc) : []), [doc]);
   const w = canvasSize.width * zoom,
     h = canvasSize.height * zoom;
@@ -821,15 +1019,15 @@ export default function App() {
           <div className="brand-mark">E</div>
           <div>
             <div className="brand-name">EDUBA</div>
-            <div className="brand-sub">OCR PROOFREADING DESK</div>
+            <div className="brand-sub">{t("ui.tagline")}</div>
           </div>
         </div>
         <div className="project-title">
-          <span>{project?.name ?? "新しいプロジェクト"}</span>
+          <span>{project?.name ?? t("ui.newProject")}</span>
           <span className="muted">
             {project
-              ? `${manifest.pages.length} 論理ページ`
-              : ".eduba プロジェクト"}
+              ? t("ui.logicalPageCount", { count: manifest.pages.length })
+              : t("ui.projectFile")}
           </span>
         </div>
         <button
@@ -838,17 +1036,17 @@ export default function App() {
           onClick={() => {
             if (!importActive.current) setSettingsOpen(true);
           }}
-          title="設定"
+          title={t("ui.settings")} aria-label={t("ui.settings")}
         >
           <Settings2 size={16} />
         </button>
       </header>
       <nav className="toolbar">
         <button onClick={importPdf} disabled={Boolean(busy)}>
-          <FilePlus2 size={15} /> PDF を読み込む
+          <FilePlus2 size={15} /> {t("ui.importPdf")}
         </button>
         <button onClick={openProject} disabled={Boolean(busy)}>
-          <FolderOpen size={15} /> 開く
+          <FolderOpen size={15} /> {t("ui.open")}
         </button>
         <span className="toolbar-divider" />
         <button
@@ -856,20 +1054,20 @@ export default function App() {
             setBusy("save");
             flush()
               .then(
-                () => setNotice("保存済み"),
-                (e) => setNotice(`保存に失敗しました: ${errorText(e)}`),
+                () => setNotice("notices.saved"),
+                (e) => setNotice("notices.saveFailed", { error: errorText(e) }),
               )
               .finally(() => setBusy(null));
           }}
           disabled={!project || Boolean(busy)}
         >
-          <Save size={15} /> 保存
+          <Save size={15} /> {t("ui.save")}
         </button>
         <button onClick={undo} disabled={!undoStack.length || Boolean(busy)}>
-          <Undo2 size={15} /> 元に戻す
+          <Undo2 size={15} /> {t("ui.undo")}
         </button>
         <button onClick={redo} disabled={!redoStack.length || Boolean(busy)}>
-          <Redo2 size={15} /> やり直す
+          <Redo2 size={15} /> {t("ui.redo")}
         </button>
         <span className="toolbar-spacer" />
         <button
@@ -877,18 +1075,18 @@ export default function App() {
           onClick={() => askOcr("current")}
           disabled={!project || Boolean(busy)}
         >
-          現在を OCR
+          {t("ui.ocrCurrent")}
         </button>
         <button
           className="primary"
           onClick={() => askOcr("all")}
           disabled={!project || Boolean(busy)}
         >
-          {progress ? `${progress.done}/${progress.total}` : "未処理を OCR"}
+          {progress ? `${progress.done}/${progress.total}` : t("ui.ocrPending")}
         </button>
         {busy === "ocr" && (
           <button className="ocr-stop" onClick={cancelOcr}>
-            <Square size={13} /> 中止
+            <Square size={13} /> {t("ui.cancel")}
           </button>
         )}
         <span className="toolbar-divider" />
@@ -897,8 +1095,8 @@ export default function App() {
           onChange={(e) => setExportScope(e.target.value as "current" | "all")}
           disabled={!project || Boolean(busy)}
         >
-          <option value="current">現在のページ</option>
-          <option value="all">全ページ</option>
+          <option value="current">{t("ui.currentPage")}</option>
+          <option value="all">{t("ui.allPages")}</option>
         </select>
         <button
           onClick={() => exportFile("txt", exportScope)}
@@ -922,7 +1120,7 @@ export default function App() {
       <section className="workspace">
         <aside className="sidebar">
           <div className="side-heading">
-            <span>論理ページ</span>
+            <span>{t("ui.logicalPages")}</span>
             <span className="page-count">{manifest.pages.length}</span>
           </div>
           <div className="page-list">
@@ -936,12 +1134,12 @@ export default function App() {
                 <span className="page-meta">
                   <strong>{page.label}</strong>
                   <small>
-                    原稿 {page.sourcePage} ·{" "}
+                    {t("ui.sourcePage", { page: page.sourcePage })} ·{" "}
                     {page.split === "single"
-                      ? "全体"
+                      ? t("ui.whole")
                       : page.split === "left"
-                        ? "左"
-                        : "右"}
+                        ? t("ui.left")
+                        : t("ui.right")}
                   </small>
                 </span>
                 <span
@@ -955,15 +1153,15 @@ export default function App() {
           <div className="canvas-toolbar">
             <div className="breadcrumb">
               <strong>
-                {current ? `ページ ${current.label}` : "PDF を開く"}
+                {current ? t("ui.page", { page: current.label }) : t("ui.openPdf")}
               </strong>
               <span>
                 ／{" "}
                 {current?.split === "single"
-                  ? "全ページ"
+                  ? t("ui.whole")
                   : current?.split === "left"
-                    ? "左ページ"
-                    : "右ページ"}
+                    ? t("ui.leftPage")
+                    : t("ui.rightPage")}
               </span>
             </div>
             <div className="view-tools">
@@ -1000,7 +1198,7 @@ export default function App() {
           <div className="proofing-grid">
             <article className="pdf-pane">
               <div className="pane-label">
-                <span>処理済み画像</span>
+                <span>{t("ui.processedImage")}</span>
               </div>
               <div className="pdf-stage">
                 {project ? (
@@ -1016,8 +1214,8 @@ export default function App() {
             </article>
             <article className="ocr-pane">
               <div className="pane-label">
-                <span>認識レイアウト</span>
-                <span className="pane-hint">行をクリックして編集</span>
+                <span>{t("ui.recognitionLayout")}</span>
+                <span className="pane-hint">{t("ui.clickLine")}</span>
               </div>
               <div className="ocr-stage">
                 {doc && canvasSize.width ? (
@@ -1043,10 +1241,7 @@ export default function App() {
                               1,
                               line.bbox.bottom - line.bbox.top,
                             )}
-                            onClick={() => {
-                              setSelected(line.id);
-                              setEditing(line.id);
-                            }}
+                            onClick={() => beginLineEdit(line.id)}
                           />
                           <text
                             x={line.bbox.left}
@@ -1064,7 +1259,7 @@ export default function App() {
                             )}
                             lengthAdjust="spacingAndGlyphs"
                           >
-                            {line.correctedText}
+                            {line.formatting?.length ? <tspan dangerouslySetInnerHTML={{ __html: formattedSegments(line, true) }} /> : line.correctedText}
                           </text>
                         </g>
                       ))}
@@ -1073,32 +1268,19 @@ export default function App() {
                       (() => {
                         const line = lines.find((v) => v.id === editing);
                         return line ? (
-                          <textarea
-                            autoFocus
-                            className="line-overlay"
+                          <LineOverlay
                             value={line.correctedText}
-                            onChange={(e) => editLine(line.id, e.target.value)}
-                            onBlur={() => setEditing(null)}
-                            onKeyDown={(e) =>
-                              e.key === "Escape" && setEditing(null)
-                            }
-                            style={{
-                              left: line.bbox.left * zoom,
-                              top: line.bbox.top * zoom,
-                              width: Math.max(
-                                20,
-                                (line.bbox.right - line.bbox.left) * zoom,
-                              ),
-                              height: Math.max(
-                                22,
-                                (line.bbox.bottom - line.bbox.top) * zoom + 8,
-                              ),
-                              fontSize: Math.max(
-                                10,
-                                (line.fontSize ||
-                                  line.bbox.bottom - line.bbox.top) * zoom,
-                              ),
-                            }}
+                            onChange={(value) => editLine(line.id, value)}
+                            onFinish={() => finishLineEdit(line.id)}
+                            onUndo={() => void undo()}
+                            onRedo={() => void redo()}
+                            onFormat={(start, end, kind) => commitLineEdit(line.id, (before) => updateLineFormatting(before, line.id, start, end, kind))}
+                            onOpenBulk={(selection) => void openBulkReplace(selection)}
+                            left={line.bbox.left * zoom}
+                            top={line.bbox.top * zoom}
+                            width={Math.max(20, (line.bbox.right - line.bbox.left) * zoom)}
+                            height={Math.max(22, (line.bbox.bottom - line.bbox.top) * zoom + 8)}
+                            fontSize={Math.max(1, (line.fontSize || line.bbox.bottom - line.bbox.top) * zoom)}
                           />
                         ) : null;
                       })()}
@@ -1107,13 +1289,13 @@ export default function App() {
                   <div className="ocr-empty">
                     <strong>
                       {project
-                        ? "まだ OCR 結果がありません"
-                        : "PDF を読み込みます"}
+                        ? t("ui.noOcr")
+                        : t("ui.importToStart")}
                     </strong>
                     <span>
                       {project
-                        ? "「現在を OCR」を実行してください。候補辞書はまだ登録されていません。"
-                        : "1つの .eduba ファイルに保存されます。"}
+                        ? t("ui.runOcrHint")
+                        : t("ui.singleFileHint")}
                     </span>
                   </div>
                 )}
@@ -1123,11 +1305,15 @@ export default function App() {
         </section>
       </section>
       <footer className="statusbar">
-        <span>{notice}</span>
+        <span className="status-left">
+          {startupWarning && <span title={t(startupWarning.key, startupWarning.values)}>{t(startupWarning.key, startupWarning.values)}</span>}
+          <span>{t(notice.key, notice.values)}</span>
+        </span>
         <span className={`save-indicator ${busy === "save" ? "working" : ""}`}>
-          {busy === "save" ? "保存中…" : project ? "自動保存" : "待機中"}
+          {busy === "save" ? t("ui.saving") : project ? t("ui.autosave") : t("ui.idle")}
         </span>
       </footer>
+      {bulkReplace && project && (<BulkReplaceDialog open={true} projectPath={project.path} initialSearch={bulkReplace.search} getSnippet={getBulkSnippet} onApply={applyBulkReplace} onClose={() => { bulkSnippetCanvases.current.clear(); setBulkReplace(null); }} />)}
       {importSource && (
         <ImportModal
           pdfPath={importSource.path}
@@ -1142,6 +1328,9 @@ export default function App() {
           manifest={manifest}
           putManifest={putManifest}
           scheduleSave={scheduleSave}
+          language={language}
+          changeLanguage={changeLanguage}
+          languageSaving={languageSaving}
           close={() => setSettingsOpen(false)}
         />
       )}{" "}
@@ -1150,20 +1339,17 @@ export default function App() {
           <div className="modal">
             <div className="modal-head">
               <div>
-                <div className="eyebrow">RECOGNIZE AGAIN</div>
-                <h2>修正を置き換えますか？</h2>
+                <div className="eyebrow">{t("ui.recognizeAgain")}</div>
+                <h2>{t("ui.replaceTitle")}</h2>
               </div>
               <button className="icon-btn" onClick={() => setConfirmOcr(null)}>
                 <X size={16} />
               </button>
             </div>
-            <p>
-              このページの手入力による修正は、新しい OCR
-              結果で置き換えられます。
-            </p>
+            <p>{t("ui.replaceDescription")}</p>
             <div className="modal-actions">
               <button className="secondary" onClick={() => setConfirmOcr(null)}>
-                戻る
+                {t("ui.back")}
               </button>
               <button
                 className="primary"
@@ -1173,7 +1359,7 @@ export default function App() {
                   runOcr(scope);
                 }}
               >
-                置き換えて OCR
+                {t("ui.replaceOcr")}
               </button>
             </div>
           </div>
@@ -1183,10 +1369,11 @@ export default function App() {
   );
 }
 function Empty() {
+  const { t } = useTranslation();
   return (
     <div className="empty-state">
       <strong>Eduba</strong>
-      <span>PDF を読み込んで開始します</span>
+      <span>{t("ui.importToStart")}</span>
     </div>
   );
 }
@@ -1195,72 +1382,36 @@ function SettingsModal({
   putManifest,
   scheduleSave,
   close,
+  language,
+  changeLanguage,
+  languageSaving,
 }: {
   manifest: Manifest;
   putManifest: (v: Manifest) => void;
   scheduleSave: () => void;
   close: () => void;
+  language: LocalePreference;
+  changeLanguage: (language: LocalePreference) => Promise<void>;
+  languageSaving: boolean;
 }) {
+  const { t } = useTranslation();
   return (
     <div className="modal-scrim">
       <div className="modal settings-modal">
-        <div className="modal-head">
-          <div>
-            <div className="eyebrow">OCR SETTINGS</div>
-            <h2>認識設定</h2>
-          </div>
-          <button className="icon-btn" onClick={close}>
-            <X size={16} />
-          </button>
-        </div>
-        <label>
-          モデル (.traineddata)
-          <button
-            className="file-select"
-            onClick={async () => {
-              const path = await dialogOpen({
-                multiple: false,
-                filters: [
-                  { name: "Tesseract model", extensions: ["traineddata"] },
-                ],
-              });
-              if (typeof path === "string") {
-                putManifest({
-                  ...manifest,
-                  settings: { ...manifest.settings, modelPath: path },
-                });
-                scheduleSave();
-              }
-            }}
-          >
-            {manifest.settings.modelPath || "モデルを選択"}
-          </button>
-        </label>
-        <label>
-          PSM
-          <select
-            value={manifest.settings.psm}
-            onChange={(e) => {
-              putManifest({
-                ...manifest,
-                settings: {
-                  ...manifest.settings,
-                  psm: Number(e.target.value) as Settings["psm"],
-                },
-              });
-              scheduleSave();
-            }}
-          >
-            <option value="3">3 — 自動</option>
-            <option value="6">6 — 単一ブロック</option>
-            <option value="11">11 — 疎なテキスト</option>
+        <div className="modal-head"><div><div className="eyebrow">{t("ui.ocrSettings")}</div><h2>{t("ui.settings")}</h2></div><button className="icon-btn" onClick={close} aria-label={t("ui.close")}><X size={16} /></button></div>
+        <label>{t("ui.language")}
+          <select aria-label={t("ui.language")} disabled={languageSaving} value={language} onChange={(e) => void changeLanguage(e.target.value as LocalePreference)}>
+            <option value="auto">{t("language.auto")}</option><option value="en">{t("language.en")}</option><option value="ja">{t("language.ja")}</option><option value="zh-Hans">{t("language.zh-Hans")}</option><option value="zh-Hant">{t("language.zh-Hant")}</option>
           </select>
         </label>
-        <div className="modal-actions">
-          <button className="primary" onClick={close}>
-            完了
-          </button>
-        </div>
+        <label>{t("ui.model")}
+          <button className="file-select" onClick={async () => {
+            const path = await dialogOpen({ multiple: false, filters: [{ name: t("ui.model"), extensions: ["traineddata"] }] });
+            if (typeof path === "string") { putManifest({ ...manifest, settings: { ...manifest.settings, modelPath: path } }); scheduleSave(); }
+          }}>{manifest.settings.modelPath || t("ui.selectModel")}</button>
+        </label>
+        <label>PSM<select value={manifest.settings.psm} onChange={(e) => { putManifest({ ...manifest, settings: { ...manifest.settings, psm: Number(e.target.value) as Settings["psm"] } }); scheduleSave(); }}><option value="3">3 — {t("ui.automatic")}</option><option value="6">6 — {t("ui.singleBlock")}</option><option value="11">11 — {t("ui.sparseText")}</option></select></label>
+        <div className="modal-actions"><button className="primary" onClick={close}>{t("ui.done")}</button></div>
       </div>
     </div>
   );

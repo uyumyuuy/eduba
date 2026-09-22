@@ -1,4 +1,5 @@
 import type { LogicalPageProvenance } from "./domain";
+import { t } from "./i18n";
 
 export type OcrMargins = {
   top: number;
@@ -29,28 +30,28 @@ export function validateOcrMargins(
     ? (["top", "bottom", "outer", "inner"] as const)
     : (["top", "bottom", "left", "right"] as const);
   const names: Record<keyof OcrMargins, string> = {
-    top: "天",
-    bottom: "地",
-    left: "左",
-    right: "右",
-    outer: "小口",
-    inner: "ノド",
+    top: t("importUi.top"),
+    bottom: t("importUi.bottom"),
+    left: t("importUi.left"),
+    right: t("importUi.right"),
+    outer: t("importUi.outer"),
+    inner: t("importUi.inner"),
   };
   for (const name of active) {
     const amount = value[name];
     if (!Number.isFinite(amount) || amount < 0 || amount >= 100)
       throw new Error(
-        `OCR 禁止範囲の${names[name]}は 0 以上 100 未満の数値にしてください`,
+        t("errors.marginValue", { side: names[name] }),
       );
   }
   if (value.top + value.bottom >= 100)
-    throw new Error("OCR 禁止範囲の天と地の合計は 100 未満にしてください");
+    throw new Error(t("errors.marginVerticalTotal"));
   const [first, second, pairNames] = splitSpread
-    ? [value.outer, value.inner, "小口とノド"]
-    : [value.left, value.right, "左と右"];
+    ? [value.outer, value.inner, `${names.outer} / ${names.inner}`]
+    : [value.left, value.right, `${names.left} / ${names.right}`];
   if (first + second >= 100)
     throw new Error(
-      `OCR 禁止範囲の${pairNames}の合計は 100 未満にしてください`,
+      t("errors.marginHorizontalTotal", { sides: pairNames }),
     );
   return value;
 }

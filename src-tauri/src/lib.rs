@@ -4,6 +4,7 @@ use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
 use rusqlite::{params, Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
 use std::{
+    collections::HashSet,
     fs,
     io::{Read, Seek, SeekFrom, Write},
     path::{Path, PathBuf},
@@ -12,6 +13,8 @@ use std::{
 };
 use tauri::{menu::MenuBuilder, AppHandle, Emitter, Manager, State};
 use thiserror::Error;
+mod preferences;
+use preferences::{LocalePreference, SupportedLocale, UserPreferences};
 
 const SCHEMA_VERSION: &str = "1";
 const CHUNK_SIZE: usize = 1024 * 1024;
@@ -110,6 +113,59 @@ pub struct SavePageArgs {
     pub project_path: String,
     pub page_id: String,
     pub data: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SearchCorrectionsArgs {
+    pub project_path: String,
+    pub search: String,
+    pub page: usize,
+    pub page_size: usize,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CorrectionMatch {
+    pub page_id: String,
+    pub page_label: String,
+    pub line_id: String,
+    pub line_text: String,
+    pub bbox: Option<serde_json::Value>,
+    /// Zero-based non-overlapping occurrence within the line text.
+    pub match_ordinal: usize,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CorrectionSearchPage {
+    pub results: Vec<CorrectionMatch>,
+    pub total: usize,
+    pub page: usize,
+    pub page_size: usize,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BulkPageUpdate {
+    pub page_id: String,
+    pub expected_data: String,
+    pub data: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ApplyBulkCorrectionsArgs {
+    pub project_path: String,
+    pub updates: Vec<BulkPageUpdate>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BulkPageChange {
+    pub page_id: String,
+    pub before_data: String,
+    pub after_data: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -636,6 +692,171 @@ fn save_page_impl(args: &SavePageArgs) -> BackendResult<()> {
     Ok(())
 }
 
+fn manifest_page_order(conn: &Connection) -> BackendResult<Vec<(String, String)>> {
+    let manifest: Option<String> = conn
+        .query_row("SELECT value FROM meta WHERE key='manifest'", [], |row| row.get(0))
+        .optional()?;
+    let mut ordered = Vec::new();
+    if let Some(raw) = manifest {
+        if let Some(pages) = serde_json::from_str::<serde_json::Value>(&raw)
+            .ok()
+            .and_then(|value| value.get("pages").and_then(serde_json::Value::as_array).cloned())
+        {
+            for (index, page) in pages.iter().enumerate() {
+                let Some(id) = page.get("id").and_then(serde_json::Value::as_str) else { continue };
+                let label = page
+                    .get("label")
+                    .and_then(serde_json::Value::as_str)
+                    .map(str::to_owned)
+                    .unwrap_or_else(|| (index + 1).to_string());
+                ordered.push((id.to_owned(), label));
+            }
+        }
+    }
+    let mut known: HashSet<String> = ordered.iter().map(|(id, _)| id.clone()).collect();
+    let mut stmt = conn.prepare("SELECT page_id FROM pages ORDER BY page_id")?;
+    let stored = stmt.query_map([], |row| row.get::<_, String>(0))?;
+    for page_id in stored {
+        let page_id = page_id?;
+        if known.insert(page_id.clone()) {
+            ordered.push((page_id.clone(), page_id));
+        }
+    }
+    Ok(ordered)
+}
+
+fn search_corrections_impl(args: &SearchCorrectionsArgs) -> BackendResult<CorrectionSearchPage> {
+    if args.search.is_empty() {
+        return Err(BackendError::msg("search text is required"));
+    }
+    if args.page_size == 0 || args.page_size > 200 {
+        return Err(BackendError::msg("page size must be between 1 and 200"));
+    }
+    let root = project_root(&args.project_path)?;
+    let conn = open_connection(&root)?;
+    let start = args.page.checked_mul(args.page_size).unwrap_or(usize::MAX);
+    let mut total = 0usize;
+    let mut results = Vec::with_capacity(args.page_size);
+
+    for (page_id, page_label) in manifest_page_order(&conn)? {
+        let Some(data) = conn
+            .query_row("SELECT data FROM pages WHERE page_id=?1", [&page_id], |row| row.get::<_, String>(0))
+            .optional()?
+        else { continue };
+        let page: serde_json::Value = serde_json::from_str(&data)?;
+        let Some(blocks) = page.get("blocks").and_then(serde_json::Value::as_array) else { continue };
+        for block in blocks {
+            let Some(paragraphs) = block.get("paragraphs").and_then(serde_json::Value::as_array) else { continue };
+            for paragraph in paragraphs {
+                let Some(lines) = paragraph.get("lines").and_then(serde_json::Value::as_array) else { continue };
+                for line in lines {
+                    let (Some(line_id), Some(line_text)) = (
+                        line.get("id").and_then(serde_json::Value::as_str),
+                        line.get("correctedText").and_then(serde_json::Value::as_str),
+                    ) else { continue };
+                    for (match_ordinal, _) in line_text.match_indices(&args.search).enumerate() {
+                        if total >= start && results.len() < args.page_size {
+                            results.push(CorrectionMatch {
+                                page_id: page_id.clone(),
+                                page_label: page_label.clone(),
+                                line_id: line_id.to_owned(),
+                                line_text: line_text.to_owned(),
+                                bbox: line.get("bbox").cloned(),
+                                match_ordinal,
+                            });
+                        }
+                        total = total.saturating_add(1);
+                    }
+                }
+            }
+        }
+    }
+
+    Ok(CorrectionSearchPage {
+        results,
+        total,
+        page: args.page,
+        page_size: args.page_size,
+    })
+}
+
+#[tauri::command]
+fn search_corrections(
+    project_path: String,
+    search: String,
+    page: usize,
+    page_size: usize,
+) -> Result<CorrectionSearchPage, String> {
+    search_corrections_impl(&SearchCorrectionsArgs {
+        project_path,
+        search,
+        page,
+        page_size,
+    })
+    .map_err(|error| error.to_string())
+}
+
+fn apply_bulk_corrections_impl(args: &ApplyBulkCorrectionsArgs) -> BackendResult<Vec<BulkPageChange>> {
+    if args.updates.is_empty() {
+        return Ok(Vec::new());
+    }
+    let mut seen = HashSet::new();
+    for update in &args.updates {
+        if update.page_id.trim().is_empty() || !seen.insert(&update.page_id) {
+            return Err(BackendError::msg("bulk updates require unique non-empty page ids"));
+        }
+        let _: serde_json::Value = serde_json::from_str(&update.data)?;
+    }
+
+    let root = project_root(&args.project_path)?;
+    let mut conn = open_connection(&root)?;
+    let tx = conn.transaction()?;
+    let mut changes = Vec::with_capacity(args.updates.len());
+    for update in &args.updates {
+        let current: Option<String> = tx
+            .query_row(
+                "SELECT data FROM pages WHERE page_id=?1",
+                [&update.page_id],
+                |row| row.get(0),
+            )
+            .optional()?;
+        let Some(before_data) = current else {
+            return Err(BackendError::msg(format!("page not found: {}", update.page_id)));
+        };
+        if before_data != update.expected_data {
+            return Err(BackendError::msg(format!(
+                "page changed while preparing bulk replacement: {}",
+                update.page_id
+            )));
+        }
+        changes.push(BulkPageChange {
+            page_id: update.page_id.clone(),
+            before_data,
+            after_data: update.data.clone(),
+        });
+    }
+    for change in &changes {
+        tx.execute(
+            "UPDATE pages SET data=?1 WHERE page_id=?2",
+            params![change.after_data, change.page_id],
+        )?;
+    }
+    tx.commit()?;
+    Ok(changes)
+}
+
+#[tauri::command]
+fn apply_bulk_corrections(
+    project_path: String,
+    updates: Vec<BulkPageUpdate>,
+) -> Result<Vec<BulkPageChange>, String> {
+    apply_bulk_corrections_impl(&ApplyBulkCorrectionsArgs {
+        project_path,
+        updates,
+    })
+    .map_err(|error| error.to_string())
+}
+
 fn model_spec(model_path: &str) -> BackendResult<(PathBuf, String)> {
     let requested = process_path(PathBuf::from(model_path));
     if requested.as_os_str().is_empty() {
@@ -853,6 +1074,78 @@ fn export_file_impl(args: &ExportArgs) -> BackendResult<()> {
     Ok(())
 }
 
+fn current_os_locale() -> Option<String> {
+    sys_locale::get_locale()
+}
+
+fn preferences_for_app(app: &AppHandle) -> Result<UserPreferences, String> {
+    let config_dir = app
+        .path()
+        .app_config_dir()
+        .map_err(|e| format!("could not locate app config directory: {e}"))?;
+    Ok(preferences::read_preferences(
+        &config_dir,
+        current_os_locale(),
+    ))
+}
+
+#[tauri::command]
+fn get_user_preferences(app: AppHandle) -> Result<UserPreferences, String> {
+    preferences_for_app(&app)
+}
+
+#[tauri::command]
+fn save_user_preferences(app: AppHandle, language: LocalePreference) -> Result<(), String> {
+    let config_dir = app
+        .path()
+        .app_config_dir()
+        .map_err(|e| format!("could not locate app config directory: {e}"))?;
+    preferences::write_preferences(&config_dir, language)
+}
+
+fn supported_locale(value: &str) -> Result<SupportedLocale, String> {
+    match value {
+        "en" => Ok(SupportedLocale::En),
+        "ja" => Ok(SupportedLocale::Ja),
+        "zh-Hans" => Ok(SupportedLocale::ZhHans),
+        "zh-Hant" => Ok(SupportedLocale::ZhHant),
+        other => Err(format!("unsupported resolved language: {other}")),
+    }
+}
+
+fn menu_text(locale: &SupportedLocale) -> [&'static str; 4] {
+    match locale {
+        SupportedLocale::Ja => [
+            "PDFをインポート…",
+            "プロジェクトを開く…",
+            "書き出す…",
+            "設定",
+        ],
+        SupportedLocale::ZhHans => ["导入 PDF…", "打开项目…", "导出…", "设置"],
+        SupportedLocale::ZhHant => ["匯入 PDF…", "開啟專案…", "匯出…", "設定"],
+        SupportedLocale::En => ["Import PDF…", "Open Project…", "Export…", "Settings"],
+    }
+}
+
+fn rebuild_menu(app: &AppHandle, locale: &SupportedLocale) -> Result<(), String> {
+    let labels = menu_text(locale);
+    let menu = MenuBuilder::new(app)
+        .text("import", labels[0])
+        .text("open", labels[1])
+        .text("export", labels[2])
+        .text("settings", labels[3])
+        .build()
+        .map_err(|e| format!("could not build localized menu: {e}"))?;
+    app.set_menu(menu)
+        .map(|_| ())
+        .map_err(|e| format!("could not set localized menu: {e}"))
+}
+
+#[tauri::command]
+fn set_ui_language(app: AppHandle, language: String) -> Result<(), String> {
+    let locale = supported_locale(&language)?;
+    rebuild_menu(&app, &locale)
+}
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let app_state = AppState::default();
@@ -860,13 +1153,13 @@ pub fn run() {
         .manage(app_state)
         .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
-            let menu = MenuBuilder::new(app)
-                .text("import", "PDFをインポート…")
-                .text("open", "プロジェクトを開く…")
-                .text("export", "書き出す…")
-                .text("settings", "設定")
-                .build()?;
-            app.set_menu(menu)?;
+            let preferences = preferences_for_app(&app.handle())
+                .unwrap_or_else(|_| UserPreferences::default_with_os(current_os_locale()));
+            let locale = preferences::resolve_locale(
+                &preferences.language,
+                preferences.os_locale.as_deref(),
+            );
+            rebuild_menu(&app.handle(), &locale).map_err(std::io::Error::other)?;
             Ok(())
         })
         .on_menu_event(|app, event| {
@@ -874,6 +1167,9 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             get_environment,
+            get_user_preferences,
+            save_user_preferences,
+            set_ui_language,
             create_project,
             open_project,
             read_pdf_range,
@@ -882,6 +1178,8 @@ pub fn run() {
             save_manifest,
             load_page,
             save_page,
+            search_corrections,
+            apply_bulk_corrections,
             run_ocr,
             cancel_ocr,
             export_file
@@ -1052,6 +1350,73 @@ mod tests {
         assert!(validate_ocr_dpi(2400).is_ok());
         assert!(validate_ocr_dpi(69).is_err());
         assert!(validate_ocr_dpi(2401).is_err());
+    }
+
+    #[test]
+    fn bulk_search_uses_manifest_order_and_corrected_text() {
+        let (_dir, pdf, project) = fixture();
+        create_project_impl(&CreateProjectArgs {
+            pdf_path: pdf.to_string_lossy().into_owned(),
+            project_path: project.to_string_lossy().into_owned(),
+            manifest: Some(r#"{"version":1,"pages":[{"id":"second","label":"2"},{"id":"first","label":"1"}]}"#.into()),
+        }).unwrap();
+        let first = r#"{"blocks":[{"paragraphs":[{"lines":[{"id":"line-a","correctedText":"old old","originalText":"ignored","bbox":{"left":1,"top":2,"right":3,"bottom":4}}]}]}]}"#;
+        let second = r#"{"blocks":[{"paragraphs":[{"lines":[{"id":"line-b","correctedText":"old","originalText":"different"}]}]}]}"#;
+        save_page_impl(&SavePageArgs { project_path: project.to_string_lossy().into_owned(), page_id: "first".into(), data: first.into() }).unwrap();
+        save_page_impl(&SavePageArgs { project_path: project.to_string_lossy().into_owned(), page_id: "second".into(), data: second.into() }).unwrap();
+
+        let found = search_corrections_impl(&SearchCorrectionsArgs {
+            project_path: project.to_string_lossy().into_owned(),
+            search: "old".into(), page: 0, page_size: 2,
+        }).unwrap();
+        assert_eq!(found.total, 3);
+        assert_eq!(found.results.len(), 2);
+        assert_eq!(found.results[0].page_id, "second");
+        assert_eq!(found.results[0].match_ordinal, 0);
+        assert_eq!(found.results[1].page_id, "first");
+        let last = search_corrections_impl(&SearchCorrectionsArgs {
+            project_path: project.to_string_lossy().into_owned(),
+            search: "old".into(), page: 1, page_size: 2,
+        }).unwrap();
+        assert_eq!(last.results[0].match_ordinal, 1);
+        assert!(search_corrections_impl(&SearchCorrectionsArgs {
+            project_path: project.to_string_lossy().into_owned(),
+            search: "".into(), page: 0, page_size: 2,
+        }).is_err());
+    }
+
+    #[test]
+    fn bulk_updates_are_atomic_and_reject_stale_page_data() {
+        let (_dir, pdf, project) = fixture();
+        create_project_impl(&CreateProjectArgs {
+            pdf_path: pdf.to_string_lossy().into_owned(),
+            project_path: project.to_string_lossy().into_owned(),
+            manifest: None,
+        }).unwrap();
+        let first = r#"{"blocks":[],"version":1}"#;
+        let second = r#"{"blocks":[],"version":2}"#;
+        let path = project.to_string_lossy().into_owned();
+        save_page_impl(&SavePageArgs { project_path: path.clone(), page_id: "first".into(), data: first.into() }).unwrap();
+        save_page_impl(&SavePageArgs { project_path: path.clone(), page_id: "second".into(), data: second.into() }).unwrap();
+
+        let changes = apply_bulk_corrections_impl(&ApplyBulkCorrectionsArgs {
+            project_path: path.clone(),
+            updates: vec![
+                BulkPageUpdate { page_id: "first".into(), expected_data: first.into(), data: r#"{"blocks":[],"version":11}"#.into() },
+                BulkPageUpdate { page_id: "second".into(), expected_data: second.into(), data: r#"{"blocks":[],"version":12}"#.into() },
+            ],
+        }).unwrap();
+        assert_eq!(changes.len(), 2);
+        assert_eq!(load_page_impl(&PageArgs { project_path: path.clone(), page_id: "first".into() }).unwrap().as_deref(), Some(r#"{"blocks":[],"version":11}"#));
+
+        assert!(apply_bulk_corrections_impl(&ApplyBulkCorrectionsArgs {
+            project_path: path.clone(),
+            updates: vec![
+                BulkPageUpdate { page_id: "first".into(), expected_data: r#"{"blocks":[],"version":11}"#.into(), data: r#"{"blocks":[],"version":21}"#.into() },
+                BulkPageUpdate { page_id: "second".into(), expected_data: "stale".into(), data: r#"{"blocks":[],"version":22}"#.into() },
+            ],
+        }).is_err());
+        assert_eq!(load_page_impl(&PageArgs { project_path: path, page_id: "first".into() }).unwrap().as_deref(), Some(r#"{"blocks":[],"version":11}"#));
     }
     #[test]
     #[ignore = "requires a local Tesseract runtime, model, and fixture image"]

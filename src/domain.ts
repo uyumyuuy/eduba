@@ -5,6 +5,8 @@ import type { OcrMargins } from "./ocrMargins";
  * page transform), with the origin at the top-left.
  */
 
+import { t } from "./i18n";
+
 export interface Rect {
   left: number;
   top: number;
@@ -39,6 +41,9 @@ export interface OcrWord {
   chars: OcrChar[];
 }
 
+export type TextFormatKind = "bold" | "italic" | "superscript" | "subscript";
+export interface TextFormatRange { start: number; end: number; kind: TextFormatKind; }
+
 export interface OcrLine {
   id: string;
   bbox: Rect;
@@ -49,6 +54,8 @@ export interface OcrLine {
   confidence?: number;
   originalText: string;
   correctedText: string;
+  /** UTF-16 offsets matching textarea selection positions. */
+  formatting?: TextFormatRange[];
   words: OcrWord[];
   chars: OcrChar[];
   /** True when the line is rendered from approximate line geometry. */
@@ -294,13 +301,13 @@ export function parseHocr(
   options: HocrParseOptions = {},
 ): DocumentPage[] {
   if (typeof DOMParser === "undefined")
-    throw new Error("DOMParser is required to parse hOCR");
+    throw new Error(t("errors.domParser"));
   const document = new DOMParser().parseFromString(
     source,
     "application/xhtml+xml",
   );
   const pages = classElements(document, CLASS_NAMES.page);
-  if (!pages.length) throw new Error("hOCR contains no .ocr_page element");
+  if (!pages.length) throw new Error(t("errors.hocrPage"));
   return pages.map((page, index) => {
     const parsed = parsePage(page, options, index);
     if (options.pageId && pages.length > 1)
@@ -328,6 +335,34 @@ export function allLines(page: DocumentPage): OcrLine[] {
   );
 }
 
+function remapFormatting(ranges: TextFormatRange[] | undefined, before: string, after: string): TextFormatRange[] | undefined {
+  if (!ranges?.length || before === after) return ranges;
+  let prefix = 0; while (prefix < before.length && prefix < after.length && before[prefix] === after[prefix]) prefix++;
+  let beforeEnd = before.length, afterEnd = after.length;
+  while (beforeEnd > prefix && afterEnd > prefix && before[beforeEnd - 1] === after[afterEnd - 1]) { beforeEnd--; afterEnd--; }
+  const delta = afterEnd - beforeEnd;
+  const next = ranges.flatMap(range => {
+    if (range.end <= prefix) return [range];
+    if (range.start >= beforeEnd) return [{ ...range, start: range.start + delta, end: range.end + delta }];
+    const pieces: TextFormatRange[] = [];
+    if (range.start < prefix) pieces.push({ ...range, end: prefix });
+    if (range.end > beforeEnd) pieces.push({ ...range, start: afterEnd, end: range.end + delta });
+    return pieces;
+  }).filter(range => range.end > range.start);
+  return next.length ? next : undefined;
+}
+
+export function updateLineFormatting(page: DocumentPage, lineId: string, start: number, end: number, kind: TextFormatKind): DocumentPage {
+  const copy: DocumentPage = JSON.parse(JSON.stringify(page)) as DocumentPage;
+  const line = allLines(copy).find(candidate => candidate.id === lineId);
+  if (!line || start >= end) return copy;
+  const opposite = kind === "superscript" ? "subscript" : kind === "subscript" ? "superscript" : undefined;
+  const ranges = (line.formatting ?? []).flatMap(range => opposite !== range.kind || range.end <= start || range.start >= end ? [range] : [{ ...range, end: start }, { ...range, start: end }]).filter(range => range.end > range.start);
+  const same = ranges.filter(range => range.kind === kind);
+  const fullyFormatted = same.some(range => range.start <= start && range.end >= end);
+  line.formatting = fullyFormatted ? ranges.flatMap(range => range.kind !== kind || range.end <= start || range.start >= end ? [range] : [{ ...range, end: start }, { ...range, start: end }]).filter(range => range.end > range.start) : [...ranges, { start, end, kind }];
+  return copy;
+}
 export function updateLineText(
   page: DocumentPage,
   lineId: string,
@@ -335,7 +370,8 @@ export function updateLineText(
 ): DocumentPage {
   const copy: DocumentPage = JSON.parse(JSON.stringify(page)) as DocumentPage;
   const line = allLines(copy).find((candidate) => candidate.id === lineId);
-  if (!line) throw new Error(`Unknown OCR line: ${lineId}`);
+  if (!line) throw new Error(t("errors.unknownLine", { id: lineId }));
+  line.formatting = remapFormatting(line.formatting, line.correctedText, correctedText);
   line.correctedText = correctedText;
   if (correctedText === line.originalText) {
     line.chars = charsFromWords(line.words);
@@ -396,6 +432,12 @@ function titleBbox(rect: Rect): string {
   return `bbox ${rect.left} ${rect.top} ${rect.right} ${rect.bottom}`;
 }
 
+export function formattedSegments(line: OcrLine, svg = false): string {
+  const ranges = line.formatting ?? [];
+  if (!ranges.length) return escapeXml(line.correctedText);
+  const points = [...new Set([0, line.correctedText.length, ...ranges.flatMap(range => [range.start, range.end])])].sort((a,b)=>a-b);
+  return points.slice(0,-1).map((start,index) => { const end=points[index+1]; const active=ranges.filter(range=>range.start<=start&&range.end>=end).map(range=>range.kind); let text=escapeXml(line.correctedText.slice(start,end)); if(svg){const style=[active.includes("bold")?"font-weight=\"bold\"":"",active.includes("italic")?"font-style=\"italic\"":"",active.includes("superscript")?"baseline-shift=\"super\" font-size=\"70%\"":"",active.includes("subscript")?"baseline-shift=\"sub\" font-size=\"70%\"":""].filter(Boolean).join(" ");return style?`<tspan ${style}>${text}</tspan>`:text;} if(active.includes("bold"))text=`<strong>${text}</strong>`;if(active.includes("italic"))text=`<em>${text}</em>`;if(active.includes("superscript"))text=`<sup>${text}</sup>`;if(active.includes("subscript"))text=`<sub>${text}</sub>`;return text; }).join("");
+}
 export function exportHocr(pages: DocumentPage[]): string {
   const body = pages
     .map((page) => {
@@ -428,8 +470,8 @@ export function exportHocr(pages: DocumentPage[]): string {
                   // the corrected string. Emit one unboxed word so hOCR remains useful
                   // without inventing character geometry.
                   const lineContent =
-                    line.correctedText !== line.originalText
-                      ? `<span class="ocrx_word" title="${escapeXml(titleBbox(line.bbox))}">${escapeXml(line.correctedText)}</span>`
+                    line.correctedText !== line.originalText || Boolean(line.formatting?.length)
+                      ? `<span class="ocrx_word" title="${escapeXml(titleBbox(line.bbox))}">${formattedSegments(line)}</span>`
                       : words || escapeXml(line.correctedText);
                   const details = [
                     titleBbox(line.bbox),
@@ -463,7 +505,7 @@ export function exportSvg(page: DocumentPage): string {
       const x = line.bbox.left;
       const y = line.bbox.bottom;
       const baseline = line.bbox.bottom + (line.baseline?.intercept || 0);
-      return `<text x="${x}" y="${baseline}" font-family="monospace" font-size="${size}" textLength="${Math.max(0, line.bbox.right - line.bbox.left)}" lengthAdjust="spacingAndGlyphs" data-line-id="${escapeXml(line.id)}" data-original="${escapeXml(line.originalText)}">${escapeXml(line.correctedText)}</text>`;
+      return `<text x="${x}" y="${baseline}" font-family="monospace" font-size="${size}" textLength="${Math.max(0, line.bbox.right - line.bbox.left)}" lengthAdjust="spacingAndGlyphs" data-line-id="${escapeXml(line.id)}" data-original="${escapeXml(line.originalText)}">${formattedSegments(line, true)}</text>`;
     })
     .join("\n");
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${page.width}" height="${page.height}" viewBox="0 0 ${page.width} ${page.height}">${lines}</svg>`;
@@ -489,7 +531,7 @@ function hasUnpairedSurrogate(value: string): boolean {
 export function parseCandidateMap(json: string): CandidateMap {
   const value: unknown = JSON.parse(json);
   if (!value || typeof value !== "object" || Array.isArray(value))
-    throw new Error("Candidate map must be an object");
+    throw new Error(t("errors.candidateMap"));
   const result: CandidateMap = Object.create(null) as CandidateMap;
   for (const [key, candidates] of Object.entries(value)) {
     if (
@@ -500,14 +542,14 @@ export function parseCandidateMap(json: string): CandidateMap {
       !Array.isArray(candidates) ||
       candidates.length > 100
     )
-      throw new Error(`Invalid candidate list for ${key}`);
+      throw new Error(t("errors.candidateList", { key }));
     result[key] = candidates.map((candidate) => {
       if (
         !candidate ||
         typeof candidate !== "object" ||
         typeof (candidate as { text?: unknown }).text !== "string"
       )
-        throw new Error(`Invalid candidate for ${key}`);
+        throw new Error(t("errors.invalidCandidate", { key }));
       const text = (candidate as { text: string }).text;
       if (
         !text ||
@@ -515,7 +557,7 @@ export function parseCandidateMap(json: string): CandidateMap {
         Array.from(text).length > 256 ||
         /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/u.test(text)
       )
-        throw new Error(`Unsafe candidate text for ${key}`);
+        throw new Error(t("errors.unsafeCandidate", { key }));
       const confidenceValue = (candidate as { confidence?: unknown })
         .confidence;
       if (
@@ -523,7 +565,7 @@ export function parseCandidateMap(json: string): CandidateMap {
         (typeof confidenceValue !== "number" ||
           !Number.isFinite(confidenceValue))
       )
-        throw new Error(`Invalid confidence for ${key}`);
+        throw new Error(t("errors.invalidConfidence", { key }));
       return confidenceValue === undefined
         ? { text }
         : { text, confidence: confidenceValue };
@@ -559,7 +601,7 @@ export function replaceGrapheme(
     end < start ||
     end > graphemes.length
   )
-    throw new RangeError("Invalid grapheme range");
+    throw new RangeError(t("errors.invalidGrapheme"));
   return (
     graphemes.slice(0, start).join("") +
     replacement +
@@ -591,7 +633,7 @@ export interface PreprocessResult {
 
 function canvasFor(width: number, height: number): HTMLCanvasElement {
   if (typeof document === "undefined")
-    throw new Error("Canvas preprocessing requires a browser document");
+    throw new Error(t("errors.canvasBrowser"));
   const canvas = document.createElement("canvas");
   canvas.width = Math.max(1, Math.round(width));
   canvas.height = Math.max(1, Math.round(height));
@@ -625,13 +667,13 @@ function cropCanvas(source: HTMLCanvasElement, crop: Rect): HTMLCanvasElement {
     crop.right <= crop.left ||
     crop.bottom <= crop.top
   )
-    throw new Error("Invalid crop rectangle");
+    throw new Error(t("errors.invalidCrop"));
   const left = Math.max(0, Math.floor(crop.left));
   const top = Math.max(0, Math.floor(crop.top));
   const right = Math.min(source.width, Math.ceil(crop.right));
   const bottom = Math.min(source.height, Math.ceil(crop.bottom));
   if (right <= left || bottom <= top)
-    throw new Error("Crop rectangle is outside the source");
+    throw new Error(t("errors.cropOutside"));
   const width = right - left;
   const height = bottom - top;
   const canvas = canvasFor(width, height);
@@ -711,7 +753,7 @@ export function processCanvas(
   const sourceWidth = candidate.naturalWidth || candidate.width || 0;
   const sourceHeight = candidate.naturalHeight || candidate.height || 0;
   if (!sourceWidth || !sourceHeight)
-    throw new Error("Source image has no dimensions");
+    throw new Error(t("errors.sourceDimensions"));
   const rotation = options.rotation ?? 0;
   let working = rotateCanvas(source, sourceWidth, sourceHeight, rotation);
   let angle = 0;

@@ -115,6 +115,8 @@ describe("PDF import configuration", () => {
       async (command: string, args?: { manifest?: string }) => {
         if (command === "get_environment")
           return { modelPath: "", tesseractPath: "" };
+        if (command === "get_user_preferences")
+          return { version: 1, language: "auto", osLocale: "en-US" };
         if (command === "inspect_pdf") return { pdfSize: 1234 };
         if (command === "create_project")
           return {
@@ -137,7 +139,7 @@ describe("PDF import configuration", () => {
 
   async function selectPdf() {
     await act(async () => root.render(<App />));
-    await act(async () => button(container, "PDF を読み込む").click());
+    await act(async () => button(container, "Import PDF").click());
     await waitFor(() =>
       expect(
         container.querySelector('[role="dialog"][aria-label="PDF import"]'),
@@ -160,7 +162,7 @@ describe("PDF import configuration", () => {
 
   it("cancelling discards the preview PDF without creating a project", async () => {
     await selectPdf();
-    await act(async () => button(container, "キャンセル").click());
+    await act(async () => button(container, "Cancel").click());
     await waitFor(() => expect(mocks.destroy).toHaveBeenCalledTimes(1));
     expect(
       mocks.invoke.mock.calls.some(([command]) => command === "create_project"),
@@ -174,11 +176,11 @@ describe("PDF import configuration", () => {
     )!;
     await act(async () => {
       setField(
-        dialog.querySelector<HTMLInputElement>('[aria-label="開始ページ"]')!,
+        dialog.querySelector<HTMLInputElement>('[aria-label="Start page"]')!,
         "2",
       );
       setField(
-        dialog.querySelector<HTMLInputElement>('[aria-label="終了ページ"]')!,
+        dialog.querySelector<HTMLInputElement>('[aria-label="End page"]')!,
         "3",
       );
       setField(
@@ -186,14 +188,14 @@ describe("PDF import configuration", () => {
         "200",
       );
       setField(
-        dialog.querySelector<HTMLSelectElement>('[aria-label="回転"]')!,
+        dialog.querySelector<HTMLSelectElement>('[aria-label="Rotation"]')!,
         "90",
       );
       dialog
-        .querySelector<HTMLInputElement>('[aria-label="見開きを左右に分割"]')!
+        .querySelector<HTMLInputElement>('[aria-label="Split spread into left and right"]')!
         .click();
     });
-    await act(async () => button(dialog, "4 論理ページで保存").click());
+    await act(async () => button(dialog, "4 logical pages").click());
     await waitFor(() =>
       expect(
         mocks.invoke.mock.calls.some(
@@ -241,9 +243,9 @@ describe("PDF import configuration", () => {
       .mockResolvedValueOnce(null)
       .mockResolvedValueOnce(sourcePath);
     await act(async () => root.render(<App />));
-    await act(async () => button(container, "PDF を読み込む").click());
+    await act(async () => button(container, "Import PDF").click());
     await waitFor(() => expect(mocks.dialogOpen).toHaveBeenCalledTimes(1));
-    await act(async () => button(container, "PDF を読み込む").click());
+    await act(async () => button(container, "Import PDF").click());
     await waitFor(() =>
       expect(
         container.querySelector('[role="dialog"][aria-label="PDF import"]'),
@@ -295,6 +297,8 @@ describe("PDF import configuration", () => {
       async (command: string, args?: { pageId?: string }) => {
         if (command === "get_environment")
           return { modelPath: "", tesseractPath: "" };
+        if (command === "get_user_preferences")
+          return { version: 1, language: "auto", osLocale: "en-US" };
         if (command === "open_project")
           return {
             path: "D:/projects/margins.eduba",
@@ -307,11 +311,11 @@ describe("PDF import configuration", () => {
       },
     );
     await act(async () => root.render(<App />));
-    await act(async () => button(container, "開く").click());
+    await act(async () => button(container, "Open").click());
     await waitFor(() =>
-      expect(button(container, "現在を OCR").disabled).toBe(false),
+      expect(button(container, "OCR current").disabled).toBe(false),
     );
-    await act(async () => button(container, "現在を OCR").click());
+    await act(async () => button(container, "OCR current").click());
     await waitFor(() =>
       expect(
         mocks.invoke.mock.calls.some(([command]) => command === "save_page"),
@@ -338,13 +342,13 @@ describe("PDF import configuration", () => {
   it("keeps source-import controls out of the current OCR settings modal", async () => {
     await act(async () => root.render(<App />));
     const settings =
-      container.querySelector<HTMLButtonElement>('button[title="設定"]')!;
+      container.querySelector<HTMLButtonElement>('button[title="Settings"]')!;
     await act(async () => settings.click());
     const modal = container.querySelector<HTMLElement>(".settings-modal")!;
     expect(modal.textContent).not.toContain("DPI");
 
-    expect(modal.textContent).not.toContain("回転");
+    expect(modal.textContent).not.toContain("Rotation");
     expect(modal.textContent).not.toContain("面");
-    expect(modal.textContent).not.toContain("見開き原稿プリセット");
+    expect(modal.textContent).not.toContain("spread preset");
   });
 });

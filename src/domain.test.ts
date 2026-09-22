@@ -7,6 +7,7 @@ import {
   parseCandidateMap,
   parseHocr,
   replaceGrapheme,
+  updateLineFormatting,
   updateLineText,
 } from "./domain";
 
@@ -94,5 +95,37 @@ describe("safe editing helpers", () => {
   it("validates candidate JSON and rejects control characters", () => {
     expect(parseCandidateMap('{"a":[{"text":"𒀭","confidence":0.9}]}').a[0].text).toBe("𒀭");
     expect(() => parseCandidateMap('{"a":[{"text":"bad\\u0000"}]}')).toThrow();
+  });
+});
+
+
+describe("line formatting", () => {
+  it("keeps superscript and subscript mutually exclusive while toggling only the selection", () => {
+    const [page] = parseHocr(fixture);
+    const line = page.blocks[0].paragraphs[0].lines[0];
+    const superscripted = updateLineFormatting(page, line.id, 1, 5, "superscript");
+    const formatted = updateLineFormatting(superscripted, line.id, 3, 7, "subscript");
+
+    expect(formatted.blocks[0].paragraphs[0].lines[0].formatting).toEqual([
+      { start: 1, end: 3, kind: "superscript" },
+      { start: 3, end: 7, kind: "subscript" },
+    ]);
+    const toggled = updateLineFormatting(formatted, line.id, 3, 7, "subscript");
+    expect(toggled.blocks[0].paragraphs[0].lines[0].formatting).toEqual([
+      { start: 1, end: 3, kind: "superscript" },
+    ]);
+  });
+
+  it("remaps formatting around an edit and exports semantic and visual formatting", () => {
+    const [page] = parseHocr(fixture);
+    const line = page.blocks[0].paragraphs[0].lines[0];
+    const bold = updateLineFormatting(page, line.id, 4, 8, "bold");
+    const edited = updateLineText(bold, line.id, "A🙂 new book");
+    const editedLine = edited.blocks[0].paragraphs[0].lines[0];
+
+    expect(editedLine.formatting).toEqual([{ start: 8, end: 12, kind: "bold" }]);
+    expect(exportText([edited])).toBe("A🙂 new book");
+    expect(exportHocr([edited])).toContain("<strong>book</strong>");
+    expect(exportSvg(edited)).toContain('<tspan font-weight="bold">book</tspan>');
   });
 });

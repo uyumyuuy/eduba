@@ -70,7 +70,7 @@ describe("native page-image extraction", () => {
     const result = await loadPageImage(fake as never, "extract", 72);
     expect(result.modeUsed).toBe("render");
     expect(result.dpiX).toBe(300);
-    expect(result.reason).toContain("画像");
+    expect(result.reason).toContain("image");
     expect(fake.render).toHaveBeenCalled();
   });
 

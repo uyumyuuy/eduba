@@ -1,4 +1,5 @@
 import type { LogicalPageProvenance } from "./domain";
+import { t } from "./i18n";
 import { defaultOcrMargins, type OcrMargins } from "./ocrMargins";
 import type { ImportMode } from "./pageImage";
 
@@ -6,8 +7,8 @@ export type ImportConfig = { begin: number; end: number; dpi: number; rotation: 
 export type ImportEntry = LogicalPageProvenance & { id: string; label: string; status: "pending"; dpi: number; importMode: ImportMode; ocrMargins: OcrMargins };
 
 export function validateImportRange(begin: number, end: number, numPages: number): string | null {
-  if (!Number.isInteger(begin) || !Number.isInteger(end)) return "ページ番号は整数で入力してください。";
-  if (begin < 1 || end < begin || end > numPages) return `開始・終了ページは 1〜${numPages} の範囲で指定してください。`;
+  if (!Number.isInteger(begin) || !Number.isInteger(end)) return t("errors.pageRangeInteger");
+  if (begin < 1 || end < begin || end > numPages) return t("errors.pageRangeBounds", { count: numPages });
   return null;
 }
 
