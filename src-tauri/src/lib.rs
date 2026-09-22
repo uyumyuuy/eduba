@@ -725,6 +725,15 @@ fn manifest_page_order(conn: &Connection) -> BackendResult<Vec<(String, String)>
     Ok(ordered)
 }
 
+fn completed_page_ids(conn: &Connection) -> BackendResult<HashSet<String>> {
+    let manifest: Option<String> = conn.query_row("SELECT value FROM meta WHERE key='manifest'", [], |row| row.get(0)).optional()?;
+    let Some(raw) = manifest else { return Ok(HashSet::new()); };
+    let value: serde_json::Value = serde_json::from_str(&raw)?;
+    Ok(value.get("pages").and_then(serde_json::Value::as_array).into_iter().flatten()
+        .filter(|page| page.get("completed").and_then(serde_json::Value::as_bool) == Some(true))
+        .filter_map(|page| page.get("id").and_then(serde_json::Value::as_str).map(str::to_owned))
+        .collect())
+}
 fn search_corrections_impl(args: &SearchCorrectionsArgs) -> BackendResult<CorrectionSearchPage> {
     if args.search.is_empty() {
         return Err(BackendError::msg("search text is required"));
@@ -734,11 +743,13 @@ fn search_corrections_impl(args: &SearchCorrectionsArgs) -> BackendResult<Correc
     }
     let root = project_root(&args.project_path)?;
     let conn = open_connection(&root)?;
+    let completed = completed_page_ids(&conn)?;
     let start = args.page.checked_mul(args.page_size).unwrap_or(usize::MAX);
     let mut total = 0usize;
     let mut results = Vec::with_capacity(args.page_size);
 
     for (page_id, page_label) in manifest_page_order(&conn)? {
+        if completed.contains(&page_id) { continue; }
         let Some(data) = conn
             .query_row("SELECT data FROM pages WHERE page_id=?1", [&page_id], |row| row.get::<_, String>(0))
             .optional()?
@@ -811,8 +822,12 @@ fn apply_bulk_corrections_impl(args: &ApplyBulkCorrectionsArgs) -> BackendResult
     let root = project_root(&args.project_path)?;
     let mut conn = open_connection(&root)?;
     let tx = conn.transaction()?;
+    let completed = completed_page_ids(&tx)?;
     let mut changes = Vec::with_capacity(args.updates.len());
     for update in &args.updates {
+        if completed.contains(&update.page_id) {
+            return Err(BackendError::msg(format!("page is marked proofread: {}", update.page_id)));
+        }
         let current: Option<String> = tx
             .query_row(
                 "SELECT data FROM pages WHERE page_id=?1",
@@ -1385,6 +1400,19 @@ mod tests {
         }).is_err());
     }
 
+    #[test]
+    fn bulk_operations_exclude_and_reject_completed_pages() {
+        let (_dir, pdf, project) = fixture();
+        let path = project.to_string_lossy().into_owned();
+        create_project_impl(&CreateProjectArgs { pdf_path: pdf.to_string_lossy().into_owned(), project_path: path.clone(), manifest: Some(r#"{"version":1,"pages":[{"id":"done","label":"1","completed":true},{"id":"open","label":"2"}]}"#.into()) }).unwrap();
+        let page = r#"{"blocks":[{"paragraphs":[{"lines":[{"id":"line","correctedText":"old"}]}]}]}"#;
+        save_page_impl(&SavePageArgs { project_path: path.clone(), page_id: "done".into(), data: page.into() }).unwrap();
+        save_page_impl(&SavePageArgs { project_path: path.clone(), page_id: "open".into(), data: page.into() }).unwrap();
+        let found = search_corrections_impl(&SearchCorrectionsArgs { project_path: path.clone(), search: "old".into(), page: 0, page_size: 10 }).unwrap();
+        assert_eq!(found.results.len(), 1);
+        assert_eq!(found.results[0].page_id, "open");
+        assert!(apply_bulk_corrections_impl(&ApplyBulkCorrectionsArgs { project_path: path, updates: vec![BulkPageUpdate { page_id: "done".into(), expected_data: page.into(), data: r#"{"blocks":[]}"#.into() }] }).is_err());
+    }
     #[test]
     fn bulk_updates_are_atomic_and_reject_stale_page_data() {
         let (_dir, pdf, project) = fixture();

@@ -57,6 +57,8 @@ type Entry = LogicalPageProvenance & {
   id: string;
   label: string;
   status: Status;
+  /** A user-owned review marker. It is independent of OCR status. */
+  completed?: boolean;
   width?: number;
   height?: number;
   dpi?: number;
@@ -138,6 +140,7 @@ function parseManifest(raw: string | null): Manifest {
           page.status === "ocr" || page.status === "review"
             ? page.status
             : "pending",
+        completed: page.status === "review" && page.completed === true,
         width: page.width,
         height: page.height,
         dpi:
@@ -328,6 +331,23 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
     indexRef.current = value;
     setIndex(value);
   }, []);
+  const clearCompletion = useCallback(async (pageIds: string[]) => {
+    const protectedIds = new Set(pageIds.filter(id => manifestRef.current.pages.some(page => page.id === id && page.completed)));
+    if (!protectedIds.size) return true;
+    if (!window.confirm(t("ui.editCompletedConfirm"))) return false;
+    const previous = manifestRef.current;
+    const next = { ...previous, pages: previous.pages.map(page => protectedIds.has(page.id) ? { ...page, completed: false } : page) };
+    putManifest(next);
+    const info = projectRef.current;
+    try {
+      if (isTauri && info) await writeQueue.current.enqueue(() => invokeCommand("save_manifest", { projectPath: info.path, manifest: JSON.stringify(copy(next)) }));
+      return true;
+    } catch (error) {
+      putManifest(previous);
+      setNotice("notices.saveFailed", { error: errorText(error) });
+      return false;
+    }
+  }, [putManifest, setNotice, t]);
   const flush = useCallback(async () => {
     if (timer.current) {
       clearTimeout(timer.current);
@@ -620,16 +640,17 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
     setEditing((current) => current === session.lineId ? null : current);
   }, []);
   finishLineEditRef.current = finishLineEdit;
-  const beginLineEdit = useCallback((lineId: string) => {
+  const beginLineEdit = useCallback(async (lineId: string) => {
     finishLineEditRef.current();
     const pageId = manifestRef.current.pages[indexRef.current]?.id;
     if (!pageId) return;
     const before = docRef.current;
     if (!before) return;
+    if (!await clearCompletion([pageId])) return;
     lineEditSession.current = { id: ++nextLineEditSession.current, pageId, lineId, beforeData: JSON.stringify(before) };
     setSelected(lineId);
     setEditing(lineId);
-  }, []);
+  }, [clearCompletion]);
   const commitLineEdit = useCallback((lineId: string, update: (before: DocumentPage) => DocumentPage) => {
     if (working.current || importActive.current) return;
     const before = docRef.current;
@@ -699,6 +720,7 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
       return;
     }
     if (!operation) return;
+    if (!await clearCompletion(operation.changes.map(change => change.pageId))) return;
     historyApplying.current = true;
     setBusy("save");
     try {
@@ -707,7 +729,7 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
       setRedoStack((old) => [operation, ...old].slice(0, 100));
     } catch (error) { setNotice("notices.saveFailed", { error: errorText(error) }); }
     finally { historyApplying.current = false; setBusy(null); }
-  }, [applyHistory, undoStack, setNotice]);
+  }, [applyHistory, clearCompletion, undoStack, setNotice]);
   const redo = useCallback(async () => {
     if (working.current || importActive.current || historyApplying.current) return;
     const operation = redoStack[0];
@@ -717,6 +739,7 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
       return;
     }
     if (!operation) return;
+    if (!await clearCompletion(operation.changes.map(change => change.pageId))) return;
     historyApplying.current = true;
     setBusy("save");
     try {
@@ -725,7 +748,7 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
       setUndoStack((old) => [...old, operation].slice(-100));
     } catch (error) { setNotice("notices.saveFailed", { error: errorText(error) }); }
     finally { historyApplying.current = false; setBusy(null); }
-  }, [applyHistory, redoStack, setNotice]);
+  }, [applyHistory, clearCompletion, redoStack, setNotice]);
   const recognize = useCallback(
     async (entry: Entry, token: number) => {
       const worker = document.createElement("canvas");
@@ -785,7 +808,7 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
       const targets =
         scope === "current"
           ? [manifestRef.current.pages[indexRef.current]]
-          : manifestRef.current.pages.filter((p) => p.status !== "review");
+          : manifestRef.current.pages.filter((p) => p.status !== "review" && !p.completed);
       if (!targets.length) {
         working.current = false;
         setNotice("notices.noPendingOcr");
@@ -857,19 +880,23 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
     [putDoc, putManifest, recognize],
   );
   const askOcr = useCallback(
-    (scope: "current" | "all") => {
+    async (scope: "current" | "all") => {
       if (importActive.current) return;
-      if (
-        scope === "current" &&
-        docRef.current &&
-        allLines(docRef.current).some(
-          (line) => line.correctedText !== line.originalText,
-        )
-      )
-        setConfirmOcr(scope);
+      const active = manifestRef.current.pages[indexRef.current];
+      const hasManualCorrections = scope === "current" && Boolean(docRef.current && allLines(docRef.current).some(
+        (line) => line.correctedText !== line.originalText,
+      ));
+      // Keep the existing destructive-OCR confirmation when corrections exist.
+      // Its approval handler clears completion immediately before OCR starts.
+      if (scope === "current" && active?.completed && !hasManualCorrections) {
+        if (!await clearCompletion([active.id])) return;
+        void runOcr(scope);
+        return;
+      }
+      if (hasManualCorrections) setConfirmOcr(scope);
       else runOcr(scope);
     },
-    [runOcr],
+    [clearCompletion, runOcr],
   );
   const cancelOcr = useCallback(() => {
     cancelled.current = true;
@@ -1196,7 +1223,7 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
                 className={`page-item ${i === index ? "active" : ""}`}
                 onClick={() => go(i)}
                 disabled={Boolean(busy)}
-                aria-label={`${t("ui.page", { page: page.label })} · ${t("ui.sourcePage", { page: page.sourcePage })} · ${page.split === "single" ? t("ui.whole") : page.split === "left" ? t("ui.left") : t("ui.right")}`}
+                aria-label={`${t("ui.page", { page: page.label })} · ${t("ui.sourcePage", { page: page.sourcePage })} · ${page.split === "single" ? t("ui.whole") : page.split === "left" ? t("ui.left") : t("ui.right")}${page.completed ? ` · ${t("ui.pageComplete")}` : ""}`}
               >
                 <PageThumbnail cache={thumbnailCache} sourcePage={page.sourcePage} />
                 <span className="page-meta">
@@ -1210,9 +1237,8 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
                         : t("ui.right")}
                   </small>
                 </span>
-                <span
-                  className={`status-dot ${page.status === "review" ? "ready" : ""}`}
-                />
+                <span className={`status-dot ${page.status === "review" ? "ready" : ""}`} />
+                {page.completed && <span className="page-complete-mark" aria-label={t("ui.pageComplete")} title={t("ui.pageComplete")}>✓</span>}
               </button>
             ))}
           </div>
@@ -1232,6 +1258,14 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
                     : t("ui.rightPage")}
               </span>
             </div>
+            {current?.status === "review" && <label className="page-complete-toggle" title={t("ui.pageCompleteHint")}>
+              <input type="checkbox" checked={Boolean(current.completed)} disabled={Boolean(busy)} onChange={(event) => {
+                if (event.currentTarget.checked) finishLineEditRef.current();
+                const next = { ...manifestRef.current, pages: manifestRef.current.pages.map(page => page.id === current.id ? { ...page, completed: event.currentTarget.checked } : page) };
+                putManifest(next); scheduleSave();
+              }} />
+              <span>{t("ui.pageComplete")}</span>
+            </label>}
             <div className="view-tools">
               <button
                 className="icon-btn"
@@ -1309,7 +1343,7 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
                               1,
                               line.bbox.bottom - line.bbox.top,
                             )}
-                            onClick={() => beginLineEdit(line.id)}
+                            onClick={() => void beginLineEdit(line.id)}
                           />
                           <text
                             x={line.bbox.left}
@@ -1424,7 +1458,10 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
                 onClick={() => {
                   const scope = confirmOcr;
                   setConfirmOcr(null);
-                  runOcr(scope);
+                  const active = manifestRef.current.pages[indexRef.current];
+                  void clearCompletion(active ? [active.id] : []).then((cleared) => {
+                    if (cleared) void runOcr(scope);
+                  });
                 }}
               >
                 {t("ui.replaceOcr")}

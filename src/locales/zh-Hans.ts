@@ -64,7 +64,7 @@ const zhHans = {
     clickLine: "点击一行以编辑", newProject: "新建项目",
     projectFile: ".eduba 项目", whole: "整页", left: "左", right: "右", leftPage: "左页", rightPage: "右页",
     openPdf: "打开 PDF", noOcr: "尚无 OCR 结果", importToStart: "导入 PDF 以开始", saving: "正在保存…",
-    autosave: "自动保存", idle: "空闲", back: "返回", replaceOcr: "替换并进行 OCR", replaceTitle: "要替换已校正的内容吗？",
+    autosave: "自动保存", idle: "空闲", back: "返回", replaceOcr: "替换并进行 OCR", replaceTitle: "要替换已校正的内容吗？", pageComplete: "校对完成", pageCompleteHint: "将此 OCR 页面标记为校对完成", editCompletedConfirm: "此页面已标记为校对完成。要移除标记并编辑吗？",
   },
 } as const;
 

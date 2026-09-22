@@ -64,7 +64,7 @@ const ja = {
     clickLine: "行をクリックして編集", newProject: "新規プロジェクト",
     projectFile: ".eduba プロジェクト", whole: "全体", left: "左", right: "右", leftPage: "左ページ", rightPage: "右ページ",
     openPdf: "PDF を開く", noOcr: "OCR 結果はまだありません", importToStart: "PDF を読み込んで開始", saving: "保存中…",
-    autosave: "自動保存", idle: "待機中", back: "戻る", replaceOcr: "置き換えて OCR", replaceTitle: "修正内容を置き換えますか？",
+    autosave: "自動保存", idle: "待機中", back: "戻る", replaceOcr: "置き換えて OCR", replaceTitle: "修正内容を置き換えますか？", pageComplete: "校正完了", pageCompleteHint: "この OCR ページを校正完了にします", editCompletedConfirm: "このページは校正完了です。完了を解除して編集しますか？",
   },
 } as const;
 export default ja;

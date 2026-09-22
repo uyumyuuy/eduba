@@ -64,7 +64,7 @@ const zhHant = {
     clickLine: "點選一行以編輯", newProject: "新增專案",
     projectFile: ".eduba 專案", whole: "整頁", left: "左", right: "右", leftPage: "左頁", rightPage: "右頁",
     openPdf: "開啟 PDF", noOcr: "尚無 OCR 結果", importToStart: "匯入 PDF 以開始", saving: "正在儲存…",
-    autosave: "自動儲存", idle: "閒置", back: "返回", replaceOcr: "取代後辨識", replaceTitle: "要取代已校正的內容嗎？",
+    autosave: "自動儲存", idle: "閒置", back: "返回", replaceOcr: "取代後辨識", replaceTitle: "要取代已校正的內容嗎？", pageComplete: "校對完成", pageCompleteHint: "將此 OCR 頁面標記為校對完成", editCompletedConfirm: "此頁面已標記為校對完成。要移除標記並編輯嗎？",
   },
 } as const;
 

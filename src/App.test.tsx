@@ -168,6 +168,46 @@ describe("saved project loading", () => {
     await waitFor(() => expect(container.textContent).toContain("saved page one"));
   }
 
+  it("keeps a completed page protected when its edit confirmation is declined", async () => {
+    await openSavedProject();
+    await act(async () => container.querySelector<HTMLInputElement>(".page-complete-toggle input")!.click());
+    vi.spyOn(window, "confirm").mockReturnValue(false);
+    const line = container.querySelector<SVGRectElement>(".layout-svg rect")!;
+    await act(async () => line.dispatchEvent(new MouseEvent("click", { bubbles: true })));
+    expect(window.confirm).toHaveBeenCalled();
+    expect(container.querySelector("textarea.line-overlay")).toBeNull();
+    expect(container.querySelector<HTMLInputElement>(".page-complete-toggle input")!.checked).toBe(true);
+  });
+
+  it("unmarks a completed page before allowing its edit", async () => {
+    await openSavedProject();
+    await act(async () => container.querySelector<HTMLInputElement>(".page-complete-toggle input")!.click());
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+    const line = container.querySelector<SVGRectElement>(".layout-svg rect")!;
+    await act(async () => line.dispatchEvent(new MouseEvent("click", { bubbles: true })));
+    await waitFor(() => expect(container.querySelector("textarea.line-overlay")).toBeTruthy());
+    expect(container.querySelector<HTMLInputElement>(".page-complete-toggle input")!.checked).toBe(false);
+  });
+  it("requires confirmation before undoing into a completed page", async () => {
+    await openSavedProject();
+    const line = container.querySelector<SVGRectElement>(".layout-svg rect")!;
+    await act(async () => line.dispatchEvent(new MouseEvent("click", { bubbles: true })));
+    const editor = container.querySelector<HTMLTextAreaElement>("textarea.line-overlay")!;
+    const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")!.set!;
+    await act(async () => { setter.call(editor, "changed"); editor.dispatchEvent(new Event("input", { bubbles: true })); editor.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true })); });
+    await waitFor(() => expect(container.textContent).toContain("changed"));
+    await act(async () => container.querySelector<HTMLInputElement>(".page-complete-toggle input")!.click());
+    const undo = Array.from(container.querySelectorAll<HTMLButtonElement>("button")).find(button => button.textContent?.includes("Undo"))!;
+    vi.spyOn(window, "confirm").mockReturnValue(false);
+    await act(async () => undo.click());
+    expect(window.confirm).toHaveBeenCalled();
+    expect(container.textContent).toContain("changed");
+    expect(container.querySelector<HTMLInputElement>(".page-complete-toggle input")!.checked).toBe(true);
+    vi.mocked(window.confirm).mockReturnValue(true);
+    await act(async () => undo.click());
+    await waitFor(() => expect(container.textContent).toContain("saved page one"));
+    expect(container.querySelector<HTMLInputElement>(".page-complete-toggle input")!.checked).toBe(false);
+  });
   it("persists a language choice without writing the open project", async () => {
     await openSavedProject();
     mocks.invoke.mockClear();
