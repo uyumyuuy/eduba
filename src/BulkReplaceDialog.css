@@ -3,11 +3,12 @@
 .bulk-replace-header h2 { margin-top: 7px; }
 .bulk-replace-fields { display: grid; grid-template-columns: minmax(180px, .8fr) minmax(300px, 1.2fr); gap: 12px; margin: 16px 0; }
 .bulk-replace-fields label { display: flex; flex-direction: column; gap: 6px; color: #63716d; font-size: 10px; font-weight: 600; min-width: 0; }
-.bulk-replace-fields input, .bulk-replace-editor input { box-sizing: border-box; width: 100%; min-width: 0; min-height: 34px; padding: 7px 9px; border: 1px solid #d6d8d0; border-radius: 5px; outline: 0; background: #fffefa; color: #3d4e4a; font-size: 12px; font-family: inherit; resize: vertical; }
+.bulk-replace-fields input, .bulk-replace-editor input { box-sizing: border-box; width: 100%; min-width: 0; min-height: 34px; padding: 7px 9px; border: 1px solid #d6d8d0; border-radius: 5px; outline: 0; background: #fffefa; color: #3d4e4a; font-size: 12px; font-family: var(--ocr-font); resize: vertical; }
 .bulk-replace-editor input:focus { border-color: #65817b; box-shadow: 0 0 0 2px #dcebe4; }
 .bulk-replace-editor { position: relative; min-width: 0; }
 .bulk-selection-toolbar { display: flex; flex-wrap: wrap; gap: 3px; margin-top: 5px; padding: 4px; border: 1px solid #dce2db; border-radius: 5px; background: #f4f7f2; }
 .bulk-selection-toolbar button { border: 0; border-radius: 3px; padding: 3px 6px; background: transparent; color: #54746f; cursor: pointer; font-size: 10px; }
+.bulk-selection-toolbar .text-candidate { font-family: var(--ocr-font); }
 .bulk-selection-toolbar button:hover { background: #dcebe4; color: #287b72; }
 .bulk-replace-results-head { padding: 9px 1px; border-top: 1px solid #e5e2d9; color: #64716c; font: 10px "DM Mono", monospace; }
 .bulk-replace-results { min-height: 120px; max-height: 420px; overflow: auto; border: 1px solid #e0ddd4; border-radius: 6px; }
@@ -18,7 +19,7 @@
 .bulk-replace-snippet img { width: auto; max-width: none; height: 100%; object-fit: contain; }
 .bulk-replace-result-copy { display: flex; flex-direction: column; min-width: 0; gap: 3px; color: #5d6964; font-size: 10px; }
 .bulk-replace-result-copy strong { color: #54746f; font: 9px "DM Mono", monospace; }
-.bulk-replace-result-copy span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bulk-replace-result-copy span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--ocr-font); }
 .bulk-replace-match { padding: 0 1px; border-radius: 2px; background: #f3db7a; color: #273632; font-weight: 700; }
 .bulk-replace-empty { display: flex; align-items: center; justify-content: center; gap: 7px; min-height: 120px; color: #9da59e; font-size: 11px; }
 .bulk-replace-footer { margin-top: 14px; }

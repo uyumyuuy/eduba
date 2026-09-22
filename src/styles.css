@@ -1,4 +1,8 @@
-:root { color: #202c32; background: #f3f0e8; font-family: Manrope, "Noto Sans JP", sans-serif; font-synthesis: none; --ink: #202c32; --muted: #89908f; --line: #ddd9cf; --paper: #fcfbf7; --navy: #193e4b; --teal: #3d8f8c; --teal-light: #e3f0ed; --warm: #f3f0e8; }
+@font-face { font-family: "Noto Serif"; src: url("./assets/fonts/noto-serif-latin-ext-wght-normal.woff2") format("woff2-variations"); font-style: normal; font-weight: 100 900; font-display: block; unicode-range: U+0100-02BA,U+02BD-02C5,U+02C7-02CC,U+02CE-02D7,U+02DD-02FF,U+0304,U+0308,U+0329,U+1D00-1DBF,U+1E00-1E9F,U+1EF2-1EFF,U+2020,U+20A0-20AB,U+20AD-20C0,U+2113,U+2C60-2C7F,U+A720-A7FF; }
+@font-face { font-family: "Noto Serif"; src: url("./assets/fonts/noto-serif-latin-ext-wght-italic.woff2") format("woff2-variations"); font-style: italic; font-weight: 100 900; font-display: block; unicode-range: U+0100-02BA,U+02BD-02C5,U+02C7-02CC,U+02CE-02D7,U+02DD-02FF,U+0304,U+0308,U+0329,U+1D00-1DBF,U+1E00-1E9F,U+1EF2-1EFF,U+2020,U+20A0-20AB,U+20AD-20C0,U+2113,U+2C60-2C7F,U+A720-A7FF; }
+@font-face { font-family: "Noto Serif"; src: url("./assets/fonts/noto-serif-latin-wght-normal.woff2") format("woff2-variations"); font-style: normal; font-weight: 100 900; font-display: block; unicode-range: U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD; }
+@font-face { font-family: "Noto Serif"; src: url("./assets/fonts/noto-serif-latin-wght-italic.woff2") format("woff2-variations"); font-style: italic; font-weight: 100 900; font-display: block; unicode-range: U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD; }
+:root { color: #202c32; background: #f3f0e8; font-family: Manrope, "Noto Sans JP", sans-serif; font-synthesis: none; --ocr-font: "Noto Serif", serif; --ink: #202c32; --muted: #89908f; --line: #ddd9cf; --paper: #fcfbf7; --navy: #193e4b; --teal: #3d8f8c; --teal-light: #e3f0ed; --warm: #f3f0e8; }
 * { box-sizing: border-box; }
 body { margin: 0; min-width: 960px; min-height: 100vh; overflow: hidden; background: var(--warm); }
 button, input, select, textarea { font: inherit; }
@@ -78,7 +82,7 @@ button:disabled { cursor: not-allowed; opacity: .42; }
 .line-row:hover { border-color: #c8ddd6; background: rgba(235,245,241,.7); }
 .line-row.selected { border-color: #77b8ab; background: rgba(228,242,237,.84); }
 .line-no { padding-top: 5px; color: #b1b4ad; font: 9px "DM Mono", monospace; }
-.line-row textarea { width: 100%; min-height: 24px; resize: none; overflow: hidden; padding: 2px 0; border: 0; outline: 0; background: transparent; color: #32413e; font: 15px/1.65 "Noto Sans JP", sans-serif; letter-spacing: .04em; }
+.line-row textarea { width: 100%; min-height: 24px; resize: none; overflow: hidden; padding: 2px 0; border: 0; outline: 0; background: transparent; color: #32413e; font: 15px/1.65 var(--ocr-font); letter-spacing: .04em; }
 .confidence { padding-top: 6px; color: #b7bdb7; font: 8px "DM Mono", monospace; }
 .ocr-empty { display: flex; flex-direction: column; align-items: center; gap: 11px; margin-top: 250px; color: #afb4ac; text-align: center; font-size: 11px; line-height: 1.7; }
 .statusbar { display: flex; align-items: center; justify-content: space-between; padding: 0 18px 0 24px; background: #193e4b; color: #afc5c5; font: 9px "DM Mono", monospace; }
@@ -114,8 +118,8 @@ button:disabled { cursor: not-allowed; opacity: .42; }
 .rendered-page { max-width: none !important; flex: 0 0 auto; }
 .layout-card { padding: 0; overflow: hidden; flex: 0 0 auto; }
 .layout-svg { pointer-events: auto; }
-.layout-svg text { pointer-events: none; fill: #273b38; dominant-baseline: alphabetic; }
-.line-overlay { position: absolute; z-index: 3; resize: none; overflow: hidden; padding: 0 2px; border: 1px solid #2f887e; outline: 2px solid rgba(61,143,140,.2); background: rgba(255,254,250,.96); color: #273b38; font-family: ui-monospace, SFMono-Regular, Consolas, monospace; line-height: 1.05; white-space: pre; }
+.layout-svg text { pointer-events: none; fill: #273b38; font-family: var(--ocr-font); dominant-baseline: alphabetic; }
+.line-overlay { position: absolute; z-index: 3; resize: none; overflow: hidden; padding: 0 2px; border: 1px solid #2f887e; outline: 2px solid rgba(61,143,140,.2); background: rgba(255,254,250,.96); color: #273b38; font-family: var(--ocr-font); line-height: 1.05; white-space: pre; }
 
 /* Import configuration needs room for controls and a useful PDF preview. */
 .import-modal { width: min(920px, calc(100vw - 32px)); max-height: calc(100dvh - 32px); display: flex; flex-direction: column; padding: 22px 24px; overflow: auto; }
@@ -150,6 +154,7 @@ button:disabled { cursor: not-allowed; opacity: .42; }
 
 .selection-toolbar { position:absolute; z-index:4; display:flex; gap:3px; max-width:calc(100% - 4px); padding:3px; overflow:auto; border:1px solid #79aaa1; border-radius:4px; background:#fffefa; box-shadow:0 3px 10px rgba(0,0,0,.16); white-space:nowrap; }
 .selection-toolbar button { min-height:23px; padding:2px 6px; border:0; border-radius:3px; background:#e8efeb; color:#244943; font:10px ui-monospace, monospace; cursor:pointer; }
+.selection-toolbar .text-candidate { font-family: var(--ocr-font); }
 .selection-toolbar button:hover, .selection-toolbar button:focus-visible { background:#cce4dd; outline:2px solid #3d8f8c; }
 
 .page-complete-toggle { display: inline-flex; align-items: center; gap: 5px; color: #73807b; font: 10px Manrope, sans-serif; cursor: pointer; }

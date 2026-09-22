@@ -30,7 +30,8 @@
     "icon": ["icons/icon.ico"],
     "resources": {
       "resources/tesseract": "tesseract",
-      "resources/models": "models"
+      "resources/models": "models",
+      "../src/assets/fonts/NotoSerif-OFL.txt": "NotoSerif-OFL.txt"
     }
   }
 }

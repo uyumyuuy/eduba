@@ -127,5 +127,6 @@ describe("line formatting", () => {
     expect(exportText([edited])).toBe("A🙂 new book");
     expect(exportHocr([edited])).toContain("<strong>book</strong>");
     expect(exportSvg(edited)).toContain('<tspan font-weight="bold">book</tspan>');
+    expect(exportSvg(edited)).toContain('font-family="Noto Serif"');
   });
 });

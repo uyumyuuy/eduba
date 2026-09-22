@@ -530,7 +530,7 @@ export function exportSvg(page: DocumentPage): string {
       const x = line.bbox.left;
       const y = line.bbox.bottom;
       const baseline = line.bbox.bottom + (line.baseline?.intercept || 0);
-      return `<text x="${x}" y="${baseline}" font-family="monospace" font-size="${size}" textLength="${Math.max(0, line.bbox.right - line.bbox.left)}" lengthAdjust="spacingAndGlyphs" data-line-id="${escapeXml(line.id)}" data-original="${escapeXml(line.originalText)}">${formattedSegments(line, true)}</text>`;
+      return `<text x="${x}" y="${baseline}" font-family="Noto Serif" font-size="${size}" textLength="${Math.max(0, line.bbox.right - line.bbox.left)}" lengthAdjust="spacingAndGlyphs" data-line-id="${escapeXml(line.id)}" data-original="${escapeXml(line.originalText)}">${formattedSegments(line, true)}</text>`;
     })
     .join("\n");
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${page.width}" height="${page.height}" viewBox="0 0 ${page.width} ${page.height}">${lines}</svg>`;

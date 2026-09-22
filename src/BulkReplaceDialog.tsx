@@ -100,7 +100,7 @@ function ReplacementEditor({ value, formatting, onChange, onFormattingChange }: 
       <button type="button" onClick={() => format("italic")} aria-label={t("toolbar.italic")}>{ctrl ? "Ctrl+I" : t("toolbar.italic")}</button>
       <button type="button" onClick={() => format("superscript")} aria-label={t("toolbar.superscript")}>{ctrl ? "Ctrl+↑" : t("toolbar.superscript")}</button>
       <button type="button" onClick={() => format("subscript")} aria-label={t("toolbar.subscript")}>{ctrl ? "Ctrl+↓" : t("toolbar.subscript")}</button>
-      {candidates.map((candidate, index) => <button type="button" key={candidate} onClick={() => replace(candidate)} aria-label={candidate}>{candidate}{ctrl && index < 9 ? ` (Ctrl+${index + 1})` : ""}</button>)}
+      {candidates.map((candidate, index) => <button className="text-candidate" type="button" key={candidate} onClick={() => replace(candidate)} aria-label={candidate}>{candidate}{ctrl && index < 9 ? ` (Ctrl+${index + 1})` : ""}</button>)}
     </div>}
   </div>;
 }
