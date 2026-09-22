@@ -37,6 +37,49 @@ describe("hOCR domain model", () => {
     expect(line.words[0].chars[1].confidence).toBe(95);
   });
 
+  it("imports all Tesseract text-line classes once in document order", () => {
+    const variants = [
+      ["ocr_textfloat", "first"],
+      ["ocr_line", "second"],
+      ["ocr_header ocr_line", "third"],
+      ["ocr_caption", "fourth"],
+    ];
+    const lines = variants.map(([className, word], index) =>
+      `<span class="${className}" id="line_${index}" title="bbox 10 ${10 + index * 20} 100 ${25 + index * 20}">
+        <span class="ocrx_word" id="word_${index}" title="bbox 10 ${10 + index * 20} 100 ${25 + index * 20}">${word}</span>
+      </span>`,
+    ).join("");
+    const hocr = `<html xmlns="http://www.w3.org/1999/xhtml"><body>
+      <div class="ocr_page" title="bbox 0 0 200 100">
+        <div class="ocr_carea" title="bbox 0 0 200 100">
+          <p class="ocr_par" title="bbox 0 0 200 100">${lines}</p>
+        </div>
+      </div>
+    </body></html>`;
+    const parsed = parseHocr(hocr)[0].blocks[0].paragraphs[0].lines;
+    expect(parsed.map((line) => line.originalText)).toEqual(["first", "second", "third", "fourth"]);
+    expect(parsed.map((line) => line.id)).toEqual(["page-0--line_0", "page-0--line_1", "page-0--line_2", "page-0--line_3"]);
+    expect(parsed.map((line) => line.bbox.top)).toEqual([10, 30, 50, 70]);
+    expect(parsed.map((line) => line.hocrClasses)).toEqual([
+      ["ocr_textfloat"],
+      ["ocr_line"],
+      ["ocr_header", "ocr_line"],
+      ["ocr_caption"],
+    ]);
+    const savedPages = JSON.parse(JSON.stringify(parseHocr(hocr)));
+    const exported = exportHocr(savedPages);
+    expect(exported).toContain("class=\"ocr_textfloat\"");
+    expect(exported).toContain("class=\"ocr_header ocr_line\"");
+    expect(exported).toContain("class=\"ocr_caption\"");
+  });
+
+  it("exports ocr_line for older saved lines without class metadata", () => {
+    const [page] = parseHocr(fixture);
+    const line = page.blocks[0].paragraphs[0].lines[0];
+    delete line.hocrClasses;
+    expect(exportHocr([page])).toContain("class=\"ocr_line\"");
+  });
+
   it("keeps OCR text distinct from Unicode corrections and marks inserted graphemes", () => {
     const [page] = parseHocr(fixture);
     const line = page.blocks[0].paragraphs[0].lines[0];

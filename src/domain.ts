@@ -21,6 +21,7 @@ export interface Baseline {
 }
 
 export type CharacterSource = "ocr" | "inserted";
+export type HocrLineClass = "ocr_line" | "ocr_header" | "ocr_textfloat" | "ocr_caption";
 
 export interface OcrChar {
   index: number;
@@ -46,6 +47,8 @@ export interface TextFormatRange { start: number; end: number; kind: TextFormatK
 
 export interface OcrLine {
   id: string;
+  /** Recognized hOCR line classes, retained when the corrected line is exported. */
+  hocrClasses?: HocrLineClass[];
   bbox: Rect;
   baseline?: Baseline;
   fontSize?: number;
@@ -131,10 +134,11 @@ const CLASS_NAMES = {
   page: "ocr_page",
   block: "ocr_carea",
   paragraph: "ocr_par",
-  line: "ocr_line",
   word: "ocrx_word",
   char: "ocrx_cinfo",
 } as const;
+
+const LINE_CLASSES = ["ocr_line", "ocr_header", "ocr_textfloat", "ocr_caption"] as const;
 
 function childrenOf(element: Element, className: string): Element[] {
   return Array.from(element.querySelectorAll(`:scope > .${className}`));
@@ -265,6 +269,7 @@ function parseLine(element: Element): OcrLine {
   const chars = charsFromWords(words);
   return {
     id: element.id || `line-${Math.random().toString(36).slice(2)}`,
+    hocrClasses: Array.from(element.classList).filter((name): name is HocrLineClass => LINE_CLASSES.includes(name as HocrLineClass)),
     bbox: bbox(element),
     baseline: parseBaseline(element),
     fontSize: numbers(titleValue(element, "x_size"))?.[0],
@@ -283,7 +288,9 @@ function parseLine(element: Element): OcrLine {
 }
 
 function parseParagraph(element: Element): Paragraph {
-  const lines = childrenOf(element, CLASS_NAMES.line).map(parseLine);
+  const lines = Array.from(element.children)
+    .filter((child) => LINE_CLASSES.some((name) => child.classList.contains(name)))
+    .map(parseLine);
   return {
     id: element.id || `paragraph-${Math.random().toString(36).slice(2)}`,
     bbox: bbox(element),
@@ -546,7 +553,10 @@ export function exportHocr(pages: DocumentPage[]): string {
                   ]
                     .filter(Boolean)
                     .join("; ");
-                  return `<span class="ocr_line" id="${escapeXml(line.id)}" title="${escapeXml(details)}">${lineContent}</span>`;
+                  const lineClasses = line.hocrClasses?.length
+                    ? line.hocrClasses.join(" ")
+                    : "ocr_line";
+                  return `<span class="${escapeXml(lineClasses)}" id="${escapeXml(line.id)}" title="${escapeXml(details)}">${lineContent}</span>`;
                 })
                 .join("\n");
               return `<p class="ocr_par" id="${escapeXml(paragraph.id)}" title="${escapeXml(titleBbox(paragraph.bbox))}">${lines}</p>`;
