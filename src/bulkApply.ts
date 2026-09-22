@@ -1,4 +1,4 @@
-import { allLines, updateLineText, type DocumentPage } from "./domain";
+import { allLines, clearLineFormatting, setLineFormatting, updateLineText, type DocumentPage, type TextFormatRange } from "./domain";
 import type { BulkMatch } from "./BulkReplaceDialog";
 
 export type BulkPageUpdate = {
@@ -11,6 +11,7 @@ export type PrepareBulkUpdatesArgs = {
   selections: BulkMatch[];
   search: string;
   replacement: string;
+  replacementFormatting?: TextFormatRange[];
   loadPage: (pageId: string) => Promise<string>;
 };
 
@@ -37,6 +38,7 @@ export async function prepareBulkUpdates({
   selections,
   search,
   replacement,
+  replacementFormatting = [],
   loadPage,
 }: PrepareBulkUpdatesArgs): Promise<BulkPageUpdate[]> {
   if (!search) throw new Error("Bulk replacement search text is required.");
@@ -95,6 +97,14 @@ export async function prepareBulkUpdates({
           + replacement
           + current.correctedText.slice(span.end);
         page = updateLineText(page, lineId, nextText);
+        // updateLineText preserves surviving source ranges. A bulk replacement
+        // instead takes the formatting chosen in the replacement editor.
+        page = clearLineFormatting(page, lineId, span.start, span.start + replacement.length);
+        for (const range of replacementFormatting) {
+          const start = Math.max(0, Math.min(replacement.length, range.start));
+          const end = Math.max(start, Math.min(replacement.length, range.end));
+          page = setLineFormatting(page, lineId, span.start + start, span.start + end, range.kind, true);
+        }
       }
     }
 

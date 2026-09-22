@@ -132,6 +132,9 @@ pub struct CorrectionMatch {
     pub line_id: String,
     pub line_text: String,
     pub bbox: Option<serde_json::Value>,
+    /// Bounding box of this occurrence (or a bounded line-box approximation).
+    #[serde(rename = "matchBBox")]
+    pub match_bbox: Option<serde_json::Value>,
     /// Zero-based non-overlapping occurrence within the line text.
     pub match_ordinal: usize,
 }
@@ -734,6 +737,50 @@ fn completed_page_ids(conn: &Connection) -> BackendResult<HashSet<String>> {
         .filter_map(|page| page.get("id").and_then(serde_json::Value::as_str).map(str::to_owned))
         .collect())
 }
+fn rect_components(value: &serde_json::Value) -> Option<(f64, f64, f64, f64)> {
+    Some((value.get("left")?.as_f64()?, value.get("top")?.as_f64()?, value.get("right")?.as_f64()?, value.get("bottom")?.as_f64()?))
+}
+
+// match_indices yields UTF-8 byte offsets; hOCR character arrays are Unicode scalar indexed.
+fn correction_match_bbox(line: &serde_json::Value, text: &str, byte_start: usize, byte_end: usize) -> Option<serde_json::Value> {
+    let start = text.get(..byte_start)?.chars().count();
+    let end = text.get(..byte_end)?.chars().count();
+    if end <= start { return None; }
+    let count = text.chars().count();
+    let line_bounds = rect_components(line.get("bbox")?)?;
+    let mut bounds: Option<(f64, f64, f64, f64)> = None;
+    if let Some(chars) = line.get("chars").and_then(serde_json::Value::as_array).filter(|chars| chars.len() == count) {
+        for character in chars.iter().skip(start).take(end - start) {
+            let Some(rect) = character.get("bbox").and_then(rect_components) else { continue; };
+            bounds = Some(match bounds { Some((left, top, right, bottom)) => (left.min(rect.0), top.min(rect.1), right.max(rect.2), bottom.max(rect.3)), None => rect });
+        }
+    }
+    if let Some((left, top, right, bottom)) = bounds {
+        // Preserve real character geometry, but reject the malformed hOCR
+        // boxes emitted for some rotated images (for example x=0, x=0 for
+        // every glyph). Those boxes cannot describe a crop.
+        if right > left
+            && bottom > top
+            && right > line_bounds.0
+            && left < line_bounds.2
+            && bottom > line_bounds.1
+            && top < line_bounds.3
+        {
+            return Some(serde_json::json!({ "left": left, "top": top, "right": right, "bottom": bottom }));
+        }
+    }
+    // Edited or ligatured lines may have no reliable character boxes. Use only
+    // the matched fraction of the line, never the complete line image.
+    let (left, top, right, bottom) = line_bounds;
+    if count == 0 { return None; }
+    let width = right - left;
+    let height = bottom - top;
+    if width >= height {
+        Some(serde_json::json!({ "left": left + width * start as f64 / count as f64, "top": top, "right": left + width * end as f64 / count as f64, "bottom": bottom }))
+    } else {
+        Some(serde_json::json!({ "left": left, "top": top + height * start as f64 / count as f64, "right": right, "bottom": top + height * end as f64 / count as f64 }))
+    }
+}
 fn search_corrections_impl(args: &SearchCorrectionsArgs) -> BackendResult<CorrectionSearchPage> {
     if args.search.is_empty() {
         return Err(BackendError::msg("search text is required"));
@@ -765,7 +812,7 @@ fn search_corrections_impl(args: &SearchCorrectionsArgs) -> BackendResult<Correc
                         line.get("id").and_then(serde_json::Value::as_str),
                         line.get("correctedText").and_then(serde_json::Value::as_str),
                     ) else { continue };
-                    for (match_ordinal, _) in line_text.match_indices(&args.search).enumerate() {
+                    for (match_ordinal, (byte_start, matched)) in line_text.match_indices(&args.search).enumerate() {
                         if total >= start && results.len() < args.page_size {
                             results.push(CorrectionMatch {
                                 page_id: page_id.clone(),
@@ -773,6 +820,7 @@ fn search_corrections_impl(args: &SearchCorrectionsArgs) -> BackendResult<Correc
                                 line_id: line_id.to_owned(),
                                 line_text: line_text.to_owned(),
                                 bbox: line.get("bbox").cloned(),
+                                match_bbox: correction_match_bbox(line, line_text, byte_start, byte_start + matched.len()),
                                 match_ordinal,
                             });
                         }
@@ -1368,6 +1416,32 @@ mod tests {
     }
 
     #[test]
+    fn correction_match_bbox_uses_unicode_character_offsets_and_safe_fallback() {
+        let line = serde_json::json!({
+            "bbox": {"left": 0, "top": 0, "right": 30, "bottom": 10},
+            "chars": [
+                {"bbox": {"left": 0, "top": 0, "right": 5, "bottom": 10}},
+                {"bbox": {"left": 6, "top": 0, "right": 11, "bottom": 10}},
+                {"bbox": {"left": 12, "top": 0, "right": 20, "bottom": 10}}
+            ]
+        });
+        let text = "šxš";
+        assert_eq!(correction_match_bbox(&line, text, 0, "š".len()).unwrap()["right"], 5.0);
+        assert_eq!(correction_match_bbox(&line, text, "šx".len(), text.len()).unwrap()["left"], 12.0);
+        let mismatched = serde_json::json!({"bbox": {"left": 0, "top": 0, "right": 30, "bottom": 10}, "chars": [{}]});
+        let fallback = correction_match_bbox(&mismatched, "abc", 1, 2).unwrap();
+        assert_eq!(fallback["left"], 10.0);
+        assert_eq!(fallback["right"], 20.0);
+
+        let degenerate = serde_json::json!({
+            "bbox": {"left": 0, "top": 0, "right": 100, "bottom": 10},
+            "chars": [{"bbox": {"left": 0, "top": 1, "right": 0, "bottom": 9}}, {"bbox": {"left": 0, "top": 1, "right": 0, "bottom": 9}}, {"bbox": {"left": 0, "top": 1, "right": 0, "bottom": 9}}, {"bbox": {"left": 0, "top": 1, "right": 0, "bottom": 9}}]
+        });
+        let bounded = correction_match_bbox(&degenerate, "word", 0, 1).unwrap();
+        assert_eq!(bounded["left"], 0.0);
+        assert_eq!(bounded["right"], 25.0);
+    }
+    #[test]
     fn bulk_search_uses_manifest_order_and_corrected_text() {
         let (_dir, pdf, project) = fixture();
         create_project_impl(&CreateProjectArgs {
@@ -1389,6 +1463,10 @@ mod tests {
         assert_eq!(found.results[0].page_id, "second");
         assert_eq!(found.results[0].match_ordinal, 0);
         assert_eq!(found.results[1].page_id, "first");
+        assert!(found.results[1].match_bbox.is_some());
+        let serialized = serde_json::to_value(&found.results[1]).unwrap();
+        assert!(serialized.get("matchBBox").is_some());
+        assert!(serialized.get("matchBbox").is_none());
         let last = search_corrections_impl(&SearchCorrectionsArgs {
             project_path: project.to_string_lossy().into_owned(),
             search: "old".into(), page: 1, page_size: 2,

@@ -363,6 +363,31 @@ export function updateLineFormatting(page: DocumentPage, lineId: string, start: 
   line.formatting = fullyFormatted ? ranges.flatMap(range => range.kind !== kind || range.end <= start || range.start >= end ? [range] : [{ ...range, end: start }, { ...range, start: end }]).filter(range => range.end > range.start) : [...ranges, { start, end, kind }];
   return copy;
 }
+
+/**
+ * Sets a formatting range to a known state. Unlike updateLineFormatting this
+ * is not a toggle, so it can be replayed over every bulk replacement.
+ */
+export function setLineFormatting(page: DocumentPage, lineId: string, start: number, end: number, kind: TextFormatKind, enabled: boolean): DocumentPage {
+  const copy: DocumentPage = JSON.parse(JSON.stringify(page)) as DocumentPage;
+  const line = allLines(copy).find(candidate => candidate.id === lineId);
+  if (!line || start >= end) return copy;
+  const opposite = kind === "superscript" ? "subscript" : kind === "subscript" ? "superscript" : undefined;
+  const removed = (line.formatting ?? []).flatMap(range => {
+    const remove = range.kind === kind || (enabled && range.kind === opposite);
+    if (!remove || range.end <= start || range.start >= end) return [range];
+    return [{ ...range, end: start }, { ...range, start: end }];
+  }).filter(range => range.end > range.start);
+  line.formatting = enabled ? [...removed, { start, end, kind }] : removed;
+  return copy;
+}
+
+/** Removes every decoration from a replacement range before its editor formatting is applied. */
+export function clearLineFormatting(page: DocumentPage, lineId: string, start: number, end: number): DocumentPage {
+  let next = page;
+  for (const kind of ["bold", "italic", "superscript", "subscript"] as const) next = setLineFormatting(next, lineId, start, end, kind, false);
+  return next;
+}
 export function updateLineText(
   page: DocumentPage,
   lineId: string,

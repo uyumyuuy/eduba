@@ -47,6 +47,20 @@ describe("prepareBulkUpdates", () => {
     expect(updated.formatting).toEqual([{ start: 6, end: 9, kind: "bold" }]);
   });
 
+  it("applies replacement-editor formatting to every selected occurrence", async () => {
+    const page = pageData("cat cat");
+    const line = allLines(page)[0];
+    const [update] = await prepareBulkUpdates({
+      selections: [selection(page.id, line.id, line.correctedText, 0), selection(page.id, line.id, line.correctedText, 1)],
+      search: "cat", replacement: "dog", replacementFormatting: [{ start: 0, end: 3, kind: "bold" }],
+      loadPage: async () => JSON.stringify(page),
+    });
+    const updated = allLines(JSON.parse(update.data))[0];
+    expect(updated.correctedText).toBe("dog dog");
+    expect(updated.formatting).toEqual(expect.arrayContaining([
+      { start: 0, end: 3, kind: "bold" }, { start: 4, end: 7, kind: "bold" },
+    ]));
+  });
   it("rejects a stale selected match without producing updates", async () => {
     const page = pageData("cat cat");
     const line = allLines(page)[0];

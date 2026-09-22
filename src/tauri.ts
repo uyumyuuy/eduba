@@ -7,6 +7,7 @@ export type CorrectionMatch = {
   lineId: string;
   lineText: string;
   bbox: { left: number; top: number; right: number; bottom: number } | null;
+  matchBBox: { left: number; top: number; right: number; bottom: number } | null;
   matchOrdinal: number;
 };
 
@@ -45,7 +46,7 @@ export type BackendCommands = {
   run_ocr: { args: { imageBase64: string; modelPath: string; psm: number; dpi?: number }; result: string };
   cancel_ocr: { args: undefined; result: void };
   export_file: { args: { path: string; contentBase64: string }; result: void };
-  search_corrections: { args: { projectPath: string; search: string; page: number; pageSize: number }; result: { results: Array<{ pageId: string; pageLabel: string; lineId: string; lineText: string; bbox?: { left: number; top: number; right: number; bottom: number }; matchOrdinal: number }>; total: number; page: number; pageSize: number } };
+  search_corrections: { args: { projectPath: string; search: string; page: number; pageSize: number }; result: { results: Array<{ pageId: string; pageLabel: string; lineId: string; lineText: string; bbox?: { left: number; top: number; right: number; bottom: number }; matchBBox?: { left: number; top: number; right: number; bottom: number }; matchOrdinal: number }>; total: number; page: number; pageSize: number } };
   apply_bulk_corrections: { args: { projectPath: string; updates: Array<{ pageId: string; expectedData: string; data: string }> }; result: Array<{ pageId: string; beforeData: string; afterData: string }> };
 };
 

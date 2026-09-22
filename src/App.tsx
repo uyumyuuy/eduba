@@ -1054,25 +1054,43 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
       setNotice("notices.saveFailed", { error: errorText(error) });
     }
   }, [flush, project, setNotice]);
-  const getBulkSnippet = useCallback(async (pageId: string, bbox?: BulkMatch["bbox"]) => {
+  const getBulkSnippet = useCallback(async (match: BulkMatch) => {
+    const bbox = match.matchBBox;
     if (!pdf || !bbox) return null;
-    const entry = manifestRef.current.pages.find((candidate) => candidate.id === pageId);
+    const entry = manifestRef.current.pages.find((candidate) => candidate.id === match.pageId);
     if (!entry) return null;
-    let sourcePromise = bulkSnippetCanvases.current.get(pageId);
+    let sourcePromise = bulkSnippetCanvases.current.get(match.pageId);
     if (!sourcePromise) {
       sourcePromise = (async () => {
         const target = document.createElement("canvas");
         const rendered = await renderEntry(entry, loading.current, pdf, target, false);
         return rendered?.canvas ?? null;
       })();
-      bulkSnippetCanvases.current.set(pageId, sourcePromise);
+      // Search result pagination can touch many pages. Keep only recent full-page
+      // renders; the individual data URLs remain owned by their result rows.
+      bulkSnippetCanvases.current.set(match.pageId, sourcePromise);
+      while (bulkSnippetCanvases.current.size > 8) {
+        const oldest = bulkSnippetCanvases.current.keys().next().value;
+        if (!oldest) break;
+        bulkSnippetCanvases.current.delete(oldest);
+      }
     }
     const source = await sourcePromise;
     if (!source) return null;
-    const left = Math.max(0, Math.floor(bbox.left));
-    const top = Math.max(0, Math.floor(bbox.top));
-    const right = Math.min(source.width, Math.ceil(bbox.right));
-    const bottom = Math.min(source.height, Math.ceil(bbox.bottom));
+    const matchLeft = bbox.left;
+    const matchTop = bbox.top;
+    const matchRight = bbox.right;
+    const matchBottom = bbox.bottom;
+    if (![matchLeft, matchTop, matchRight, matchBottom].every(Number.isFinite) || matchRight <= matchLeft || matchBottom <= matchTop) return null;
+    const matchHeight = matchBottom - matchTop;
+    // Keep only a small amount of neighboring text. The result row is a
+    // recognition aid, so showing an entire line makes the match illegible.
+    const paddingX = Math.max(8, Math.ceil(matchHeight * 1.2));
+    const paddingY = Math.max(4, Math.ceil(matchHeight * .3));
+    const left = Math.max(0, Math.floor(matchLeft - paddingX));
+    const top = Math.max(0, Math.floor(matchTop - paddingY));
+    const right = Math.min(source.width, Math.ceil(matchRight + paddingX));
+    const bottom = Math.min(source.height, Math.ceil(matchBottom + paddingY));
     if (right <= left || bottom <= top) return null;
     const crop = document.createElement("canvas");
     crop.width = right - left;
@@ -1081,10 +1099,10 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
     return "data:image/png;base64," + canvasToBase64(crop);
   }, [pdf, renderEntry]);
 
-  const applyBulkReplace = useCallback(async ({ search, replacement, selections }: BulkReplaceRequest) => {
+  const applyBulkReplace = useCallback(async ({ search, replacement, replacementFormatting, selections }: BulkReplaceRequest) => {
     if (!project || !selections.length) return;
     await flush();
-    const updates = await prepareBulkUpdates({ selections, search, replacement, loadPage: async (pageId) => {
+    const updates = await prepareBulkUpdates({ selections, search, replacement, replacementFormatting, loadPage: async (pageId) => {
       const saved = await invokeCommand("load_page", { projectPath: project.path, pageId });
       if (!saved) throw new Error("Page data is unavailable.");
       return saved;
