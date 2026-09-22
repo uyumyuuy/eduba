@@ -69,6 +69,8 @@ pub struct CreateProjectArgs {
     pub pdf_path: String,
     pub project_path: String,
     pub manifest: Option<String>,
+    #[serde(default)]
+    pub overwrite_existing: bool,
 }
 
 #[derive(Debug, Deserialize)]
@@ -384,12 +386,14 @@ async fn create_project(
     pdf_path: String,
     project_path: String,
     manifest: Option<String>,
+    overwrite_existing: bool,
 ) -> Result<ProjectInfo, String> {
     tauri::async_runtime::spawn_blocking(move || {
         create_project_impl(&CreateProjectArgs {
             pdf_path,
             project_path,
             manifest,
+            overwrite_existing,
         })
     })
     .await
@@ -411,7 +415,7 @@ fn create_project_impl(args: &CreateProjectArgs) -> BackendResult<ProjectInfo> {
         )));
     }
     let project = project_root(&args.project_path)?;
-    if project.exists() {
+    if project.exists() && !args.overwrite_existing {
         return Err(BackendError::msg(format!(
             "refusing to overwrite existing project path: {}",
             project.display()
@@ -467,11 +471,17 @@ fn create_project_impl(args: &CreateProjectArgs) -> BackendResult<ProjectInfo> {
         }
         tx.commit()?;
     }
-    temporary.persist_noclobber(&project).map_err(|error| {
-        BackendError::msg(format!(
-            "could not create project without overwrite: {error}"
-        ))
-    })?;
+    if args.overwrite_existing {
+        temporary
+            .persist(&project)
+            .map_err(|error| BackendError::msg(format!("could not replace project: {error}")))?;
+    } else {
+        temporary.persist_noclobber(&project).map_err(|error| {
+            BackendError::msg(format!(
+                "could not create project without overwrite: {error}"
+            ))
+        })?;
+    }
     let conn = open_connection(&project)?;
     read_project_info(&project, &conn)
 }
@@ -1309,6 +1319,7 @@ mod tests {
     fn sqlite_roundtrip_chunks_and_page_data() {
         let (_dir, pdf, project) = fixture();
         let info = create_project_impl(&CreateProjectArgs {
+            overwrite_existing: false,
             pdf_path: pdf.to_string_lossy().into_owned(),
             project_path: project.to_string_lossy().into_owned(),
             manifest: None,
@@ -1360,6 +1371,7 @@ mod tests {
     fn create_refuses_overwrite_and_page_update_preserves_pdf() {
         let (_dir, pdf, project) = fixture();
         let args = CreateProjectArgs {
+            overwrite_existing: false,
             pdf_path: pdf.to_string_lossy().into_owned(),
             project_path: project.to_string_lossy().into_owned(),
             manifest: None,
@@ -1387,6 +1399,49 @@ mod tests {
         let mut source = Vec::new();
         file.read_to_end(&mut source).unwrap();
         assert_eq!(source.len(), CHUNK_SIZE + 31);
+    }
+
+    #[test]
+    fn confirmed_import_replaces_existing_project_and_failed_import_keeps_it() {
+        let (_dir, pdf, project) = fixture();
+        let path = project.to_string_lossy().into_owned();
+        let original = CreateProjectArgs {
+            pdf_path: pdf.to_string_lossy().into_owned(),
+            project_path: path.clone(),
+            manifest: Some(r#"{"version":1,"name":"original"}"#.into()),
+            overwrite_existing: false,
+        };
+        create_project_impl(&original).unwrap();
+        save_page_impl(&SavePageArgs {
+            project_path: path.clone(),
+            page_id: "old-page".into(),
+            data: r#"{"text":"old"}"#.into(),
+        })
+        .unwrap();
+
+        let replacement = CreateProjectArgs {
+            manifest: Some(r#"{"version":1,"name":"replacement"}"#.into()),
+            overwrite_existing: true,
+            ..original
+        };
+        let info = create_project_impl(&replacement).unwrap();
+        assert_eq!(info.manifest.as_deref(), replacement.manifest.as_deref());
+        assert_eq!(
+            load_page_impl(&PageArgs {
+                project_path: path.clone(),
+                page_id: "old-page".into(),
+            })
+            .unwrap(),
+            None
+        );
+        assert_eq!(fs::read(&pdf).unwrap().len() as u64, info.pdf_size);
+
+        let invalid = CreateProjectArgs {
+            manifest: Some("[]".into()),
+            ..replacement
+        };
+        assert!(create_project_impl(&invalid).is_err());
+        assert_eq!(open_project_impl(&path).unwrap().manifest, info.manifest);
     }
 
     #[test]
@@ -1423,6 +1478,7 @@ mod tests {
         let (_dir, pdf, project) = fixture();
         let manifest = r#"{"version":1,"pages":[{"id":"page-1","source":1}]}"#;
         let info = create_project_impl(&CreateProjectArgs {
+            overwrite_existing: false,
             pdf_path: pdf.to_string_lossy().into_owned(),
             project_path: project.to_string_lossy().into_owned(),
             manifest: Some(manifest.into()),
@@ -1439,6 +1495,7 @@ mod tests {
 
         let invalid_project = project.with_file_name("invalid.eduba");
         assert!(create_project_impl(&CreateProjectArgs {
+            overwrite_existing: false,
             pdf_path: pdf.to_string_lossy().into_owned(),
             project_path: invalid_project.to_string_lossy().into_owned(),
             manifest: Some("[]".into()),
@@ -1484,6 +1541,7 @@ mod tests {
     fn bulk_search_uses_manifest_order_and_corrected_text() {
         let (_dir, pdf, project) = fixture();
         create_project_impl(&CreateProjectArgs {
+            overwrite_existing: false,
             pdf_path: pdf.to_string_lossy().into_owned(),
             project_path: project.to_string_lossy().into_owned(),
             manifest: Some(r#"{"version":1,"pages":[{"id":"second","label":"2"},{"id":"first","label":"1"}]}"#.into()),
@@ -1521,7 +1579,12 @@ mod tests {
     fn bulk_operations_exclude_and_reject_completed_pages() {
         let (_dir, pdf, project) = fixture();
         let path = project.to_string_lossy().into_owned();
-        create_project_impl(&CreateProjectArgs { pdf_path: pdf.to_string_lossy().into_owned(), project_path: path.clone(), manifest: Some(r#"{"version":1,"pages":[{"id":"done","label":"1","completed":true},{"id":"open","label":"2"}]}"#.into()) }).unwrap();
+        create_project_impl(&CreateProjectArgs {
+            overwrite_existing: false,
+            pdf_path: pdf.to_string_lossy().into_owned(),
+            project_path: path.clone(),
+            manifest: Some(r#"{"version":1,"pages":[{"id":"done","label":"1","completed":true},{"id":"open","label":"2"}]}"#.into()),
+        }).unwrap();
         let page = r#"{"blocks":[{"paragraphs":[{"lines":[{"id":"line","correctedText":"old"}]}]}]}"#;
         save_page_impl(&SavePageArgs { project_path: path.clone(), page_id: "done".into(), data: page.into() }).unwrap();
         save_page_impl(&SavePageArgs { project_path: path.clone(), page_id: "open".into(), data: page.into() }).unwrap();
@@ -1534,6 +1597,7 @@ mod tests {
     fn bulk_updates_are_atomic_and_reject_stale_page_data() {
         let (_dir, pdf, project) = fixture();
         create_project_impl(&CreateProjectArgs {
+            overwrite_existing: false,
             pdf_path: pdf.to_string_lossy().into_owned(),
             project_path: project.to_string_lossy().into_owned(),
             manifest: None,

@@ -37,7 +37,7 @@ export type BackendCommands = {
   set_ui_language: { args: { language: string }; result: void };
   get_environment: { args: undefined; result: { modelPath: string; tesseractPath: string } };
   inspect_pdf: { args: { pdfPath: string }; result: { pdfSize: number } };
-  create_project: { args: { pdfPath: string; projectPath: string; manifest?: string }; result: ProjectInfo };
+  create_project: { args: { pdfPath: string; projectPath: string; manifest?: string; overwriteExisting: boolean }; result: ProjectInfo };
   open_project: { args: { projectPath: string }; result: ProjectInfo };
   read_pdf_range: { args: { projectPath: string; begin: number; end: number }; result: string };
   read_source_pdf_range: { args: { pdfPath: string; begin: number; end: number }; result: string };

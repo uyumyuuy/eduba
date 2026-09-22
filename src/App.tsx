@@ -656,10 +656,12 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
           modelPath:
             manifestRef.current.settings.modelPath || environmentModel.current,
         };
+        await flush();
         const info = await invokeCommand("create_project", {
           pdfPath: importSource.path,
           projectPath,
           manifest: JSON.stringify(next),
+          overwriteExisting: true,
         });
         sourcePdfRef.current = null;
         setImportSource(null);
@@ -673,7 +675,7 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
         setImportCreating(false);
       }
     },
-    [importSource, openInfo],
+    [flush, importSource, openInfo],
   );
   const openProject = useCallback(async () => {
     if (working.current || importActive.current) return;

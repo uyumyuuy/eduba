@@ -206,7 +206,11 @@ describe("PDF import configuration", () => {
     const call = mocks.invoke.mock.calls.find(
       ([command]) => command === "create_project",
     )!;
-    expect(call[1]).toMatchObject({ pdfPath: sourcePath, projectPath });
+    expect(call[1]).toMatchObject({
+      pdfPath: sourcePath,
+      projectPath,
+      overwriteExisting: true,
+    });
     const manifest = JSON.parse((call[1] as { manifest: string }).manifest);
     expect(manifest.settings.dpi).toBe(300);
     expect(
