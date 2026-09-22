@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { EditToolbarButton } from "./EditToolbarButton";
+import { FormattedEditMirror } from "./FormattedEditMirror";
 import { applyLanguage, t as globalT, type LocalePreference } from "./i18n";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
@@ -27,6 +29,7 @@ import { invokeCommand, isTauri, type ProjectInfo } from "./tauri";
 import { SaveQueue } from "./persistence";
 import {
   allLines,
+  effectiveFormatting,
   exportHocr,
   exportSvg,
   exportText,
@@ -38,6 +41,7 @@ import {
   applyScriptDetection,
   type OcrLine,
   type TextFormatKind,
+  type TextFormatRange,
   type DocumentPage,
   type LogicalPageProvenance,
 } from "./domain";
@@ -238,17 +242,29 @@ function PageThumbnail({ cache, page }: { cache: LogicalPageThumbnailCache | nul
 
   return <span ref={frameRef} className="thumb" aria-hidden="true"><canvas ref={canvasRef} /></span>;
 }
-type LineOverlayProps = { value:string; left:number; top:number; width:number; height:number; fontSize:number; onChange:(value:string)=>void; onFinish:()=>void; onUndo:()=>void; onRedo:()=>void; onFormat:(start:number,end:number,kind:TextFormatKind)=>void; onOpenBulk:(selection:string,start:number,end:number)=>void; };
-function LineOverlay({value,left,top,width,height,fontSize:naturalFontSize,onChange,onFinish,onUndo,onRedo,onFormat,onOpenBulk}:LineOverlayProps) {
- const { t } = useTranslation(); const inputRef=useRef<HTMLTextAreaElement>(null); const [selection,setSelection]=useState({start:0,end:0}); const [ctrl,setCtrl]=useState(false);
+type LineOverlayProps = { value:string; formatting:TextFormatRange[]; left:number; top:number; width:number; height:number; fontSize:number; onChange:(value:string)=>void; onFinish:()=>void; onUndo:()=>void; onRedo:()=>void; onFormat:(start:number,end:number,kind:TextFormatKind)=>void; onOpenBulk:(selection:string,start:number,end:number)=>void; };
+function LineOverlay({value,formatting,left,top,width,height,fontSize:naturalFontSize,onChange,onFinish,onUndo,onRedo,onFormat,onOpenBulk}:LineOverlayProps) {
+ const { t } = useTranslation(); const inputRef=useRef<HTMLTextAreaElement>(null); const mirrorRef=useRef<HTMLDivElement>(null); const [selection,setSelection]=useState({start:0,end:0}); const [ctrl,setCtrl]=useState(false);
  const selected=value.slice(selection.start,selection.end); const candidates=selected?candidatesForSelection(selected):[];
- useLayoutEffect(()=>{const input=inputRef.current;if(!input)return;input.style.fontSize=`${naturalFontSize}px`;const ratio=Math.min(1,Math.max(1,input.clientWidth-4)/Math.max(1,input.scrollWidth-4),Math.max(1,input.clientHeight-2)/Math.max(1,input.scrollHeight-2));input.style.fontSize=`${Math.max(1,naturalFontSize*(ratio<1?ratio*.98:1))}px`;},[height,naturalFontSize,value,width]);
+ // Keep the normal text baseline fixed while giving raised glyphs room above it.
+ const extraTop=Math.min(top,Math.max(4,naturalFontSize*.45));
+ const editTop=top-extraTop;
+ const editHeight=height+extraTop;
+ const editStyle={left,top:editTop,width,height:editHeight,paddingTop:extraTop,fontSize:naturalFontSize};
+ useLayoutEffect(()=>{const input=inputRef.current;if(!input)return;input.style.fontSize=`${naturalFontSize}px`;const ratio=Math.min(1,Math.max(1,input.clientWidth-4)/Math.max(1,input.scrollWidth-4),Math.max(1,input.clientHeight-2)/Math.max(1,input.scrollHeight-2));input.style.fontSize=`${Math.max(1,naturalFontSize*(ratio<1?ratio*.98:1))}px`;if(mirrorRef.current){mirrorRef.current.style.fontSize=input.style.fontSize;mirrorRef.current.scrollLeft=input.scrollLeft;mirrorRef.current.scrollTop=input.scrollTop;}},[height,naturalFontSize,value,width,formatting]);
  useEffect(()=>{const up=(event:KeyboardEvent)=>{if(event.key==='Control'||!event.ctrlKey)setCtrl(false)};const blur=()=>setCtrl(false);document.addEventListener('keyup',up);window.addEventListener('blur',blur);return()=>{document.removeEventListener('keyup',up);window.removeEventListener('blur',blur)}},[]);
  const capture=()=>{const input=inputRef.current;if(input)setSelection({start:input.selectionStart,end:input.selectionEnd})};
  const format=(kind:TextFormatKind)=>{if(selection.start<selection.end)onFormat(selection.start,selection.end,kind)};
  const replace=(text:string)=>{onChange(value.slice(0,selection.start)+text+value.slice(selection.end));setSelection({start:selection.start,end:selection.start+text.length})};
- return <><textarea ref={inputRef} autoFocus wrap="off" className="line-overlay" value={value} onChange={event=>onChange(event.currentTarget.value)} onSelect={capture} onKeyDown={event=>{setCtrl(event.ctrlKey);const key=event.key.toLowerCase();if(event.ctrlKey&&!event.nativeEvent.isComposing&&(key==='z'||key==='y')){event.preventDefault();if(key==='y'||event.shiftKey)onRedo();else onUndo();return}if(event.key==='Escape'||(event.key==='Enter'&&!event.nativeEvent.isComposing&&event.keyCode!==229)){event.preventDefault();onFinish();return}if(event.ctrlKey&&selection.start<selection.end){const kind=key==='b'?'bold':key==='i'?'italic':event.key==='ArrowUp'?'superscript':event.key==='ArrowDown'?'subscript':null;if(kind){event.preventDefault();format(kind)}else if(/^[1-9]$/.test(key)&&candidates[Number(key)-1]){event.preventDefault();replace(candidates[Number(key)-1])}else if(key==='g'){event.preventDefault();onOpenBulk(selected,selection.start,selection.end)}}}} onKeyUp={event=>setCtrl(event.ctrlKey)} onBlur={onFinish} style={{left,top,width,height,fontSize:naturalFontSize}} />
- {selected&&<div className="selection-toolbar" style={{left,top:Math.max(0,top-34)}} onMouseDown={event=>event.preventDefault()} role="toolbar" aria-label="Selected text tools"><button onClick={()=>format('bold')} aria-label={t("toolbar.bold")}>{ctrl?'Ctrl+B':t('toolbar.bold')}</button><button onClick={()=>format('italic')} aria-label={t("toolbar.italic")}>{ctrl?'Ctrl+I':t('toolbar.italic')}</button><button onClick={()=>format('superscript')} aria-label={t("toolbar.superscript")}>{ctrl?'Ctrl+↑':t('toolbar.superscript')}</button><button onClick={()=>format('subscript')} aria-label={t("toolbar.subscript")}>{ctrl?'Ctrl+↓':t('toolbar.subscript')}</button><button onClick={()=>onOpenBulk(selected,selection.start,selection.end)} aria-label={t("toolbar.bulkReplace")}>{ctrl?"Ctrl+G":t("toolbar.bulkReplace") }</button>{candidates.map((candidate,index)=><button className="text-candidate" key={candidate} onClick={()=>replace(candidate)} aria-label={candidate}>{candidate}{ctrl && index < 9 ? ` (Ctrl+${index+1})` : ""}</button>)}</div>}</>;
+ return <>{formatting.length>0&&<FormattedEditMirror mirrorRef={mirrorRef} value={value} formatting={formatting} className="line-edit-mirror" style={editStyle} />}<textarea ref={inputRef} autoFocus wrap="off" className={`line-overlay ${formatting.length?"has-formatting":""}`} value={value} onChange={event=>onChange(event.currentTarget.value)} onSelect={capture} onScroll={event=>{if(mirrorRef.current){mirrorRef.current.scrollLeft=event.currentTarget.scrollLeft;mirrorRef.current.scrollTop=event.currentTarget.scrollTop}}} onKeyDown={event=>{setCtrl(event.ctrlKey);const key=event.key.toLowerCase();if(event.ctrlKey&&!event.nativeEvent.isComposing&&(key==='z'||key==='y')){event.preventDefault();if(key==='y'||event.shiftKey)onRedo();else onUndo();return}if(event.key==='Escape'||(event.key==='Enter'&&!event.nativeEvent.isComposing&&event.keyCode!==229)){event.preventDefault();onFinish();return}if(event.ctrlKey&&selection.start<selection.end){const kind=key==='b'?'bold':key==='i'?'italic':event.key==='ArrowUp'?'superscript':event.key==='ArrowDown'?'subscript':null;if(kind){event.preventDefault();format(kind)}else if(/^[1-9]$/.test(key)&&candidates[Number(key)-1]){event.preventDefault();replace(candidates[Number(key)-1])}else if(key==='g'){event.preventDefault();onOpenBulk(selected,selection.start,selection.end)}}}} onKeyUp={event=>setCtrl(event.ctrlKey)} onBlur={onFinish} style={editStyle} />
+ {selected&&<div className="selection-toolbar" style={{left,top:Math.max(0,editTop-48)}} onMouseDown={event=>event.preventDefault()} role="toolbar" aria-label="Selected text tools">
+  <EditToolbarButton label={t("toolbar.bold")} shortcut="B" showShortcut={ctrl} onClick={()=>format("bold")}>{t("toolbar.bold")}</EditToolbarButton>
+  <EditToolbarButton label={t("toolbar.italic")} shortcut="I" showShortcut={ctrl} onClick={()=>format("italic")}>{t("toolbar.italic")}</EditToolbarButton>
+  <EditToolbarButton label={t("toolbar.superscript")} shortcut="↑" showShortcut={ctrl} onClick={()=>format("superscript")}>{t("toolbar.superscript")}</EditToolbarButton>
+  <EditToolbarButton label={t("toolbar.subscript")} shortcut="↓" showShortcut={ctrl} onClick={()=>format("subscript")}>{t("toolbar.subscript")}</EditToolbarButton>
+  <EditToolbarButton label={t("toolbar.bulkReplace")} shortcut="G" showShortcut={ctrl} onClick={()=>onOpenBulk(selected,selection.start,selection.end)}>{t("toolbar.bulkReplace")}</EditToolbarButton>
+  {candidates.map((candidate,index)=><EditToolbarButton className="text-candidate" key={candidate} label={candidate} shortcut={index<9?String(index+1):undefined} showShortcut={ctrl} onClick={()=>replace(candidate)}>{candidate}</EditToolbarButton>)}
+</div>}</>;
 }
 export default function App({ initialLanguage = "auto", initialOsLocale = null }: { initialLanguage?: LocalePreference; initialOsLocale?: string | null } = {}) {
   const { t } = useTranslation();
@@ -1754,6 +1770,7 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
                         return line ? (
                           <LineOverlay
                             value={line.correctedText}
+                            formatting={effectiveFormatting(line)}
                             onChange={(value) => editLine(line.id, value)}
                             onFinish={() => finishLineEdit(line.id)}
                             onUndo={() => void undo()}

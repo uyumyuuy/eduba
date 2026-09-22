@@ -1,0 +1,19 @@
+.formatted-edit-mirror {
+  pointer-events: none;
+  overflow: hidden;
+  white-space: pre;
+  color: #273b38;
+  font-family: var(--ocr-font);
+}
+.formatted-edit-advance {
+  position: relative;
+  color: transparent;
+}
+.formatted-edit-decoration {
+  position: absolute;
+  left: 0;
+  top: 0;
+  color: #273b38;
+  white-space: pre;
+  transform-origin: left center;
+}

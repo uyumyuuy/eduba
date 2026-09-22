@@ -120,6 +120,10 @@ button:disabled { cursor: not-allowed; opacity: .42; }
 .layout-svg { pointer-events: auto; }
 .layout-svg text { pointer-events: none; fill: #273b38; font-family: var(--ocr-font); dominant-baseline: alphabetic; }
 .line-overlay { position: absolute; z-index: 3; resize: none; overflow: hidden; padding: 0 2px; border: 1px solid #2f887e; outline: 2px solid rgba(61,143,140,.2); background: rgba(255,254,250,.96); color: #273b38; font-family: var(--ocr-font); line-height: 1.05; white-space: pre; }
+.line-edit-mirror { position: absolute; z-index: 3; box-sizing: border-box; padding: 0 2px; border: 1px solid transparent; background: rgba(255,254,250,.96); line-height: 1.05; }
+.line-overlay.has-formatting { z-index: 4; background: transparent; color: transparent; -webkit-text-fill-color: transparent; caret-color: #273b38; }
+.line-overlay.has-formatting::selection { background: rgba(61,143,140,.32); color: transparent; }
+
 
 /* Import configuration needs room for controls and a useful PDF preview. */
 .import-modal { width: min(920px, calc(100vw - 32px)); max-height: calc(100dvh - 32px); display: flex; flex-direction: column; padding: 22px 24px; overflow: auto; }
@@ -152,7 +156,7 @@ button:disabled { cursor: not-allowed; opacity: .42; }
 .split-check input { width: auto !important; height: auto !important; flex: 0 0 auto; }
 .margin-legend { margin-top: 7px !important; color: #9b6975 !important; font-size: 9px !important; text-align: center; }
 
-.selection-toolbar { position:absolute; z-index:4; display:flex; gap:3px; max-width:calc(100% - 4px); padding:3px; overflow:auto; border:1px solid #79aaa1; border-radius:4px; background:#fffefa; box-shadow:0 3px 10px rgba(0,0,0,.16); white-space:nowrap; }
+.selection-toolbar { position:absolute; z-index:5; display:flex; gap:3px; max-width:calc(100% - 4px); padding:3px; overflow:auto; border:1px solid #79aaa1; border-radius:4px; background:#fffefa; box-shadow:0 3px 10px rgba(0,0,0,.16); white-space:nowrap; }
 .selection-toolbar button { min-height:23px; padding:2px 6px; border:0; border-radius:3px; background:#e8efeb; color:#244943; font:10px ui-monospace, monospace; cursor:pointer; }
 .selection-toolbar .text-candidate { font-family: var(--ocr-font); }
 .selection-toolbar button:hover, .selection-toolbar button:focus-visible { background:#cce4dd; outline:2px solid #3d8f8c; }

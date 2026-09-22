@@ -32,6 +32,31 @@ describe("BulkReplaceDialog", () => {
     vi.restoreAllMocks();
   });
 
+  it("shows shortcut keys above the unchanged button labels", async () => {
+    await act(async () => root.render(<BulkReplaceDialog open projectPath="project" initialSearch="c" onApply={vi.fn()} onClose={vi.fn()} />));
+    const editor = container.querySelector<HTMLInputElement>(".bulk-replace-editor input")!;
+    await act(async () => {
+      editor.focus();
+      editor.setSelectionRange(0, 1);
+      editor.dispatchEvent(new Event("select", { bubbles: true }));
+      document.dispatchEvent(new Event("selectionchange"));
+      editor.dispatchEvent(new KeyboardEvent("keydown", { key: "Control", ctrlKey: true, bubbles: true }));
+    });
+    const toolbar = container.querySelector(".bulk-selection-toolbar")!;
+    const bold = toolbar.querySelector<HTMLButtonElement>('button[aria-label="Bold"]')!;
+    expect(bold.querySelector(".edit-toolbar-shortcut")?.textContent).toBe("B");
+    expect(bold.querySelector(".edit-toolbar-label")?.textContent).toBe("Bold");
+    expect(bold.textContent).not.toContain("Ctrl+");
+    const candidate = toolbar.querySelector<HTMLButtonElement>('button[aria-label="š"]')!;
+    expect(candidate.querySelector(".edit-toolbar-shortcut")?.textContent).toBe("1");
+    expect(candidate.querySelector(".edit-toolbar-label")?.textContent).toBe("š");
+    await act(async () => bold.click());
+    const decoration = container.querySelector<HTMLElement>(".bulk-edit-mirror .formatted-edit-decoration")!;
+    expect(decoration.textContent).toBe("c");
+    expect(decoration.style.fontWeight).toBe("700");
+    expect(editor.classList.contains("has-formatting")).toBe(true);
+  });
+
   it("highlights the exact non-overlapping occurrence in every one-line result", async () => {
     await act(async () => root.render(<BulkReplaceDialog open projectPath="project" initialSearch="old" onApply={vi.fn()} onClose={vi.fn()} />));
     await vi.waitFor(() => expect(container.querySelectorAll(".bulk-replace-match")).toHaveLength(2));

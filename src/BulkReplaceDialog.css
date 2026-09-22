@@ -6,6 +6,11 @@
 .bulk-replace-fields input, .bulk-replace-editor input { box-sizing: border-box; width: 100%; min-width: 0; min-height: 34px; padding: 7px 9px; border: 1px solid #d6d8d0; border-radius: 5px; outline: 0; background: #fffefa; color: #3d4e4a; font-size: 12px; font-family: var(--ocr-font); resize: vertical; }
 .bulk-replace-editor input:focus { border-color: #65817b; box-shadow: 0 0 0 2px #dcebe4; }
 .bulk-replace-editor { position: relative; min-width: 0; }
+.bulk-edit-mirror { position: absolute; inset: 0; box-sizing: border-box; display: flex; align-items: center; padding: 7px 9px; border: 1px solid transparent; border-radius: 5px; background: #fffefa; color: #3d4e4a; font-size: 12px; }
+.bulk-edit-mirror .formatted-edit-decoration { color: #3d4e4a; }
+.bulk-replace-editor input.has-formatting { position: relative; background: transparent; color: transparent; -webkit-text-fill-color: transparent; caret-color: #3d4e4a; }
+.bulk-replace-editor input.has-formatting::selection { background: rgba(61,143,140,.32); color: transparent; }
+
 .bulk-selection-toolbar { display: flex; flex-wrap: wrap; gap: 3px; margin-top: 5px; padding: 4px; border: 1px solid #dce2db; border-radius: 5px; background: #f4f7f2; }
 .bulk-selection-toolbar button { border: 0; border-radius: 3px; padding: 3px 6px; background: transparent; color: #54746f; cursor: pointer; font-size: 10px; }
 .bulk-selection-toolbar .text-candidate { font-family: var(--ocr-font); }

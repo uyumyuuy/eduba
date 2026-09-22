@@ -464,6 +464,44 @@ describe("saved project loading", () => {
     expect(container.querySelectorAll<HTMLButtonElement>(".page-item")[0].className).toContain("active");
   });
 
+  it("keeps action labels below shortcut keys while Ctrl is pressed", async () => {
+    await openSavedProject();
+    const firstRect = container.querySelector<SVGRectElement>("svg rect")!;
+    await act(async () => firstRect.dispatchEvent(new MouseEvent("click", { bubbles: true })));
+    const editor = container.querySelector<HTMLTextAreaElement>("textarea.line-overlay")!;
+    const pageWidth = Number.parseFloat(container.querySelector<HTMLElement>(".layout-card")!.style.width);
+    const originalLineTop = 10 * pageWidth / 100;
+    expect(Number.parseFloat(editor.style.top)).toBeLessThan(originalLineTop);
+    expect(Number.parseFloat(editor.style.top) + Number.parseFloat(editor.style.paddingTop)).toBeCloseTo(originalLineTop);
+    await act(async () => {
+      editor.setSelectionRange(0, 5);
+      editor.dispatchEvent(new Event("select", { bubbles: true }));
+    });
+    await act(async () => editor.dispatchEvent(new KeyboardEvent("keydown", { key: "Control", ctrlKey: true, bubbles: true })));
+    const toolbar = container.querySelector(".selection-toolbar")!;
+    const bold = toolbar.querySelector<HTMLButtonElement>('button[aria-label="Bold"]')!;
+    expect(bold.querySelector(".edit-toolbar-shortcut")?.textContent).toBe("B");
+    expect(bold.querySelector(".edit-toolbar-label")?.textContent).toBe("Bold");
+    expect(bold.textContent).not.toContain("Ctrl+");
+    const bulk = Array.from(toolbar.querySelectorAll<HTMLButtonElement>("button"))
+      .find(button => button.querySelector(".edit-toolbar-shortcut")?.textContent === "G")!;
+    expect(bulk.querySelector(".edit-toolbar-label")?.textContent).toBeTruthy();
+    await act(async () => bold.click());
+    const decoration = container.querySelector<HTMLElement>(".line-edit-mirror .formatted-edit-decoration")!;
+    const mirror = container.querySelector<HTMLElement>(".line-edit-mirror")!;
+    expect(mirror.style.top).toBe(editor.style.top);
+    expect(mirror.style.height).toBe(editor.style.height);
+    expect(mirror.style.paddingTop).toBe(editor.style.paddingTop);
+    expect(decoration.textContent).toBe("saved");
+    expect(decoration.style.fontWeight).toBe("700");
+    expect(editor.classList.contains("has-formatting")).toBe(true);
+    const superscript = toolbar.querySelector<HTMLButtonElement>('button[aria-label="Superscript"]')!;
+    await act(async () => superscript.click());
+    const raised = container.querySelector<HTMLElement>(".line-edit-mirror .formatted-edit-decoration")!;
+    expect(raised.style.fontSize).toBe("0.7em");
+    expect(raised.style.transform).toContain("translateY(-0.35em)");
+  });
+
   it("replaces selected matches across pages and navigates on undo and redo", async () => {
     await openSavedProject();
     const firstRect = container.querySelector<SVGRectElement>("svg rect")!;

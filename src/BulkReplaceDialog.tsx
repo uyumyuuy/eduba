@@ -3,6 +3,8 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { invokeCommand } from "./tauri";
 import { useTranslation } from "react-i18next";
 import { candidatesForSelection } from "./correctionCandidates";
+import { EditToolbarButton } from "./EditToolbarButton";
+import { FormattedEditMirror } from "./FormattedEditMirror";
 import type { TextFormatKind, TextFormatRange } from "./domain";
 import "./BulkReplaceDialog.css";
 
@@ -74,7 +76,12 @@ function ReplacementEditor({ value, formatting, onChange, onFormattingChange }: 
 }) {
   const { t } = useTranslation();
   const inputRef = useRef<HTMLInputElement>(null);
+  const mirrorRef = useRef<HTMLDivElement>(null);
   const [selection, setSelection] = useState({ start: 0, end: 0 });
+  useEffect(() => {
+    if (mirrorRef.current && inputRef.current) mirrorRef.current.scrollLeft = inputRef.current.scrollLeft;
+  }, [formatting, value]);
+
   const [ctrl, setCtrl] = useState(false);
   const selected = value.slice(selection.start, selection.end);
   const candidates = selected ? candidatesForSelection(selected) : [];
@@ -88,7 +95,8 @@ function ReplacementEditor({ value, formatting, onChange, onFormattingChange }: 
   };
   const format = (kind: TextFormatKind) => { if (selection.start < selection.end) onFormattingChange(toggleFormatting(formatting, selection.start, selection.end, kind)); };
   return <div className="bulk-replace-editor">
-    <input ref={inputRef} value={value} onChange={event => changeText(event.currentTarget.value)} onSelect={capture} onKeyDown={event => {
+    {formatting.length > 0 && <FormattedEditMirror mirrorRef={mirrorRef} className="bulk-edit-mirror" value={value} formatting={formatting} />}
+    <input ref={inputRef} className={formatting.length ? "has-formatting" : undefined} value={value} onChange={event => changeText(event.currentTarget.value)} onSelect={capture} onScroll={event => { if (mirrorRef.current) mirrorRef.current.scrollLeft = event.currentTarget.scrollLeft; }} onKeyDown={event => {
       setCtrl(event.ctrlKey); const key = event.key.toLowerCase();
       if (!event.ctrlKey || event.nativeEvent.isComposing || selection.start >= selection.end) return;
       const kind = key === "b" ? "bold" : key === "i" ? "italic" : event.key === "ArrowUp" ? "superscript" : event.key === "ArrowDown" ? "subscript" : null;
@@ -96,11 +104,11 @@ function ReplacementEditor({ value, formatting, onChange, onFormattingChange }: 
       else if (/^[1-9]$/.test(key) && candidates[Number(key) - 1]) { event.preventDefault(); replace(candidates[Number(key) - 1]); }
     }} onKeyUp={event => setCtrl(event.ctrlKey)} onBlur={() => setCtrl(false)} />
     {selected && <div className="bulk-selection-toolbar" onMouseDown={event => event.preventDefault()} role="toolbar" aria-label="Selected text tools">
-      <button type="button" onClick={() => format("bold")} aria-label={t("toolbar.bold")}>{ctrl ? "Ctrl+B" : t("toolbar.bold")}</button>
-      <button type="button" onClick={() => format("italic")} aria-label={t("toolbar.italic")}>{ctrl ? "Ctrl+I" : t("toolbar.italic")}</button>
-      <button type="button" onClick={() => format("superscript")} aria-label={t("toolbar.superscript")}>{ctrl ? "Ctrl+↑" : t("toolbar.superscript")}</button>
-      <button type="button" onClick={() => format("subscript")} aria-label={t("toolbar.subscript")}>{ctrl ? "Ctrl+↓" : t("toolbar.subscript")}</button>
-      {candidates.map((candidate, index) => <button className="text-candidate" type="button" key={candidate} onClick={() => replace(candidate)} aria-label={candidate}>{candidate}{ctrl && index < 9 ? ` (Ctrl+${index + 1})` : ""}</button>)}
+      <EditToolbarButton label={t("toolbar.bold")} shortcut="B" showShortcut={ctrl} onClick={() => format("bold")}>{t("toolbar.bold")}</EditToolbarButton>
+      <EditToolbarButton label={t("toolbar.italic")} shortcut="I" showShortcut={ctrl} onClick={() => format("italic")}>{t("toolbar.italic")}</EditToolbarButton>
+      <EditToolbarButton label={t("toolbar.superscript")} shortcut="↑" showShortcut={ctrl} onClick={() => format("superscript")}>{t("toolbar.superscript")}</EditToolbarButton>
+      <EditToolbarButton label={t("toolbar.subscript")} shortcut="↓" showShortcut={ctrl} onClick={() => format("subscript")}>{t("toolbar.subscript")}</EditToolbarButton>
+      {candidates.map((candidate, index) => <EditToolbarButton className="text-candidate" key={candidate} label={candidate} shortcut={index < 9 ? String(index + 1) : undefined} showShortcut={ctrl} onClick={() => replace(candidate)}>{candidate}</EditToolbarButton>)}
     </div>}
   </div>;
 }
