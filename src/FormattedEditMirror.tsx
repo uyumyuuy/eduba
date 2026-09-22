@@ -32,7 +32,14 @@ export function FormattedEditMirror({ value, formatting, className, style, mirro
       };
       if (kinds.has("superscript") || kinds.has("subscript")) {
         decoration.fontSize = "0.7em";
-        decoration.transform = kinds.has("superscript") ? "translateY(-0.35em)" : "translateY(0.3em)";
+        if (kinds.has("superscript")) {
+          decoration.transform = "translateY(0.1em)";
+        } else {
+          // Anchor the smaller glyph to the line box bottom so it follows the
+          // baseline instead of starting at top: 0 like a superscript.
+          decoration.top = "auto";
+          decoration.bottom = "-0.1em";
+        }
       }
       return <span key={start} className="formatted-edit-advance">
         {text}

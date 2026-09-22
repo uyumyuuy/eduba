@@ -499,7 +499,7 @@ describe("saved project loading", () => {
     await act(async () => superscript.click());
     const raised = container.querySelector<HTMLElement>(".line-edit-mirror .formatted-edit-decoration")!;
     expect(raised.style.fontSize).toBe("0.7em");
-    expect(raised.style.transform).toContain("translateY(-0.35em)");
+    expect(raised.style.transform).toContain("translateY(0.1em)");
   });
 
   it("replaces selected matches across pages and navigates on undo and redo", async () => {
