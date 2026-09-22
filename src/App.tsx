@@ -22,6 +22,7 @@ import {
   X,
 } from "lucide-react";
 import { canvasToBase64, openProjectPdf, openSourcePdf } from "./pdf";
+import { SourcePageThumbnailCache } from "./pdfThumbnail";
 import { invokeCommand, isTauri, type ProjectInfo } from "./tauri";
 import { SaveQueue } from "./persistence";
 import {
@@ -161,6 +162,55 @@ function parseManifest(raw: string | null): Manifest {
   }
 }
 
+function PageThumbnail({ cache, sourcePage }: { cache: SourcePageThumbnailCache | null; sourcePage: number }) {
+  const frameRef = useRef<HTMLSpanElement>(null);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const [visible, setVisible] = useState(false);
+
+  useEffect(() => {
+    const frame = frameRef.current;
+    if (!frame) return;
+    if (!window.IntersectionObserver) {
+      setVisible(true);
+      return;
+    }
+    const observer = new IntersectionObserver(([entry]) => {
+      if (entry?.isIntersecting) {
+        setVisible(true);
+        observer.disconnect();
+      }
+    }, { root: frame.closest(".page-list"), rootMargin: "180px 0px" });
+    observer.observe(frame);
+    return () => observer.disconnect();
+  }, []);
+
+  useEffect(() => {
+    const clear = () => {
+      const target = canvasRef.current;
+      if (target) {
+        target.width = 0;
+        target.height = 0;
+      }
+    };
+    // A logical entry can stay mounted while its project PDF changes. Clear
+    // before waiting so the previous project's page is never shown here.
+    clear();
+    if (!visible || !cache) return;
+    let active = true;
+    void cache.get(sourcePage).then(source => {
+      const target = canvasRef.current;
+      if (!active || !target) return;
+      target.width = source.width;
+      target.height = source.height;
+      target.getContext("2d")?.drawImage(source, 0, 0);
+    }).catch(() => {
+      if (active) clear();
+    });
+    return () => { active = false; };
+  }, [cache, sourcePage, visible]);
+
+  return <span ref={frameRef} className="thumb" aria-hidden="true"><canvas ref={canvasRef} /></span>;
+}
 type LineOverlayProps = { value:string; left:number; top:number; width:number; height:number; fontSize:number; onChange:(value:string)=>void; onFinish:()=>void; onUndo:()=>void; onRedo:()=>void; onFormat:(start:number,end:number,kind:TextFormatKind)=>void; onOpenBulk:(selection:string,start:number,end:number)=>void; };
 function LineOverlay({value,left,top,width,height,fontSize:naturalFontSize,onChange,onFinish,onUndo,onRedo,onFormat,onOpenBulk}:LineOverlayProps) {
  const { t } = useTranslation(); const inputRef=useRef<HTMLTextAreaElement>(null); const [selection,setSelection]=useState({start:0,end:0}); const [ctrl,setCtrl]=useState(false);
@@ -246,6 +296,22 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
     finishLineEditRef = useRef<(lineId?: string) => void>(() => undefined),
     historyApplying = useRef(false);
   const current = manifest.pages[index] ?? null;
+  const [thumbnailCacheState, setThumbnailCacheState] = useState<{ pdf: PDFDocumentProxy; cache: SourcePageThumbnailCache } | null>(null);
+  // Create the cache in an effect. React StrictMode intentionally tears down
+  // and recreates effects in development, so a useMemo-owned cache would be
+  // disposed before its second effect setup could use it.
+  useEffect(() => {
+    if (!pdf) {
+      setThumbnailCacheState(null);
+      return;
+    }
+    const cache = new SourcePageThumbnailCache(pdf);
+    setThumbnailCacheState({ pdf, cache });
+    return () => cache.dispose();
+  }, [pdf]);
+  // Do not let the prior document's cache render during the commit where the
+  // PDF changed, before the replacement effect has run.
+  const thumbnailCache = thumbnailCacheState?.pdf === pdf ? thumbnailCacheState.cache : null;
   const putProject = useCallback((value: ProjectInfo | null) => {
     projectRef.current = value;
     setProject(value);
@@ -1129,8 +1195,10 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
                 key={page.id}
                 className={`page-item ${i === index ? "active" : ""}`}
                 onClick={() => go(i)}
+                disabled={Boolean(busy)}
+                aria-label={`${t("ui.page", { page: page.label })} · ${t("ui.sourcePage", { page: page.sourcePage })} · ${page.split === "single" ? t("ui.whole") : page.split === "left" ? t("ui.left") : t("ui.right")}`}
               >
-                <span className="thumb" />
+                <PageThumbnail cache={thumbnailCache} sourcePage={page.sourcePage} />
                 <span className="page-meta">
                   <strong>{page.label}</strong>
                   <small>

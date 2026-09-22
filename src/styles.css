@@ -38,10 +38,8 @@ button:disabled { cursor: not-allowed; opacity: .42; }
 .page-item { position: relative; display: flex; align-items: center; width: 100%; gap: 10px; padding: 8px 8px; margin-bottom: 4px; border: 1px solid transparent; border-radius: 7px; background: transparent; text-align: left; }
 .page-item:hover { background: #eeece4; }
 .page-item.active { border-color: #b7d4cd; background: #e6f0ec; }
-.thumb { width: 37px; height: 48px; position: relative; display: block; flex: 0 0 auto; border: 1px solid #d4d1c8; border-radius: 2px; background: #fffdf8; box-shadow: 1px 1px 0 #e0ddd5; }
-.thumb:before, .thumb:after, .thumb-lines { content: ""; position: absolute; left: 6px; right: 6px; height: 1px; background: #c4c4ba; }
-.thumb:before { top: 12px; box-shadow: 0 6px #c4c4ba, 0 12px #c4c4ba, 0 18px #c4c4ba; }
-.thumb:after { top: 35px; right: 13px; background: #8bb3a9; }
+.thumb { width: 52px; height: 64px; position: relative; display: grid; place-items: center; overflow: hidden; flex: 0 0 auto; border: 1px solid #d4d1c8; border-radius: 2px; background: #fffdf8; box-shadow: 1px 1px 0 #e0ddd5; }
+.thumb canvas { display: block; max-width: 100%; max-height: 100%; width: auto; height: auto; }
 .page-meta { display: flex; flex-direction: column; gap: 4px; }
 .page-meta strong { color: #4e5b59; font: 11px "DM Mono", monospace; }
 .page-meta small { color: #98a09d; font-size: 9px; }
