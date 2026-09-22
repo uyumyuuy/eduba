@@ -50,6 +50,7 @@ const zhHant = {
   },
   toolbar: { bold: "粗體", italic: "斜體", superscript: "上標", subscript: "下標", bulkReplace: "全部取代" },
   bulkReplace: { title: "全部取代", source: "已選文字", replacement: "取代為", results: "{{count}} 項結果", selectPage: "選取本頁結果", clearPage: "取消本頁選取", noResults: "沒有相符行", previous: "上一頁結果", next: "下一頁結果", cancel: "取消", apply: "取代已選 {{count}} 項", applying: "正在取代…", close: "關閉" },
+  scriptCalibration: { open: "自動辨識上標與下標", title: "自動辨識上標與下標", close: "關閉", description: "調整用於辨識上移與下移字元的大小和位置閾值。範例會立即更新，套用前不會儲存。", superscript: "上標", subscript: "下標", maxHeight: "最大相對字元高度", maxHeightHelp: "字元高度不超過估計的一般大寫字母高度的此比例時才會被辨識。", minRise: "最小正規化上移量", minRiseHelp: "基線到字元下緣的向上距離，除以估計的大寫字母高度。", minDrop: "最小正規化下移量", minDropHelp: "字元下緣到基線的向下距離，除以估計的大寫字母高度。", subscriptScope: "下標辨識範圍", digitsAndX: "數字 0–9 與 x", allCharacters: "所有字元", examples: "代表性範例", previewHint: "左側：原始影像（藍線：基線；橙框：字元框；綠線：基準字元高度 H） · 右側：偵測到的格式", reshuffle: "重新抽取範例", loading: "正在尋找平衡的範例…", loadingProgress: "正在尋找範例… {{completed}} / {{total}}", noExamples: "此專案中找不到適合的範例。", unsavedHint: "只會在套用時儲存變更。", cancel: "取消", apply: "套用", applying: "正在套用…" },
   ui: {
     settings: "設定", language: "語言", close: "關閉", model: "模型（.traineddata）", selectModel: "選擇模型",
     automatic: "自動", singleBlock: "單一文字區塊", sparseText: "稀疏文字", done: "完成", importPdf: "匯入 PDF",

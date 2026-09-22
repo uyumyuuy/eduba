@@ -35,12 +35,16 @@ import {
   processCanvas,
   updateLineText,
   updateLineFormatting,
+  applyScriptDetection,
+  type OcrLine,
   type TextFormatKind,
   type DocumentPage,
   type LogicalPageProvenance,
 } from "./domain";
 import type { PDFDocumentProxy } from "pdfjs-dist";
 import { ImportModal } from "./ImportModal";
+import { ScriptCalibrationDialog, type ScriptCalibrationCandidate, type ScriptCalibrationProgress } from "./ScriptCalibrationDialog";
+import { DEFAULT_SCRIPT_DETECTION_SETTINGS, SCRIPT_HEIGHT_REFERENCE_VERSION, ScriptHeightTrainer, detectScriptRanges, migrateLegacyScriptSettings, referenceHeightsForPage, type ScriptDetectionSettings, type ScriptHeightProfile } from "./scriptDetection";
 import { BulkReplaceDialog, type BulkMatch, type BulkReplaceRequest } from "./BulkReplaceDialog";
 import { prepareBulkUpdates } from "./bulkApply";
 import { candidatesForSelection } from "./correctionCandidates";
@@ -67,13 +71,31 @@ type Entry = LogicalPageProvenance & {
   sourceDpiX?: number;
   sourceDpiY?: number;
 };
-type Settings = { modelPath: string; psm: 3 | 6 | 11; dpi: number };
+type Settings = { modelPath: string; psm: 3 | 6 | 11; dpi: number; scriptHeightReferenceVersion: number; scriptHeightProfile?: ScriptHeightProfile } & ScriptDetectionSettings;
 type Manifest = { version: 1; pages: Entry[]; settings: Settings };
 type HistoryChange = { pageId: string; beforeData: string; afterData: string };
 type LineEditSession = { id: number; pageId: string; lineId: string; beforeData: string };
-type HistoryOperation = { changes: HistoryChange[]; targetPageId: string; lineEditSessionId?: number };
+type HistoryOperation = { changes: HistoryChange[]; targetPageId: string; lineEditSessionId?: number; beforeSettings?: Settings; afterSettings?: Settings };
 type RenderedEntry = { canvas: HTMLCanvasElement; modeUsed: ImportMode; dpiX: number; dpiY: number; reason?: string; sourceWidth?: number; sourceHeight?: number; };
-const defaultSettings: Settings = { modelPath: "", psm: 3, dpi: 300 };
+const defaultSettings: Settings = {
+  modelPath: "",
+  psm: 3,
+  dpi: 300,
+  ...DEFAULT_SCRIPT_DETECTION_SETTINGS,
+  scriptHeightReferenceVersion: SCRIPT_HEIGHT_REFERENCE_VERSION,
+};
+function projectSettings(input?: Partial<Settings>): Settings {
+  const legacy = input?.scriptHeightReferenceVersion !== SCRIPT_HEIGHT_REFERENCE_VERSION;
+  const profile = input?.scriptHeightProfile;
+  return {
+    ...defaultSettings,
+    ...input,
+    ...(legacy ? migrateLegacyScriptSettings(input ?? {}) : {}),
+    scriptHeightReferenceVersion: SCRIPT_HEIGHT_REFERENCE_VERSION,
+    scriptHeightProfile: profile?.version === 1 && profile.ratios && typeof profile.ratios === "object"
+      ? profile : undefined,
+  };
+}
 const errorText = (error: unknown) =>
   error instanceof Error ? error.message : String(error);
 const copy = <T,>(value: T): T => JSON.parse(JSON.stringify(value)) as T;
@@ -116,7 +138,9 @@ function parseManifest(raw: string | null): Manifest {
       throw new Error(globalT("appErrors.missingPages"));
     return {
       version: 1,
-      settings: { ...defaultSettings, ...data.settings },
+      // Detection thresholds are project-owned. Spreading the defaults first
+      // keeps older manifests readable as fields are added.
+      settings: projectSettings(data.settings),
       pages: data.pages.map((page, index) => ({
         id: String(page.id || `page-${index + 1}`),
         label: String(page.label || index + 1),
@@ -268,6 +292,10 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
   const setNotice = useCallback((key: string, values?: Record<string, string | number>) => updateNotice({ key, values }), []);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [bulkReplace, setBulkReplace] = useState<{ search: string } | null>(null);
+  const [scriptCalibrationOpen, setScriptCalibrationOpen] = useState(false);
+  const [scriptCalibrationCandidates, setScriptCalibrationCandidates] = useState<ScriptCalibrationCandidate[]>([]);
+  const [scriptCalibrationLoading, setScriptCalibrationLoading] = useState(false);
+  const [scriptCalibrationProgress, setScriptCalibrationProgress] = useState<ScriptCalibrationProgress | null>(null);
   const [importSource, setImportSource] = useState<{
     path: string;
     pdf: PDFDocumentProxy;
@@ -294,6 +322,13 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
     importSession = useRef(0),
     sourcePdfRef = useRef<PDFDocumentProxy | null>(null),
     bulkSnippetCanvases = useRef(new Map<string, Promise<HTMLCanvasElement | null>>()),
+    scriptSnippetCanvases = useRef(new Map<string, Promise<HTMLCanvasElement | null>>()),
+    scriptCandidateLines = useRef(new Map<string, OcrLine>()),
+    scriptCandidateHeights = useRef(new Map<string, number>()),
+    scriptHeightProfileRef = useRef<{ projectPath: string; profile: ScriptHeightProfile } | null>(null),
+    scriptCandidatePool = useRef<ScriptCalibrationCandidate[]>([]),
+    scriptCandidateBuckets = useRef<ScriptCalibrationCandidate[][]>([[], [], []]),
+    scriptScanGeneration = useRef(0),
     lineEditSession = useRef<LineEditSession | null>(null),
     nextLineEditSession = useRef(0),
     finishLineEditRef = useRef<(lineId?: string) => void>(() => undefined),
@@ -740,13 +775,19 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
       expectedData: reverse ? change.afterData : change.beforeData,
       data: reverse ? change.beforeData : change.afterData,
     }));
-    await invokeCommand("apply_bulk_corrections", { projectPath: projectInfo.path, updates });
+    if (updates.length) await invokeCommand("apply_bulk_corrections", { projectPath: projectInfo.path, updates });
+    const operationSettings = reverse ? operation.beforeSettings : operation.afterSettings;
+    if (operationSettings) {
+      const next = { ...manifestRef.current, settings: copy(operationSettings) };
+      await invokeCommand("save_manifest", { projectPath: projectInfo.path, manifest: JSON.stringify(copy(next)) });
+      putManifest(next);
+    }
     const target = manifestRef.current.pages.findIndex((page) => page.id === operation.targetPageId);
     if (target < 0) return;
     const targetChange = operation.changes.find((change) => change.pageId === operation.targetPageId);
     if (target === indexRef.current && targetChange) putDoc(JSON.parse(reverse ? targetChange.beforeData : targetChange.afterData) as DocumentPage);
     else putIndex(target);
-  }, [flush, putDoc, putIndex]);
+  }, [flush, putDoc, putIndex, putManifest]);
   const undo = useCallback(async () => {
     if (working.current || importActive.current || historyApplying.current) return;
     const operation = undoStack.at(-1);
@@ -809,8 +850,9 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
         pageId: entry.id,
       })[0];
       if (!parsed) throw new Error(globalT("appErrors.hocrMissingPage"));
+      const detected = applyScriptDetection(parsed, manifestRef.current.settings, manifestRef.current.settings.scriptHeightProfile);
       return {
-        ...parsed,
+        ...detected,
         id: entry.id,
         sourcePage: entry.sourcePage,
         split: entry.split,
@@ -1136,6 +1178,286 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
     return "data:image/png;base64," + canvasToBase64(crop);
   }, [pdf, renderEntry]);
 
+  const chooseScriptCalibrationCandidates = useCallback(() => {
+    const shuffle = (items: ScriptCalibrationCandidate[]) => {
+      const copy = [...items];
+      for (let i = copy.length - 1; i > 0; i -= 1) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [copy[i], copy[j]] = [copy[j], copy[i]];
+      }
+      return copy;
+    };
+    const picked = scriptCandidateBuckets.current.flatMap(bucket => shuffle(bucket).slice(0, 6));
+    const pickedKeys = new Set(picked.map(item => `${item.pageId}:${item.lineId}`));
+    const remainder = shuffle(scriptCandidatePool.current.filter(item => !pickedKeys.has(`${item.pageId}:${item.lineId}`)));
+    setScriptCalibrationCandidates([...picked, ...remainder].slice(0, 18));
+  }, []);
+  const scanScriptCalibrationCandidates = useCallback(async (draftSettings: ScriptDetectionSettings = manifestRef.current.settings) => {
+    const projectInfo = projectRef.current;
+    if (!projectInfo || scriptCalibrationLoading) return;
+    const generation = ++scriptScanGeneration.current;
+    setScriptCalibrationLoading(true);
+    scriptCandidatePool.current = [];
+    scriptCandidateLines.current.clear();
+    scriptCandidateHeights.current.clear();
+    scriptSnippetCanvases.current.clear();
+    const eligible = manifestRef.current.pages.filter(page => page.status === "review" && !page.completed);
+    const cached = scriptHeightProfileRef.current?.projectPath === projectInfo.path
+      ? scriptHeightProfileRef.current.profile : undefined;
+    const learning = !cached;
+    const total = eligible.length * (learning ? 2 : 1);
+    setScriptCalibrationProgress({ completed: 0, total });
+    type Stored = { candidate: ScriptCalibrationCandidate; line: OcrLine; referenceHeight?: number };
+    const buckets: Stored[][] = [[], [], []];
+    const seen = [0, 0, 0];
+    const add = (bucket: number, item: Stored) => {
+      seen[bucket] += 1;
+      if (buckets[bucket].length < 32) buckets[bucket].push(item);
+      else {
+        const replacement = Math.floor(Math.random() * seen[bucket]);
+        if (replacement < 32) buckets[bucket][replacement] = item;
+      }
+    };
+    try {
+      let profile = cached;
+      if (!profile) {
+        const trainer = new ScriptHeightTrainer();
+        for (let pageIndex = 0; pageIndex < eligible.length; pageIndex += 1) {
+          if (generation !== scriptScanGeneration.current) return;
+          const saved = await invokeCommand("load_page", { projectPath: projectInfo.path, pageId: eligible[pageIndex].id });
+          if (saved) trainer.addPage(JSON.parse(saved) as DocumentPage);
+          setScriptCalibrationProgress({ completed: pageIndex + 1, total });
+        }
+        profile = trainer.finish();
+        scriptHeightProfileRef.current = { projectPath: projectInfo.path, profile };
+      }
+      for (let pageIndex = 0; pageIndex < eligible.length; pageIndex += 1) {
+        if (generation !== scriptScanGeneration.current) return;
+        const entry = eligible[pageIndex];
+        const saved = await invokeCommand("load_page", { projectPath: projectInfo.path, pageId: entry.id });
+        if (saved) {
+          const page = JSON.parse(saved) as DocumentPage;
+          const references = referenceHeightsForPage(page, profile);
+          const lines = allLines(page).filter(line =>
+            line.correctedText === line.originalText && !line.geometryApproximate &&
+            !line.scriptDetectionManuallyEdited && !line.formatting?.length,
+          );
+          // Retain at most one page-local example per category, then reservoir
+          // sample each category. This keeps pages spread across a large book.
+          const selected: Array<{ line: OcrLine; referenceHeight?: number } | undefined> = [undefined, undefined, undefined];
+          for (const line of lines) {
+            const referenceHeight = references.get(line.id);
+            if (!referenceHeight) continue;
+            const ranges = detectScriptRanges(line, draftSettings, referenceHeight, profile);
+            const category = ranges.some(range => range.kind === "superscript") ? 0 : ranges.some(range => range.kind === "subscript") ? 1 : 2;
+            if (!selected[category] || Math.random() < 0.5) selected[category] = { line, referenceHeight };
+          }
+          selected.forEach((item, category) => {
+            if (!item) return;
+            const { line, referenceHeight } = item;
+            add(category, { candidate: { pageId: entry.id, lineId: line.id, lineText: line.correctedText, bbox: line.bbox }, line, referenceHeight });
+          });
+        }
+        setScriptCalibrationProgress({ completed: (learning ? eligible.length : 0) + pageIndex + 1, total });
+      }
+      if (generation !== scriptScanGeneration.current) return;
+      const retained = buckets.flat();
+      scriptCandidatePool.current = retained.map(item => item.candidate);
+      scriptCandidateBuckets.current = buckets.map(bucket => bucket.map(item => item.candidate));
+      retained.forEach(item => {
+        const key = `${item.candidate.pageId}:${item.candidate.lineId}`;
+        scriptCandidateLines.current.set(key, item.line);
+        if (item.referenceHeight) scriptCandidateHeights.current.set(key, item.referenceHeight);
+      });
+      chooseScriptCalibrationCandidates();
+    } catch (error) {
+      if (generation === scriptScanGeneration.current) setNotice("notices.pageLoadFailed", { error: errorText(error) });
+    } finally {
+      if (generation === scriptScanGeneration.current) setScriptCalibrationLoading(false);
+    }
+  }, [chooseScriptCalibrationCandidates, scriptCalibrationLoading, setNotice]);
+  const openScriptCalibration = useCallback(async () => {
+    if (!projectRef.current || working.current || importActive.current) return;
+    finishLineEditRef.current();
+    try {
+      await flush();
+      scriptHeightProfileRef.current = null;
+      setScriptCalibrationOpen(true);
+      void scanScriptCalibrationCandidates();
+    } catch (error) {
+      setNotice("notices.saveFailed", { error: errorText(error) });
+    }
+  }, [flush, scanScriptCalibrationCandidates, setNotice]);
+  const getScriptCalibrationSnippet = useCallback(async (candidate: ScriptCalibrationCandidate) => {
+    if (!pdf) return null;
+    let sourcePromise = scriptSnippetCanvases.current.get(candidate.pageId);
+    if (!sourcePromise) {
+      const entry = manifestRef.current.pages.find(page => page.id === candidate.pageId);
+      if (!entry) return null;
+      sourcePromise = (async () => {
+        const target = document.createElement("canvas");
+        const rendered = await renderEntry(entry, loading.current, pdf, target, false);
+        return rendered?.canvas ?? null;
+      })();
+      scriptSnippetCanvases.current.set(candidate.pageId, sourcePromise);
+      while (scriptSnippetCanvases.current.size > 8) {
+        const oldest = scriptSnippetCanvases.current.keys().next().value;
+        if (!oldest) break;
+        scriptSnippetCanvases.current.delete(oldest);
+      }
+    }
+    const source = await sourcePromise;
+    const key = candidate.pageId + ":" + candidate.lineId;
+    const line = scriptCandidateLines.current.get(key);
+    const referenceHeight = scriptCandidateHeights.current.get(key);
+    const validBox = (box: { left: number; top: number; right: number; bottom: number } | undefined) =>
+      Boolean(box && [box.left, box.top, box.right, box.bottom].every(Number.isFinite) &&
+        box.right > box.left && box.bottom > box.top);
+    if (!source || !validBox(candidate.bbox)) return null;
+    const charBoxes = (line?.chars ?? []).map(char => char.bbox).filter(
+      (box): box is NonNullable<typeof box> => validBox(box),
+    );
+    const hasBaseline = Boolean(line?.baseline && Number.isFinite(line.baseline.slope) &&
+      Number.isFinite(line.baseline.intercept));
+    const hasHeightGuide = hasBaseline && Number.isFinite(referenceHeight) && (referenceHeight ?? 0) > 0;
+    const baselinePageY = (x: number) => line!.bbox.bottom + line!.baseline!.intercept +
+      line!.baseline!.slope * (x - line!.bbox.left);
+    // Include edge glyphs and both height-guide endpoints without altering the
+    // project image. The left gutter keeps the measurement readable.
+    const boxes = [candidate.bbox, ...charBoxes];
+    const left = Math.max(0, Math.floor(Math.min(...boxes.map(box => box.left))) - 8);
+    const right = Math.min(source.width, Math.ceil(Math.max(...boxes.map(box => box.right))) + 8);
+    const guideTop = hasHeightGuide
+      ? Math.min(baselinePageY(line!.bbox.left), baselinePageY(line!.bbox.right)) - referenceHeight!
+      : Infinity;
+    const baselineBottom = hasBaseline
+      ? Math.max(baselinePageY(line!.bbox.left), baselinePageY(line!.bbox.right))
+      : -Infinity;
+    const top = Math.max(0, Math.floor(Math.min(...boxes.map(box => box.top), guideTop)) - 8);
+    const bottom = Math.min(source.height, Math.ceil(Math.max(...boxes.map(box => box.bottom), baselineBottom)) + 8);
+    if (right <= left || bottom <= top) return null;
+    const gutter = hasHeightGuide ? 58 : 0;
+    const crop = document.createElement("canvas");
+    crop.width = right - left + gutter;
+    crop.height = bottom - top;
+    const context = crop.getContext("2d");
+    if (!context) return null;
+    if (gutter) {
+      context.fillStyle = "#f2f3ec";
+      context.fillRect(0, 0, gutter, crop.height);
+    }
+    context.drawImage(source, left, top, right - left, bottom - top, gutter, 0, right - left, bottom - top);
+    context.save();
+    context.lineWidth = 1;
+    context.strokeStyle = "rgba(213, 83, 39, 0.5)";
+    for (const box of charBoxes) {
+      context.strokeRect(box.left - left + gutter, box.top - top, box.right - box.left, box.bottom - box.top);
+    }
+    if (hasBaseline) {
+      const imageX = (x: number) => x - left + gutter;
+      const baselineY = (x: number) => baselinePageY(x) - top;
+      context.beginPath();
+      context.setLineDash([5, 3]);
+      context.lineWidth = 1.5;
+      context.strokeStyle = "rgba(17, 105, 193, 0.75)";
+      context.moveTo(imageX(line!.bbox.left), baselineY(line!.bbox.left));
+      context.lineTo(imageX(line!.bbox.right), baselineY(line!.bbox.right));
+      context.stroke();
+      if (hasHeightGuide) {
+        const guideY = (x: number) => baselineY(x) - referenceHeight!;
+        context.beginPath();
+        context.setLineDash([4, 3]);
+        context.strokeStyle = "rgba(23, 126, 76, 0.8)";
+        context.moveTo(imageX(line!.bbox.left), guideY(line!.bbox.left));
+        context.lineTo(imageX(line!.bbox.right), guideY(line!.bbox.right));
+        context.stroke();
+        const markerX = gutter - 8;
+        const upper = guideY(line!.bbox.left);
+        const lower = baselineY(line!.bbox.left);
+        context.beginPath();
+        context.setLineDash([]);
+        context.moveTo(markerX, upper);
+        context.lineTo(markerX, lower);
+        context.moveTo(markerX - 5, upper);
+        context.lineTo(markerX + 5, upper);
+        context.moveTo(markerX - 5, lower);
+        context.lineTo(markerX + 5, lower);
+        context.stroke();
+        context.font = "10px sans-serif";
+        context.fillStyle = "rgba(20, 103, 62, 0.95)";
+        context.fillText("H=" + Math.round(referenceHeight! * 10) / 10 + "px", 4,
+          Math.max(12, Math.min(crop.height - 4, (upper + lower) / 2)));
+      }
+    }
+    context.restore();
+    return "data:image/png;base64," + canvasToBase64(crop);
+  }, [pdf, renderEntry]);
+  const applyScriptCalibration = useCallback(async (settings: ScriptDetectionSettings) => {
+    const projectInfo = projectRef.current;
+    if (!projectInfo || working.current || importActive.current) return;
+    finishLineEditRef.current();
+    working.current = true;
+    setBusy("save");
+    const beforeSettings = copy(manifestRef.current.settings);
+    const profile = scriptHeightProfileRef.current?.projectPath === projectInfo.path
+      ? scriptHeightProfileRef.current.profile : manifestRef.current.settings.scriptHeightProfile;
+    const eligible = manifestRef.current.pages.filter(page => page.status === "review" && !page.completed);
+    setScriptCalibrationProgress({ completed: 0, total: eligible.length });
+    const changes: HistoryChange[] = [];
+    try {
+      await flush();
+      for (let start = 0; start < eligible.length; start += 20) {
+        const updates: { pageId: string; expectedData: string; data: string }[] = [];
+        for (const entry of eligible.slice(start, start + 20)) {
+          const saved = await invokeCommand("load_page", { projectPath: projectInfo.path, pageId: entry.id });
+          if (!saved) continue;
+          const updated = applyScriptDetection(JSON.parse(saved) as DocumentPage, settings, profile);
+          const data = JSON.stringify(updated);
+          if (data !== saved) updates.push({ pageId: entry.id, expectedData: saved, data });
+        }
+        if (updates.length) {
+          let batch: HistoryChange[] = [];
+          await writeQueue.current.enqueue(async () => {
+            batch = await invokeCommand("apply_bulk_corrections", { projectPath: projectInfo.path, updates });
+          });
+          changes.push(...batch);
+        }
+        setScriptCalibrationProgress({ completed: Math.min(start + 20, eligible.length), total: eligible.length });
+      }
+      const next = { ...manifestRef.current, settings: { ...manifestRef.current.settings, ...settings, scriptHeightProfile: profile, scriptHeightReferenceVersion: SCRIPT_HEIGHT_REFERENCE_VERSION } };
+      await writeQueue.current.enqueue(() => invokeCommand("save_manifest", { projectPath: projectInfo.path, manifest: JSON.stringify(copy(next)) }));
+      putManifest(next);
+      const currentChange = changes.find(change => change.pageId === manifestRef.current.pages[indexRef.current]?.id);
+      if (currentChange) putDoc(JSON.parse(currentChange.afterData) as DocumentPage);
+      if (changes.length || JSON.stringify(beforeSettings) !== JSON.stringify(next.settings)) {
+        setUndoStack(old => [...old.slice(-99), { targetPageId: currentChange?.pageId ?? manifestRef.current.pages[indexRef.current]?.id ?? "", changes, beforeSettings, afterSettings: copy(next.settings) }]);
+        setRedoStack([]);
+      }
+      setNotice("notices.saved");
+    } catch (error) {
+      // Each chunk is atomic. Restore completed chunks if a later write fails.
+      let rollbackError: unknown;
+      for (let end = changes.length; end > 0; end -= 20) {
+        const updates = changes.slice(Math.max(0, end - 20), end).map(change => ({
+          pageId: change.pageId,
+          expectedData: change.afterData,
+          data: change.beforeData,
+        }));
+        try {
+          await writeQueue.current.enqueue(async () => { await invokeCommand("apply_bulk_corrections", { projectPath: projectInfo.path, updates }); });
+        } catch (failure) {
+          rollbackError = failure;
+          break;
+        }
+      }
+      if (rollbackError) throw new Error(`${errorText(error)}; rollback failed: ${errorText(rollbackError)}`);
+      throw error;
+    } finally {
+      working.current = false;
+      setBusy(null);
+      setScriptCalibrationProgress(null);
+    }
+  }, [flush, putDoc, putManifest, setNotice]);
   const applyBulkReplace = useCallback(async ({ search, replacement, replacementFormatting, selections }: BulkReplaceRequest) => {
     if (!project || !selections.length) return;
     await flush();
@@ -1218,6 +1540,9 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
           <Redo2 size={15} /> {t("ui.redo")}
         </button>
         <span className="toolbar-spacer" />
+        <button className="secondary" onClick={() => void openScriptCalibration()} disabled={!project || Boolean(busy)}>
+          {t("scriptCalibration.open")}
+        </button>
         <button
           className="secondary"
           onClick={() => askOcr("current")}
@@ -1416,7 +1741,7 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
                             )}
                             lengthAdjust="spacingAndGlyphs"
                           >
-                            {line.formatting?.length ? <tspan dangerouslySetInnerHTML={{ __html: formattedSegments(line, true) }} /> : line.correctedText}
+                            {(line.formatting?.length || line.autoFormatting?.length) ? <tspan dangerouslySetInnerHTML={{ __html: formattedSegments(line, true) }} /> : line.correctedText}
                           </text>
                         </g>
                       ))}
@@ -1470,6 +1795,29 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
           {busy === "save" ? t("ui.saving") : project ? t("ui.autosave") : t("ui.idle")}
         </span>
       </footer>
+      {scriptCalibrationOpen && project && (
+        <ScriptCalibrationDialog
+          open={true}
+          initialSettings={manifest.settings}
+          candidates={scriptCalibrationCandidates}
+          loading={scriptCalibrationLoading}
+          progress={scriptCalibrationProgress}
+          getSnippet={getScriptCalibrationSnippet}
+          detectPreview={(candidate, settings) => {
+            const line = scriptCandidateLines.current.get(`${candidate.pageId}:${candidate.lineId}`);
+            return line ? detectScriptRanges(line, settings, scriptCandidateHeights.current.get(`${candidate.pageId}:${candidate.lineId}`), scriptHeightProfileRef.current?.profile) : [];
+          }}
+          onReshuffle={(settings) => void scanScriptCalibrationCandidates(settings)}
+          onApply={applyScriptCalibration}
+          onClose={() => {
+            scriptScanGeneration.current += 1;
+            setScriptCalibrationLoading(false);
+            scriptSnippetCanvases.current.clear();
+            setScriptCalibrationOpen(false);
+            setScriptCalibrationProgress(null);
+          }}
+        />
+      )}
       {bulkReplace && project && (<BulkReplaceDialog open={true} projectPath={project.path} initialSearch={bulkReplace.search} getSnippet={getBulkSnippet} onApply={applyBulkReplace} onClose={() => { bulkSnippetCanvases.current.clear(); setBulkReplace(null); }} />)}
       {importSource && (
         <ImportModal

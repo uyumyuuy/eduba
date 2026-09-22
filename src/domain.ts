@@ -56,12 +56,39 @@ export interface OcrLine {
   correctedText: string;
   /** UTF-16 offsets matching textarea selection positions. */
   formatting?: TextFormatRange[];
+  /** Script formatting inferred from OCR geometry. It is replaceable when the
+   * recognition thresholds are retuned; `formatting` remains user-authored. */
+  autoFormatting?: TextFormatRange[];
+  /** Text and script-format edits exclude this line from automatic detection. */
+  scriptDetectionManuallyEdited?: boolean;
   words: OcrWord[];
   chars: OcrChar[];
   /** True when the line is rendered from approximate line geometry. */
   geometryApproximate: boolean;
 }
 
+/** Formatting for render/export. Manual script choices override automatic ones. */
+export function effectiveFormatting(line: OcrLine): TextFormatRange[] {
+  const manual = line.formatting ?? [];
+  const manualScript = manual.filter(
+    (range) => range.kind === "superscript" || range.kind === "subscript",
+  );
+  const automatic = (line.autoFormatting ?? []).flatMap((range) => {
+    if (range.kind !== "superscript" && range.kind !== "subscript") return [];
+    let pieces = [range];
+    for (const override of manualScript) {
+      pieces = pieces.flatMap((piece) => {
+        if (piece.end <= override.start || piece.start >= override.end) return [piece];
+        return [
+          ...(piece.start < override.start ? [{ ...piece, end: override.start }] : []),
+          ...(piece.end > override.end ? [{ ...piece, start: override.end }] : []),
+        ];
+      });
+    }
+    return pieces;
+  });
+  return [...automatic, ...manual];
+}
 export interface Paragraph {
   id: string;
   bbox: Rect;
@@ -356,6 +383,11 @@ export function updateLineFormatting(page: DocumentPage, lineId: string, start: 
   const copy: DocumentPage = JSON.parse(JSON.stringify(page)) as DocumentPage;
   const line = allLines(copy).find(candidate => candidate.id === lineId);
   if (!line || start >= end) return copy;
+  // A manual edit takes ownership of all currently rendered formatting on this line.
+  const rendered = effectiveFormatting(line);
+  line.formatting = rendered.length ? rendered : undefined;
+  line.autoFormatting = undefined;
+  line.scriptDetectionManuallyEdited = true;
   const opposite = kind === "superscript" ? "subscript" : kind === "subscript" ? "superscript" : undefined;
   const ranges = (line.formatting ?? []).flatMap(range => opposite !== range.kind || range.end <= start || range.start >= end ? [range] : [{ ...range, end: start }, { ...range, start: end }]).filter(range => range.end > range.start);
   const same = ranges.filter(range => range.kind === kind);
@@ -372,6 +404,11 @@ export function setLineFormatting(page: DocumentPage, lineId: string, start: num
   const copy: DocumentPage = JSON.parse(JSON.stringify(page)) as DocumentPage;
   const line = allLines(copy).find(candidate => candidate.id === lineId);
   if (!line || start >= end) return copy;
+  // A manual edit takes ownership of all currently rendered formatting on this line.
+  const rendered = effectiveFormatting(line);
+  line.formatting = rendered.length ? rendered : undefined;
+  line.autoFormatting = undefined;
+  line.scriptDetectionManuallyEdited = true;
   const opposite = kind === "superscript" ? "subscript" : kind === "subscript" ? "superscript" : undefined;
   const removed = (line.formatting ?? []).flatMap(range => {
     const remove = range.kind === kind || (enabled && range.kind === opposite);
@@ -396,7 +433,9 @@ export function updateLineText(
   const copy: DocumentPage = JSON.parse(JSON.stringify(page)) as DocumentPage;
   const line = allLines(copy).find((candidate) => candidate.id === lineId);
   if (!line) throw new Error(t("errors.unknownLine", { id: lineId }));
-  line.formatting = remapFormatting(line.formatting, line.correctedText, correctedText);
+  line.formatting = remapFormatting(effectiveFormatting(line), line.correctedText, correctedText);
+  line.autoFormatting = undefined;
+  line.scriptDetectionManuallyEdited = true;
   line.correctedText = correctedText;
   if (correctedText === line.originalText) {
     line.chars = charsFromWords(line.words);
@@ -458,7 +497,7 @@ function titleBbox(rect: Rect): string {
 }
 
 export function formattedSegments(line: OcrLine, svg = false): string {
-  const ranges = line.formatting ?? [];
+  const ranges = effectiveFormatting(line);
   if (!ranges.length) return escapeXml(line.correctedText);
   const points = [...new Set([0, line.correctedText.length, ...ranges.flatMap(range => [range.start, range.end])])].sort((a,b)=>a-b);
   return points.slice(0,-1).map((start,index) => { const end=points[index+1]; const active=ranges.filter(range=>range.start<=start&&range.end>=end).map(range=>range.kind); let text=escapeXml(line.correctedText.slice(start,end)); if(svg){const style=[active.includes("bold")?"font-weight=\"bold\"":"",active.includes("italic")?"font-style=\"italic\"":"",active.includes("superscript")?"baseline-shift=\"super\" font-size=\"70%\"":"",active.includes("subscript")?"baseline-shift=\"sub\" font-size=\"70%\"":""].filter(Boolean).join(" ");return style?`<tspan ${style}>${text}</tspan>`:text;} if(active.includes("bold"))text=`<strong>${text}</strong>`;if(active.includes("italic"))text=`<em>${text}</em>`;if(active.includes("superscript"))text=`<sup>${text}</sup>`;if(active.includes("subscript"))text=`<sub>${text}</sub>`;return text; }).join("");
@@ -495,7 +534,7 @@ export function exportHocr(pages: DocumentPage[]): string {
                   // the corrected string. Emit one unboxed word so hOCR remains useful
                   // without inventing character geometry.
                   const lineContent =
-                    line.correctedText !== line.originalText || Boolean(line.formatting?.length)
+                    line.correctedText !== line.originalText || Boolean(effectiveFormatting(line).length)
                       ? `<span class="ocrx_word" title="${escapeXml(titleBbox(line.bbox))}">${formattedSegments(line)}</span>`
                       : words || escapeXml(line.correctedText);
                   const details = [
@@ -837,3 +876,6 @@ export function processCanvas(
   });
   return { sourceWidth, sourceHeight, angle, pages };
 }
+
+// Kept here for existing document callers; settings and detector live in scriptDetection.
+export { applyScriptDetection } from './scriptDetection';

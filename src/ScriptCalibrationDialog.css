@@ -1,0 +1,32 @@
+.modal.script-calibration-modal { width: min(980px, calc(100vw - 32px)); max-height: min(820px, calc(100dvh - 32px)); display: flex; flex-direction: column; }
+.script-calibration-header, .script-calibration-examples-head, .script-calibration-footer { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.script-calibration-header h2 { margin-top: 7px; }
+.script-calibration-intro { margin: 10px 0 15px; color: #63716d; font-size: 12px; line-height: 1.5; }
+.script-calibration-controls { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.script-calibration-controls fieldset { min-width: 0; margin: 0; padding: 11px; border: 1px solid #dfdfd5; border-radius: 6px; }
+.script-calibration-controls legend { padding: 0 4px; color: #54746f; font: 10px "DM Mono", monospace; }
+.script-calibration-control, .script-calibration-scope { display: grid; grid-template-columns: minmax(0, 1fr) 80px; column-gap: 9px; align-items: center; margin: 7px 0; color: #4d5c57; font-size: 11px; }
+.script-calibration-control small { grid-column: 1; color: #89938d; font-size: 9px; line-height: 1.35; }
+.script-calibration-control input, .script-calibration-scope select { box-sizing: border-box; width: 100%; min-height: 31px; padding: 5px 7px; border: 1px solid #d6d8d0; border-radius: 4px; background: #fffefa; color: #3d4e4a; font-size: 11px; }
+.script-calibration-control input { grid-column: 2; grid-row: 1 / span 2; }
+.script-calibration-scope span { grid-column: 1; }
+.script-calibration-scope select { grid-column: 1 / -1; margin-top: 5px; }
+.script-calibration-examples-head { margin-top: 15px; padding: 9px 1px; border-top: 1px solid #e5e2d9; color: #64716c; }
+.script-calibration-examples-head > div { display: flex; flex-direction: column; gap: 3px; }
+.script-calibration-examples-head strong { font: 10px "DM Mono", monospace; }
+.script-calibration-examples-head span { font-size: 10px; }
+.script-calibration-examples-head .text-button { display: flex; align-items: center; gap: 5px; }
+.script-calibration-examples { min-height: 126px; max-height: 350px; overflow: auto; border: 1px solid #e0ddd4; border-radius: 6px; }
+.script-calibration-example { display: grid; grid-template-columns: minmax(200px, 1fr) minmax(200px, 1fr); min-height: 68px; border-bottom: 1px solid #ece9e1; }
+.script-calibration-example:last-child { border-bottom: 0; }
+.script-calibration-snippet { display: block; min-width: 0; min-height: 68px; overflow-x: auto; overflow-y: hidden; color: #98a09a; background: #eeeae0; font: 8px "DM Mono", monospace; }
+.script-calibration-snippet img { display: block; width: auto; min-width: 0; max-width: none; height: 68px; }
+.script-calibration-preview { display: flex; align-items: center; min-width: 0; padding: 12px 15px; background: #fffefa; color: #33443f; font-family: var(--ocr-font); font-size: 18px; overflow-x: auto; }
+.script-calibration-formatted-text { white-space: pre; }
+.script-calibration-superscript, .script-calibration-subscript { position: relative; color: #287b72; font-size: .72em; font-weight: 700; }
+.script-calibration-superscript { vertical-align: super; }
+.script-calibration-subscript { vertical-align: sub; }
+.script-calibration-loading { display: grid; place-items: center; min-height: 126px; margin: 0; color: #89938d; font-size: 11px; }
+.script-calibration-footer { margin-top: 14px; }
+.script-calibration-footer > p { margin: 0; color: #89938d; font-size: 10px; }
+@media (max-width: 600px) { .modal.script-calibration-modal { width: calc(100vw - 16px); padding: 18px; } .script-calibration-controls, .script-calibration-example { grid-template-columns: 1fr; } .script-calibration-snippet { min-height: 58px; } .script-calibration-snippet img { height: 58px; } .script-calibration-preview { min-height: 50px; } .script-calibration-footer { align-items: flex-end; } .script-calibration-footer > p { max-width: 42%; } }
