@@ -14,7 +14,7 @@ use std::{
 use tauri::{menu::MenuBuilder, AppHandle, Emitter, Manager, State};
 use thiserror::Error;
 mod preferences;
-use preferences::{LocalePreference, SupportedLocale, UserPreferences};
+use preferences::{LastOpenedProject, LocalePreference, SupportedLocale, UserPreferences};
 
 const SCHEMA_VERSION: &str = "1";
 const CHUNK_SIZE: usize = 1024 * 1024;
@@ -190,12 +190,14 @@ pub struct ExportArgs {
 
 pub struct AppState {
     ocr_child: Arc<Mutex<Option<Child>>>,
+    preferences_lock: Arc<Mutex<()>>,
 }
 
 impl Default for AppState {
     fn default() -> Self {
         Self {
             ocr_child: Arc::new(Mutex::new(None)),
+            preferences_lock: Arc::new(Mutex::new(())),
         }
     }
 }
@@ -1158,12 +1160,48 @@ fn get_user_preferences(app: AppHandle) -> Result<UserPreferences, String> {
 }
 
 #[tauri::command]
-fn save_user_preferences(app: AppHandle, language: LocalePreference) -> Result<(), String> {
+fn save_user_preferences(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    language: LocalePreference,
+) -> Result<(), String> {
+    let _lock = state
+        .preferences_lock
+        .lock()
+        .map_err(|_| "preferences lock is unavailable".to_string())?;
     let config_dir = app
         .path()
         .app_config_dir()
         .map_err(|e| format!("could not locate app config directory: {e}"))?;
-    preferences::write_preferences(&config_dir, language)
+    let mut preferences = preferences::read_preferences(&config_dir, current_os_locale());
+    preferences.language = language;
+    preferences::write_preferences(&config_dir, &preferences)
+}
+
+#[tauri::command]
+fn save_last_opened_project(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    project_path: String,
+    page_id: String,
+) -> Result<(), String> {
+    if project_path.trim().is_empty() || page_id.trim().is_empty() {
+        return Err("project path and page ID are required".into());
+    }
+    let _lock = state
+        .preferences_lock
+        .lock()
+        .map_err(|_| "preferences lock is unavailable".to_string())?;
+    let config_dir = app
+        .path()
+        .app_config_dir()
+        .map_err(|e| format!("could not locate app config directory: {e}"))?;
+    let mut preferences = preferences::read_preferences(&config_dir, current_os_locale());
+    preferences.last_project = Some(LastOpenedProject {
+        path: project_path,
+        page_id,
+    });
+    preferences::write_preferences(&config_dir, &preferences)
 }
 
 fn supported_locale(value: &str) -> Result<SupportedLocale, String> {
@@ -1232,6 +1270,7 @@ pub fn run() {
             get_environment,
             get_user_preferences,
             save_user_preferences,
+            save_last_opened_project,
             set_ui_language,
             create_project,
             open_project,

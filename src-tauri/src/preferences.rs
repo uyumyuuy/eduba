@@ -1,4 +1,4 @@
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize};
 use std::{
     fs,
     io::Write,
@@ -40,6 +40,15 @@ pub struct UserPreferences {
     pub language: LocalePreference,
     #[serde(rename = "osLocale")]
     pub os_locale: Option<String>,
+    #[serde(rename = "lastProject")]
+    pub last_project: Option<LastOpenedProject>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+pub struct LastOpenedProject {
+    pub path: String,
+    #[serde(rename = "pageId")]
+    pub page_id: String,
 }
 
 impl UserPreferences {
@@ -48,6 +57,7 @@ impl UserPreferences {
             version: 1,
             language: LocalePreference::Auto,
             os_locale,
+            last_project: None,
         }
     }
 }
@@ -56,6 +66,22 @@ impl UserPreferences {
 struct StoredPreferences {
     version: Option<u8>,
     language: Option<LocalePreference>,
+    #[serde(
+        default,
+        rename = "lastProject",
+        deserialize_with = "deserialize_last_opened_project"
+    )]
+    last_project: Option<LastOpenedProject>,
+}
+
+fn deserialize_last_opened_project<'de, D>(
+    deserializer: D,
+) -> Result<Option<LastOpenedProject>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let value = Option::<serde_json::Value>::deserialize(deserializer)?;
+    Ok(value.and_then(|value| serde_json::from_value(value).ok()))
 }
 
 pub fn preferences_path(config_dir: &Path) -> PathBuf {
@@ -77,16 +103,21 @@ pub fn read_preferences(config_dir: &Path, os_locale: Option<String>) -> UserPre
         version: 1,
         language: stored.language.unwrap_or_default(),
         os_locale,
+        last_project: stored.last_project,
     }
 }
 
-pub fn write_preferences(config_dir: &Path, language: LocalePreference) -> Result<(), String> {
+pub fn write_preferences(config_dir: &Path, preferences: &UserPreferences) -> Result<(), String> {
     fs::create_dir_all(config_dir)
         .map_err(|e| format!("could not create preferences directory: {e}"))?;
     let target = preferences_path(config_dir);
     let mut temp = tempfile::NamedTempFile::new_in(config_dir)
         .map_err(|e| format!("could not create preferences temp file: {e}"))?;
-    let body = serde_json::json!({ "version": 1, "language": language });
+    let body = serde_json::json!({
+        "version": 1,
+        "language": preferences.language,
+        "lastProject": preferences.last_project,
+    });
     temp.write_all(
         serde_json::to_string_pretty(&body)
             .map_err(|e| e.to_string())?
@@ -170,10 +201,23 @@ mod tests {
     #[test]
     fn round_trips_and_recovers_corrupt_preferences() {
         let dir = tempdir().unwrap();
-        write_preferences(dir.path(), LocalePreference::ZhHant).unwrap();
+        let preferences = UserPreferences {
+            version: 1,
+            language: LocalePreference::ZhHant,
+            os_locale: None,
+            last_project: Some(LastOpenedProject {
+                path: "C:/books/reading.eduba".into(),
+                page_id: "page-2".into(),
+            }),
+        };
+        write_preferences(dir.path(), &preferences).unwrap();
         assert_eq!(
             read_preferences(dir.path(), Some("ja-JP".into())).language,
             LocalePreference::ZhHant
+        );
+        assert_eq!(
+            read_preferences(dir.path(), None).last_project,
+            preferences.last_project,
         );
         fs::write(preferences_path(dir.path()), b"{not-json").unwrap();
         let recovered = read_preferences(dir.path(), Some("ja-JP".into()));
@@ -197,16 +241,32 @@ mod tests {
     }
 
     #[test]
+    fn ignores_invalid_last_project_without_discarding_language() {
+        let dir = tempdir().unwrap();
+        fs::write(
+            preferences_path(dir.path()),
+            r#"{"version":1,"language":"ja","lastProject":{"path":42}}"#,
+        )
+        .unwrap();
+        let preferences = read_preferences(dir.path(), None);
+        assert_eq!(preferences.language, LocalePreference::Ja);
+        assert_eq!(preferences.last_project, None);
+    }
+
+    #[test]
     fn repeated_save_replaces_existing_file_and_reports_write_failure() {
         let dir = tempdir().unwrap();
-        write_preferences(dir.path(), LocalePreference::En).unwrap();
-        write_preferences(dir.path(), LocalePreference::Ja).unwrap();
+        let mut preferences = UserPreferences::default_with_os(None);
+        preferences.language = LocalePreference::En;
+        write_preferences(dir.path(), &preferences).unwrap();
+        preferences.language = LocalePreference::Ja;
+        write_preferences(dir.path(), &preferences).unwrap();
         assert_eq!(
             read_preferences(dir.path(), None).language,
             LocalePreference::Ja
         );
         let blocked = dir.path().join("blocked");
         fs::write(&blocked, b"file").unwrap();
-        assert!(write_preferences(&blocked, LocalePreference::En).is_err());
+        assert!(write_preferences(&blocked, &preferences).is_err());
     }
 }

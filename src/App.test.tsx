@@ -10,6 +10,8 @@ const mocks = vi.hoisted(() => ({
   invoke: vi.fn(),
   openProjectPdf: vi.fn(),
   loadPageImage: vi.fn(),
+  closeRequested: vi.fn(),
+  destroy: vi.fn(),
 }));
 
 vi.mock("@tauri-apps/plugin-dialog", () => ({
@@ -23,8 +25,8 @@ vi.mock("@tauri-apps/api/event", () => ({
 
 vi.mock("@tauri-apps/api/window", () => ({
   getCurrentWindow: vi.fn(() => ({
-    onCloseRequested: vi.fn(async () => () => undefined),
-    destroy: vi.fn(),
+    onCloseRequested: mocks.closeRequested,
+    destroy: mocks.destroy,
   })),
 }));
 
@@ -106,6 +108,7 @@ describe("saved project loading", () => {
     const canvasContext = { drawImage: vi.fn() } as unknown as CanvasRenderingContext2D;
     vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue(canvasContext);
     mocks.dialogOpen.mockResolvedValue("D:/projects/reading.eduba");
+    mocks.closeRequested.mockResolvedValue(() => undefined);
     mocks.openProjectPdf.mockResolvedValue({
       numPages: 2,
       getPage: vi.fn(async () => ({
@@ -167,6 +170,113 @@ describe("saved project loading", () => {
     await act(async () => openButton?.click());
     await waitFor(() => expect(container.textContent).toContain("saved page one"));
   }
+
+  it("reopens the last project on its saved logical page", async () => {
+    const base = mocks.invoke.getMockImplementation()!;
+    mocks.invoke.mockImplementation(async (command: string, args?: unknown) => {
+      if (command === "get_user_preferences") {
+        return {
+          version: 1,
+          language: "auto",
+          osLocale: "en-US",
+          lastProject: { path: "D:/projects/reading.eduba", pageId: "page-2" },
+        };
+      }
+      return base(command, args as never);
+    });
+    await act(async () => root.render(<App />));
+    await waitFor(() => expect(container.textContent).toContain("saved page two"));
+    expect(mocks.invoke).toHaveBeenCalledWith("open_project", { projectPath: "D:/projects/reading.eduba" });
+    expect(mocks.invoke).toHaveBeenCalledWith("load_page", {
+      projectPath: "D:/projects/reading.eduba",
+      pageId: "page-2",
+    });
+    expect(mocks.invoke).toHaveBeenCalledWith("save_last_opened_project", {
+      projectPath: "D:/projects/reading.eduba",
+      pageId: "page-2",
+    });
+    expect(mocks.invoke).not.toHaveBeenCalledWith("save_last_opened_project", {
+      projectPath: "D:/projects/reading.eduba",
+      pageId: "page-1",
+    });
+  });
+
+  it("leaves the start screen available when the last project cannot be reopened", async () => {
+    mocks.invoke.mockImplementation(async (command: string) => {
+      if (command === "get_environment") return { modelPath: "", tesseractPath: "" };
+      if (command === "get_user_preferences") {
+        return {
+          version: 1,
+          language: "auto",
+          osLocale: "en-US",
+          lastProject: { path: "D:/projects/missing.eduba", pageId: "page-1" },
+        };
+      }
+      if (command === "open_project") throw new Error("project file not found");
+      return undefined;
+    });
+    await act(async () => root.render(<App />));
+    await waitFor(() =>
+      expect(Array.from(container.querySelectorAll("button")).find((button) => button.textContent?.includes("Open"))).toBeTruthy(),
+    );
+    expect(mocks.dialogOpen).not.toHaveBeenCalled();
+    expect(container.textContent).not.toContain("project file not found");
+  });
+
+  it("does not let delayed startup restoration override a manual open", async () => {
+    let resolvePreferences: ((value: unknown) => void) | undefined;
+    const base = mocks.invoke.getMockImplementation()!;
+    mocks.invoke.mockImplementation(async (command: string, args?: unknown) => {
+      if (command === "get_user_preferences") {
+        return new Promise((resolve) => { resolvePreferences = resolve; });
+      }
+      if (command === "open_project" && (args as { projectPath?: string } | undefined)?.projectPath === "D:/projects/manual.eduba") {
+        const info = await base(command, args as never);
+        return { ...(info as object), path: "D:/projects/manual.eduba", name: "manual.eduba" };
+      }
+      return base(command, args as never);
+    });
+    mocks.dialogOpen.mockResolvedValue("D:/projects/manual.eduba");
+    await act(async () => root.render(<App />));
+    await waitFor(() =>
+      expect(Array.from(container.querySelectorAll("button")).find((button) => button.textContent?.includes("Open"))).toBeTruthy(),
+    );
+    const openButton = Array.from(container.querySelectorAll<HTMLButtonElement>("button")).find((button) => button.textContent?.includes("Open"))!;
+    await act(async () => openButton.click());
+    await waitFor(() => expect(container.textContent).toContain("manual.eduba"));
+    resolvePreferences!({
+      version: 1,
+      language: "auto",
+      osLocale: "en-US",
+      lastProject: { path: "D:/projects/reading.eduba", pageId: "page-2" },
+    });
+    await act(async () => { await Promise.resolve(); });
+    expect(mocks.invoke).not.toHaveBeenCalledWith("open_project", { projectPath: "D:/projects/reading.eduba" });
+  });
+
+  it("waits for the final page selection to be persisted before closing", async () => {
+    await openSavedProject();
+    let finishPageWrite: (() => void) | undefined;
+    const base = mocks.invoke.getMockImplementation()!;
+    mocks.invoke.mockImplementation(async (command: string, args?: unknown) => {
+      if (command === "save_last_opened_project" && (args as { pageId?: string } | undefined)?.pageId === "page-2") {
+        await new Promise<void>((resolve) => { finishPageWrite = resolve; });
+        return undefined;
+      }
+      return base(command, args as never);
+    });
+    const pageTwo = container.querySelectorAll<HTMLButtonElement>(".page-item")[1];
+    await act(async () => pageTwo.click());
+    await waitFor(() => expect(finishPageWrite).toBeTypeOf("function"));
+    let closeHandler: ((event: { preventDefault: () => void }) => Promise<void>) | undefined;
+    mocks.closeRequested.mock.calls.forEach(([handler]) => { closeHandler = handler; });
+    const closing = closeHandler!({ preventDefault: vi.fn() });
+    await Promise.resolve();
+    expect(mocks.destroy).not.toHaveBeenCalled();
+    finishPageWrite!();
+    await act(async () => { await closing; });
+    expect(mocks.destroy).toHaveBeenCalled();
+  });
 
   it("keeps a completed page protected when its edit confirmation is declined", async () => {
     await openSavedProject();

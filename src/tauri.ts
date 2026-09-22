@@ -31,8 +31,9 @@ export type BulkPageChange = {
 };
 
 export type BackendCommands = {
-  get_user_preferences: { args: undefined; result: { version: 1; language: string; osLocale: string | null } };
+  get_user_preferences: { args: undefined; result: { version: 1; language: string; osLocale: string | null; lastProject: { path: string; pageId: string } | null } };
   save_user_preferences: { args: { language: string }; result: void };
+  save_last_opened_project: { args: { projectPath: string; pageId: string }; result: void };
   set_ui_language: { args: { language: string }; result: void };
   get_environment: { args: undefined; result: { modelPath: string; tesseractPath: string } };
   inspect_pdf: { args: { pdfPath: string }; result: { pdfSize: number } };

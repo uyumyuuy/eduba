@@ -297,7 +297,10 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
     lineEditSession = useRef<LineEditSession | null>(null),
     nextLineEditSession = useRef(0),
     finishLineEditRef = useRef<(lineId?: string) => void>(() => undefined),
-    historyApplying = useRef(false);
+    historyApplying = useRef(false),
+    lastProjectWrite = useRef<Promise<void>>(Promise.resolve()),
+    restorationStarted = useRef(false),
+    restorationGeneration = useRef(0);
   const current = manifest.pages[index] ?? null;
   const [thumbnailCacheState, setThumbnailCacheState] = useState<{ pdf: PDFDocumentProxy; cache: LogicalPageThumbnailCache } | null>(null);
   // Create the cache in an effect. React StrictMode intentionally tears down
@@ -331,6 +334,18 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
     indexRef.current = value;
     setIndex(value);
   }, []);
+  const saveLastOpenedProject = useCallback((info: ProjectInfo, pageId: string) => {
+    if (!isTauri) return;
+    const write = lastProjectWrite.current
+      .catch(() => undefined)
+      .then(() => invokeCommand("save_last_opened_project", { projectPath: info.path, pageId }));
+    lastProjectWrite.current = write;
+    void write.catch(() => undefined);
+  }, []);
+  useEffect(() => {
+    if (!project || !current) return;
+    saveLastOpenedProject(project, current.id);
+  }, [current?.id, project, saveLastOpenedProject]);
   const clearCompletion = useCallback(async (pageIds: string[]) => {
     const protectedIds = new Set(pageIds.filter(id => manifestRef.current.pages.some(page => page.id === id && page.completed)));
     if (!protectedIds.size) return true;
@@ -478,7 +493,7 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
     renderEntry,
   ]);
   const openInfo = useCallback(
-    async (info: ProjectInfo) => {
+    async (info: ProjectInfo, savedPageId?: string, quiet = false) => {
       if (working.current) return;
       working.current = true;
       setBusy("open");
@@ -486,7 +501,7 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
       try {
         existing = parseManifest(info.manifest);
       } catch (e) {
-        setNotice("notices.genericError", { error: errorText(e) });
+        if (!quiet) setNotice("notices.genericError", { error: errorText(e) });
         setBusy(null);
         working.current = false;
         return;
@@ -505,7 +520,8 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
         setUndoStack([]);
         setRedoStack([]);
         putManifest(existing);
-        putIndex(0);
+        const savedIndex = existing.pages.findIndex((page) => page.id === savedPageId);
+        putIndex(savedIndex >= 0 ? savedIndex : 0);
         putDoc(null);
         setPdf(opened);
         if (!info.manifest) {
@@ -517,9 +533,9 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
             manifest: JSON.stringify(next),
           });
         }
-        setNotice("notices.opened", { name: info.name });
+        if (!quiet) setNotice("notices.opened", { name: info.name });
       } catch (e) {
-        setNotice("notices.pdfLoadFailed", { error: errorText(e) });
+        if (!quiet) setNotice("notices.pdfLoadFailed", { error: errorText(e) });
       } finally {
         setBusy(null);
         working.current = false;
@@ -527,6 +543,24 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
     },
     [pdf, putDoc, putIndex, putManifest, putProject],
   );
+  useEffect(() => {
+    if (!isTauri || restorationStarted.current) return;
+    restorationStarted.current = true;
+    const generation = restorationGeneration.current;
+    void invokeCommand("get_user_preferences")
+      .then(async (preferences) => {
+        const lastProject = preferences.lastProject;
+        if (!lastProject?.path || !lastProject.pageId || working.current || generation !== restorationGeneration.current) return;
+        try {
+          const info = await invokeCommand("open_project", { projectPath: lastProject.path });
+          if (generation !== restorationGeneration.current || working.current) return;
+          await openInfo(info, lastProject.pageId, true);
+        } catch {
+          // A moved, deleted, or damaged project must not block application startup.
+        }
+      })
+      .catch(() => undefined);
+  }, [openInfo]);
   const closeImport = useCallback(() => {
     importSession.current += 1;
     importActive.current = false;
@@ -537,6 +571,7 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
   }, []);
   const importPdf = useCallback(async () => {
     if (working.current || importActive.current) return;
+    restorationGeneration.current += 1;
     importActive.current = true;
     const session = ++importSession.current;
     let source: PDFDocumentProxy | null = null;
@@ -607,6 +642,7 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
   );
   const openProject = useCallback(async () => {
     if (working.current || importActive.current) return;
+    restorationGeneration.current += 1;
     try {
       await flush();
       const path = await dialogOpen({
@@ -989,6 +1025,7 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
           if (timer.current) clearTimeout(timer.current);
           await flush();
           await writeQueue.current.idle();
+          await lastProjectWrite.current.catch(() => undefined);
           closing.current = true;
           await getCurrentWindow().destroy();
         } catch (error) {
