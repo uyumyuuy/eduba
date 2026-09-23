@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import { useTranslation } from "react-i18next";
 import { EditToolbarButton } from "./EditToolbarButton";
 import { FormattedEditMirror } from "./FormattedEditMirror";
@@ -21,6 +21,7 @@ import {
   Square,
   Undo2,
   Redo2,
+  ScanLine,
   X,
 } from "lucide-react";
 import { canvasToBase64, openProjectPdf, openSourcePdf } from "./pdf";
@@ -45,6 +46,7 @@ import {
   type TextFormatRange,
   type DocumentPage,
   type LogicalPageProvenance,
+  type Rect,
 } from "./domain";
 import type { PDFDocumentProxy } from "pdfjs-dist";
 import { ImportModal } from "./ImportModal";
@@ -52,6 +54,7 @@ import { ScriptCalibrationDialog, type ScriptCalibrationCandidate, type ScriptCa
 import { DEFAULT_SCRIPT_DETECTION_SETTINGS, SCRIPT_HEIGHT_REFERENCE_VERSION, ScriptHeightTrainer, detectScriptRanges, migrateLegacyScriptSettings, referenceHeightsForPage, type ScriptDetectionSettings, type ScriptHeightProfile } from "./scriptDetection";
 import { BulkReplaceDialog, type BulkMatch, type BulkReplaceRequest } from "./BulkReplaceDialog";
 import { prepareBulkUpdates } from "./bulkApply";
+import { addOcrRegion, prepareRegionOcrImage } from "./ocrRegion";
 import { candidatesForSelection } from "./correctionCandidates";
 import { importEntries, type ImportConfig } from "./importConfig";
 import { loadPageImage, type ImportMode } from "./pageImage";
@@ -322,6 +325,9 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
   const [canvasSize, setCanvasSize] = useState({ width: 0, height: 0 });
   const [selected, setSelected] = useState<string | null>(null);
   const [editing, setEditing] = useState<string | null>(null);
+  const [regionMode, setRegionMode] = useState(false);
+  const [regionSelection, setRegionSelection] = useState<Rect | null>(null);
+  const [regionHintHidden, setRegionHintHidden] = useState(false);
   const [undoStack, setUndoStack] = useState<HistoryOperation[]>([]);
   const [redoStack, setRedoStack] = useState<HistoryOperation[]>([]);
   const [zoom, setZoom] = useState(0.42);
@@ -347,6 +353,10 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
   const [confirmOcr, setConfirmOcr] = useState<"current" | "all" | null>(null);
   const [exportScope, setExportScope] = useState<"current" | "all">("all");
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const pdfPageRef = useRef<HTMLDivElement>(null);
+  const regionHintRef = useRef<HTMLDivElement>(null);
+  const regionDrag = useRef<{ pointerId: number; x: number; y: number; clientX: number; clientY: number } | null>(null);
+  const regionScrollTimer = useRef<number | null>(null);
   const pdfStageRef = useRef<HTMLDivElement>(null);
   const ocrStageRef = useRef<HTMLDivElement>(null);
   const layoutCardRef = useRef<HTMLDivElement>(null);
@@ -1011,8 +1021,12 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
     async (scope: "current" | "all") => {
       if (importActive.current) return;
       const active = manifestRef.current.pages[indexRef.current];
-      const hasManualCorrections = scope === "current" && Boolean(docRef.current && allLines(docRef.current).some(
-        (line) => line.correctedText !== line.originalText,
+      const hasManualCorrections = scope === "current" && Boolean(docRef.current && (
+        (docRef.current.manualOcrRegions?.length ?? 0) > 0 ||
+        allLines(docRef.current).some(line =>
+          line.correctedText !== line.originalText ||
+          Boolean(line.formatting?.length) ||
+          line.id.includes("--split"))
       ));
       // Keep the existing destructive-OCR confirmation when corrections exist.
       // Its approval handler clears completion immediately before OCR starts.
@@ -1030,6 +1044,125 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
     cancelled.current = true;
     invokeCommand("cancel_ocr").catch(() => undefined);
   }, []);
+  const addSelectedRegion = useCallback(async (selection: Rect) => {
+    const entry = manifestRef.current.pages[indexRef.current];
+    const source = canvasRef.current;
+    const beforePage = docRef.current;
+    const info = projectRef.current;
+    if (!entry || entry.status !== "review" || !source || !beforePage || !info || working.current || importActive.current) return;
+    working.current = true;
+    cancelled.current = false;
+    setBusy("ocr");
+    try {
+      await flush();
+      const padding = 20;
+      const input = prepareRegionOcrImage(source, selection, beforePage, padding);
+      const dpiX = entry.sourceDpiX ?? entry.dpi ?? manifestRef.current.settings.dpi;
+      const dpiY = entry.sourceDpiY ?? entry.dpi ?? manifestRef.current.settings.dpi;
+      const dpi = Math.max(70, Math.min(2400, Math.round(Math.sqrt(dpiX * dpiY))));
+      const hocr = await invokeCommand("run_ocr", {
+        imageBase64: canvasToBase64(input),
+        modelPath: manifestRef.current.settings.modelPath,
+        psm: 11,
+        dpi,
+      });
+      if (cancelled.current) throw new Error(globalT("appErrors.ocrCancelled"));
+      const regionId = entry.id + "--manual-" + crypto.randomUUID();
+      const recognized = parseHocr(hocr, { sourcePage: entry.sourcePage, pageId: regionId })[0];
+      if (!recognized) throw new Error(globalT("appErrors.hocrMissingPage"));
+      const result = addOcrRegion(beforePage, recognized, selection, padding, regionId);
+      if (!result.addedWords) {
+        setNotice("notices.regionEmpty");
+        setRegionMode(true);
+        return;
+      }
+      const beforeData = JSON.stringify(copy(beforePage));
+      const afterData = JSON.stringify(copy(result.page));
+      const changes = await invokeCommand("apply_bulk_corrections", {
+        projectPath: info.path,
+        updates: [{ pageId: entry.id, expectedData: beforeData, data: afterData }],
+      });
+      if (changes.length !== 1) throw new Error("The OCR region could not be saved.");
+      putDoc(result.page);
+      setUndoStack(old => [...old, { targetPageId: entry.id, changes }].slice(-100));
+      setRedoStack([]);
+      setNotice("notices.regionAdded", { count: result.addedLines });
+    } catch (error) {
+      setNotice(cancelled.current ? "notices.ocrCancelled" : "notices.ocrFailed", cancelled.current ? undefined : { error: errorText(error) });
+      setRegionMode(true);
+    } finally {
+      working.current = false;
+      setBusy(null);
+    }
+  }, [flush, putDoc, setNotice]);
+  const clientToPage = useCallback((clientX: number, clientY: number) => {
+    const canvas = canvasRef.current;
+    if (!canvas) return null;
+    const bounds = canvas.getBoundingClientRect();
+    if (!bounds.width || !bounds.height) return null;
+    return {
+      x: Math.max(0, Math.min(canvas.width, (clientX - bounds.left) * canvas.width / bounds.width)),
+      y: Math.max(0, Math.min(canvas.height, (clientY - bounds.top) * canvas.height / bounds.height)),
+    };
+  }, []);
+  const stopRegionScroll = useCallback(() => {
+    if (regionScrollTimer.current !== null) window.clearInterval(regionScrollTimer.current);
+    regionScrollTimer.current = null;
+  }, []);
+  const onRegionPointerDown = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
+    if (!regionMode || event.button !== 0 || busy) return;
+    const point = clientToPage(event.clientX, event.clientY);
+    if (!point || point.x <= 0 || point.x >= canvasSize.width || point.y <= 0 || point.y >= canvasSize.height) return;
+    event.preventDefault();
+    event.currentTarget.setPointerCapture(event.pointerId);
+    regionDrag.current = { pointerId: event.pointerId, x: point.x, y: point.y, clientX: event.clientX, clientY: event.clientY };
+    setRegionSelection({ left: point.x, top: point.y, right: point.x, bottom: point.y });
+    stopRegionScroll();
+    regionScrollTimer.current = window.setInterval(() => {
+      const drag = regionDrag.current, stage = pdfStageRef.current;
+      if (!drag || !stage) return;
+      const bounds = stage.getBoundingClientRect();
+      const edge = 28;
+      const dx = drag.clientX < bounds.left + edge ? -14 : drag.clientX > bounds.right - edge ? 14 : 0;
+      const dy = drag.clientY < bounds.top + edge ? -14 : drag.clientY > bounds.bottom - edge ? 14 : 0;
+      if (!dx && !dy) return;
+      const oldLeft = stage.scrollLeft, oldTop = stage.scrollTop;
+      stage.scrollLeft += dx; stage.scrollTop += dy;
+      if (oldLeft === stage.scrollLeft && oldTop === stage.scrollTop) return;
+      const current = clientToPage(drag.clientX, drag.clientY);
+      if (current) setRegionSelection({ left: Math.min(drag.x, current.x), top: Math.min(drag.y, current.y),
+        right: Math.max(drag.x, current.x), bottom: Math.max(drag.y, current.y) });
+    }, 30);
+  }, [busy, canvasSize.height, canvasSize.width, clientToPage, regionMode, stopRegionScroll]);
+  const onRegionPointerMove = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
+    const drag = regionDrag.current;
+    if (!drag || drag.pointerId !== event.pointerId) return;
+    drag.clientX = event.clientX; drag.clientY = event.clientY;
+    const point = clientToPage(event.clientX, event.clientY);
+    if (!point) return;
+    setRegionSelection({ left: Math.min(drag.x, point.x), top: Math.min(drag.y, point.y),
+      right: Math.max(drag.x, point.x), bottom: Math.max(drag.y, point.y) });
+  }, [clientToPage]);
+  const onRegionPointerUp = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
+    const drag = regionDrag.current;
+    if (!drag || drag.pointerId !== event.pointerId) return;
+    regionDrag.current = null;
+    stopRegionScroll();
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
+    const point = clientToPage(event.clientX, event.clientY);
+    setRegionSelection(null);
+    if (!point) return;
+    const selection: Rect = {
+      left: Math.floor(Math.min(drag.x, point.x)), top: Math.floor(Math.min(drag.y, point.y)),
+      right: Math.ceil(Math.max(drag.x, point.x)), bottom: Math.ceil(Math.max(drag.y, point.y)),
+    };
+    if (selection.right - selection.left < 4 || selection.bottom - selection.top < 4) {
+      setNotice("notices.regionTooSmall");
+      return;
+    }
+    setRegionMode(false);
+    void addSelectedRegion(selection);
+  }, [addSelectedRegion, clientToPage, setNotice, stopRegionScroll]);
   const exportFile = useCallback(
     async (type: "txt" | "hocr" | "svg", scope: "current" | "all" = "all") => {
       if (!projectRef.current || working.current || importActive.current)
@@ -1543,13 +1676,13 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
   const synchronizeProofingPane = useCallback((sourcePane: "pdf" | "ocr") => {
     const pdfStage = pdfStageRef.current;
     const ocrStage = ocrStageRef.current;
-    const canvas = canvasRef.current;
+    const pageElement = pdfPageRef.current;
     const layoutCard = layoutCardRef.current;
-    if (!pdfStage || !ocrStage || !canvas || !layoutCard) return;
+    if (!pdfStage || !ocrStage || !pageElement || !layoutCard) return;
     const targetPane = sourcePane === "pdf" ? "ocr" : "pdf";
     const changed = sourcePane === "pdf"
-      ? synchronizePageScroll(pdfStage, ocrStage, canvas, layoutCard)
-      : synchronizePageScroll(ocrStage, pdfStage, layoutCard, canvas);
+      ? synchronizePageScroll(pdfStage, ocrStage, pageElement, layoutCard)
+      : synchronizePageScroll(ocrStage, pdfStage, layoutCard, pageElement);
     if (changed) scrollSyncTarget.current = targetPane;
   }, []);
   const onProofingScroll = useCallback((sourcePane: "pdf" | "ocr") => {
@@ -1560,6 +1693,26 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
     lastScrolledPane.current = sourcePane;
     synchronizeProofingPane(sourcePane);
   }, [synchronizeProofingPane]);
+  useEffect(() => { setRegionMode(false); setRegionSelection(null); regionDrag.current = null; stopRegionScroll(); }, [current?.id, stopRegionScroll]);
+  useEffect(() => {
+    if (regionMode && (current?.completed || busy === "ocr")) {
+      regionDrag.current = null; stopRegionScroll(); setRegionSelection(null); setRegionMode(false);
+    } else if (!regionMode) stopRegionScroll();
+  }, [busy, current?.completed, regionMode, stopRegionScroll]);
+  useEffect(() => {
+    if (!regionMode) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      event.preventDefault();
+      regionDrag.current = null;
+      stopRegionScroll();
+      setRegionSelection(null);
+      setRegionMode(false);
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [regionMode, stopRegionScroll]);
+  useEffect(() => () => stopRegionScroll(), [stopRegionScroll]);
   useLayoutEffect(() => {
     const pdfStage = pdfStageRef.current;
     const ocrStage = ocrStageRef.current;
@@ -1737,6 +1890,22 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
                     : t("ui.rightPage")}
               </span>
             </div>
+            <button
+              className={"region-add-button" + (regionMode ? " active" : "")}
+              disabled={current?.status !== "review" || !doc || !canvasSize.width || Boolean(busy)}
+              aria-pressed={regionMode}
+              onClick={() => {
+                if (regionMode) { regionDrag.current = null; stopRegionScroll(); setRegionSelection(null); setRegionMode(false); return; }
+                void (async () => {
+                  const active = manifestRef.current.pages[indexRef.current];
+                  if (!active || !await clearCompletion([active.id])) return;
+                  if (manifestRef.current.pages[indexRef.current]?.id !== active.id) return;
+                  finishLineEditRef.current();
+                  setSelected(null);
+                  setRegionMode(true);
+                })();
+              }}
+            ><ScanLine size={15} /> {t("ui.addOcrRegion")}</button>
             {current?.status === "review" && <label className="page-complete-toggle" title={t("ui.pageCompleteHint")}>
               <input type="checkbox" checked={Boolean(current.completed)} disabled={Boolean(busy)} onChange={(event) => {
                 if (event.currentTarget.checked) finishLineEditRef.current();
@@ -1777,23 +1946,48 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
             </div>
           </div>
           <div className="proofing-grid">
-            <article className="pdf-pane">
+            <article className="pdf-pane" onPointerMove={(event) => {
+              if (!regionMode || !regionHintRef.current) return;
+              const box = regionHintRef.current.getBoundingClientRect();
+              const margin = 40;
+              setRegionHintHidden(event.clientX >= box.left - margin && event.clientX <= box.right + margin &&
+                event.clientY >= box.top - margin && event.clientY <= box.bottom + margin);
+            }} onPointerLeave={() => setRegionHintHidden(false)}>
               <div className="pane-label">
                 <span>{t("ui.processedImage")}</span>
               </div>
+              {regionMode && <div ref={regionHintRef} className={"region-instruction" + (regionHintHidden ? " hidden" : "")} role="status">
+                {t("ui.regionSelectHint")}
+              </div>}
               <div ref={pdfStageRef} className="pdf-stage" onScroll={() => onProofingScroll("pdf")}>
                 {project ? (
-                  <canvas
-                    ref={canvasRef}
-                    className="rendered-page"
+                  <div
+                    ref={pdfPageRef}
+                    className={"pdf-page" + (regionMode ? " selecting" : "")}
                     style={{ width: w || undefined, height: h || undefined }}
-                  />
+                    onPointerDown={onRegionPointerDown}
+                    onPointerMove={onRegionPointerMove}
+                    onPointerUp={onRegionPointerUp}
+                    onPointerCancel={(event) => {
+                      if (regionDrag.current?.pointerId !== event.pointerId) return;
+                      regionDrag.current = null;
+                      stopRegionScroll();
+                      setRegionSelection(null);
+                    }}
+                  >
+                    <canvas ref={canvasRef} className="rendered-page" />
+                    {regionSelection && <div className="region-selection" style={{
+                      left: regionSelection.left * zoom, top: regionSelection.top * zoom,
+                      width: (regionSelection.right - regionSelection.left) * zoom,
+                      height: (regionSelection.bottom - regionSelection.top) * zoom,
+                    }} />}
+                  </div>
                 ) : (
                   <Empty />
                 )}
               </div>
             </article>
-            <article className="ocr-pane">
+            <article className={"ocr-pane" + (regionMode ? " region-inactive" : "")}>
               <div className="pane-label">
                 <span>{t("ui.recognitionLayout")}</span>
                 <span className="pane-hint">{t("ui.clickLine")}</span>
@@ -1823,7 +2017,7 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
                               1,
                               line.bbox.bottom - line.bbox.top,
                             )}
-                            onClick={() => void beginLineEdit(line.id)}
+                            onClick={() => { if (!regionMode) void beginLineEdit(line.id); }}
                           />
                           <text
                             x={line.bbox.left}

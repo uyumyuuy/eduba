@@ -130,7 +130,7 @@ describe("saved project loading", () => {
       ["page-2", savedPage("page-2", "saved page two", 2)],
     ]);
 
-    const canvasContext = { drawImage: vi.fn() } as unknown as CanvasRenderingContext2D;
+    const canvasContext = { drawImage: vi.fn(), fillRect: vi.fn() } as unknown as CanvasRenderingContext2D;
     vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue(canvasContext);
     mocks.dialogOpen.mockResolvedValue("D:/projects/reading.eduba");
     mocks.closeRequested.mockResolvedValue(() => undefined);
@@ -469,11 +469,57 @@ describe("saved project loading", () => {
     await act(async () => redoButton.click());
     await waitFor(() => expect(container.textContent).toContain("third"));
   });
+  it("adds a dragged OCR region with PSM 11 and saves it as one undoable change", async () => {
+    const base = mocks.invoke.getMockImplementation()!;
+    const regionHocr = '<html xmlns="http://www.w3.org/1999/xhtml"><body><div class="ocr_page" id="page" title="bbox 0 0 80 60"><div class="ocr_carea" id="block" title="bbox 25 25 35 35"><p class="ocr_par" id="par" title="bbox 25 25 35 35"><span class="ocr_line" id="line" title="bbox 25 25 35 35"><span class="ocrx_word" id="word" title="bbox 25 25 35 35">15</span></span></p></div></div></body></html>';
+    mocks.invoke.mockImplementation(async (command: string, args?: unknown) =>
+      command === "run_ocr" ? regionHocr : base(command, args as never));
+    await openSavedProject();
+    const canvas = container.querySelector<HTMLCanvasElement>(".rendered-page")!;
+    vi.spyOn(canvas, "getBoundingClientRect").mockReturnValue({ left: 0, top: 0, right: 100, bottom: 80, width: 100, height: 80 } as DOMRect);
+    const surface = container.querySelector<HTMLDivElement>(".pdf-page")!;
+    Object.defineProperties(surface, {
+      setPointerCapture: { configurable: true, value: vi.fn() },
+      hasPointerCapture: { configurable: true, value: vi.fn(() => true) },
+      releasePointerCapture: { configurable: true, value: vi.fn() },
+    });
+    const button = Array.from(container.querySelectorAll<HTMLButtonElement>("button")).find(item => item.textContent?.includes("Add OCR region"))!;
+    expect(button.disabled).toBe(false);
+    await act(async () => button.click());
+    expect(button.getAttribute("aria-pressed")).toBe("true");
+    expect(container.querySelector(".ocr-pane.region-inactive")).not.toBeNull();
+    const hint = container.querySelector<HTMLElement>(".region-instruction")!;
+    expect(hint.textContent).toContain("Drag to select an area");
+    vi.spyOn(hint, "getBoundingClientRect").mockReturnValue({ left: 20, top: 20, right: 220, bottom: 70 } as DOMRect);
+    await act(async () => surface.dispatchEvent(new MouseEvent("pointermove", { bubbles: true, clientX: 30, clientY: 30 })));
+    expect(hint.classList.contains("hidden")).toBe(true);
+    await act(async () => surface.dispatchEvent(new MouseEvent("pointermove", { bubbles: true, clientX: 400, clientY: 400 })));
+    expect(hint.classList.contains("hidden")).toBe(false);
+    const pointer = (type: string, x: number, y: number) => {
+      const event = new MouseEvent(type, { bubbles: true, button: 0, clientX: x, clientY: y });
+      Object.defineProperty(event, "pointerId", { value: 1 });
+      return event;
+    };
+    await act(async () => {
+      surface.dispatchEvent(pointer("pointerdown", 10, 20));
+      surface.dispatchEvent(pointer("pointermove", 50, 40));
+    });
+    expect(container.querySelector(".region-selection")).not.toBeNull();
+    await act(async () => surface.dispatchEvent(pointer("pointerup", 50, 40)));
+    await waitFor(() => expect(mocks.invoke).toHaveBeenCalledWith("run_ocr", expect.objectContaining({ psm: 11 })));
+    await waitFor(() => expect(JSON.parse(persistedPages.get("page-1")!).manualOcrRegions).toHaveLength(1));
+    const saved = JSON.parse(persistedPages.get("page-1")!);
+    expect(saved.manualOcrRegions[0].bbox).toEqual({ left: 10, top: 20, right: 50, bottom: 40 });
+    expect(container.textContent).toContain("15");
+    const undoButton = Array.from(container.querySelectorAll<HTMLButtonElement>("button")).find(item => item.textContent?.includes("Undo"))!;
+    await act(async () => undoButton.click());
+    await waitFor(() => expect(JSON.parse(persistedPages.get("page-1")!).manualOcrRegions).toBeUndefined());
+  });
   it("wires both scroll panes and ignores the reciprocal programmatic scroll", async () => {
     await openSavedProject();
     const pdfStage = container.querySelector<HTMLDivElement>(".pdf-stage")!;
     const ocrStage = container.querySelector<HTMLDivElement>(".ocr-stage")!;
-    const sourcePage = container.querySelector<HTMLCanvasElement>(".rendered-page")!;
+    const sourcePage = container.querySelector<HTMLDivElement>(".pdf-page")!;
     const targetPage = container.querySelector<HTMLDivElement>(".layout-card")!;
     const dimensions = (element: HTMLElement, left: number, top: number, width: number, height: number) => {
       Object.defineProperties(element, {

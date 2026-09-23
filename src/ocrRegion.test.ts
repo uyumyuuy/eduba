@@ -1,0 +1,92 @@
+// @vitest-environment jsdom
+import { describe, expect, it, vi } from "vitest";
+import { allLines, exportHocr, exportText, type DocumentPage, type OcrChar, type OcrLine, type OcrWord, type Rect } from "./domain";
+import { addOcrRegion, prepareRegionOcrImage } from "./ocrRegion";
+
+function word(id: string, text: string, bbox: Rect): OcrWord {
+  const chars: OcrChar[] = Array.from(text).map((value, index) => ({ index, originalText: value, correctedText: value, bbox: { ...bbox }, source: "ocr" }));
+  return { id, bbox, originalText: text, correctedText: text, chars };
+}
+function line(id: string, text: string, bbox: Rect): OcrLine {
+  const words = [word(id + "-word", text, bbox)];
+  return { id, hocrClasses: ["ocr_line"], bbox, originalText: text, correctedText: text, words, chars: words[0].chars.map(char => ({ ...char })), geometryApproximate: false };
+}
+function page(lines: OcrLine[]): DocumentPage {
+  return { id: "page-1", sourcePage: 1, split: "single", rotation: 0, angle: 0, width: 300, height: 300,
+    blocks: [{ id: "block", bbox: { left: 80, top: 100, right: 220, bottom: 160 },
+      paragraphs: [{ id: "paragraph", bbox: { left: 80, top: 100, right: 220, bottom: 160 }, lines }] }] };
+}
+const body = () => line("body", "Dies", { left: 80, top: 100, right: 130, bottom: 120 });
+const marker = () => line("region-line", "15", { left: 31, top: 26, right: 44, bottom: 35 });
+const selection = { left: 50, top: 90, right: 100, bottom: 135 };
+
+describe("manual OCR region", () => {
+  it("crops exactly the selected pixels, pads outside, and masks only intersecting OCR words", () => {
+    const context = { fillRect: vi.fn(), drawImage: vi.fn(), fillStyle: "" } as unknown as CanvasRenderingContext2D;
+    vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue(context);
+    const source = document.createElement("canvas");
+    source.width = 300; source.height = 300;
+    const input = prepareRegionOcrImage(source, selection, page([body()]), 20);
+    expect([input.width, input.height]).toEqual([90, 85]);
+    expect(context.drawImage).toHaveBeenCalledWith(source, 50, 90, 50, 45, 20, 20, 50, 45);
+    expect(context.fillRect).toHaveBeenCalledWith(50, 30, 20, 20);
+    vi.restoreAllMocks();
+  });
+
+  it("attaches a recognized margin number to the matching existing line and preserves page coordinates", () => {
+    const initial = page([body()]);
+    const result = addOcrRegion(initial, page([marker()]), selection, 20, "region-a");
+    expect(result.addedLines).toBe(1);
+    expect(allLines(initial)[0].correctedText).toBe("Dies");
+    const merged = allLines(result.page)[0];
+    expect(merged.correctedText).toBe("15 Dies");
+    expect(merged.words[0].bbox).toEqual({ left: 61, top: 96, right: 74, bottom: 105 });
+    expect(merged.words[0].chars[0].bbox?.left).toBe(61);
+    expect(merged.bbox.left).toBe(61);
+    expect(result.page.blocks[0].bbox.left).toBe(61);
+    expect(result.page.manualOcrRegions?.[0].addedWordIds).toContain("region-line-word");
+    expect(exportHocr([result.page])).toContain("bbox 61 96 74 105");
+  });
+
+  it("keeps existing corrections and shifts formatting when the new text is prefixed", () => {
+    const edited = body();
+    edited.correctedText = "Corrected";
+    edited.formatting = [{ start: 0, end: 9, kind: "italic" }];
+    const result = addOcrRegion(page([edited]), page([marker()]), selection, 20, "region-b");
+    const merged = allLines(result.page)[0];
+    expect(merged.originalText).toBe("15 Dies");
+    expect(merged.correctedText).toBe("15 Corrected");
+    expect(merged.formatting).toEqual([{ start: 3, end: 12, kind: "italic" }]);
+  });
+
+  it("inserts an unconnected result before the nearest line without changing existing reading order", () => {
+    const isolated = { left: 50, top: 90, right: 75, bottom: 135 };
+    const result = addOcrRegion(page([body()]), page([marker()]), isolated, 20, "region-c");
+    expect(result.page.blocks).toHaveLength(2);
+    expect(allLines(result.page).map(item => item.correctedText)).toEqual(["15", "Dies"]);
+    expect(exportText([result.page])).toBe("15\n\nDies");
+    expect(exportHocr([result.page]).indexOf("region-line-word")).toBeLessThan(exportHocr([result.page]).indexOf("body-word"));
+  });
+
+  it("keeps an ambiguous match independent and places it between nearby lines", () => {
+    const second = line("second", "Other", { left: 150, top: 100, right: 200, bottom: 120 });
+    const between = line("between", "X", { left: 40, top: 26, right: 55, bottom: 35 });
+    const result = addOcrRegion(page([body(), second]), page([between]),
+      { left: 110, top: 90, right: 170, bottom: 135 }, 20, "region-ambiguous");
+    expect(allLines(result.page).map(item => item.correctedText)).toEqual(["Dies", "X", "Other"]);
+    expect(result.page.manualOcrRegions?.[0].addedLineIds).toHaveLength(1);
+  });
+
+  it("places a region below all existing columns at the end of reading order", () => {
+    const result = addOcrRegion(page([body()]), page([marker()]),
+      { left: 50, top: 230, right: 75, bottom: 270 }, 20, "region-footer");
+    expect(allLines(result.page).map(item => item.correctedText)).toEqual(["Dies", "15"]);
+  });
+
+  it("leaves the page untouched when Tesseract returns no new words", () => {
+    const initial = page([body()]);
+    const result = addOcrRegion(initial, page([]), selection, 20, "region-d");
+    expect(result.page).toBe(initial);
+    expect(result.addedWords).toBe(0);
+  });
+});
