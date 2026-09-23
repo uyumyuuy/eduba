@@ -7,6 +7,7 @@ import {
   parseCandidateMap,
   parseHocr,
   replaceGrapheme,
+  splitLineAtCaret,
   updateLineFormatting,
   updateLineText,
 } from "./domain";
@@ -171,5 +172,46 @@ describe("line formatting", () => {
     expect(exportHocr([edited])).toContain("<strong>book</strong>");
     expect(exportSvg(edited)).toContain('<tspan font-weight="bold">book</tspan>');
     expect(exportSvg(edited)).toContain('font-family="Noto Serif"');
+  });
+});
+
+describe("line splitting", () => {
+  it("splits a merged two-column line at its separator with distinct boxes and a preserved baseline", () => {
+    const [page] = parseHocr(fixture);
+    const line = page.blocks[0].paragraphs[0].lines[0];
+    line.words[1].bbox.bottom = 40;
+    const split = splitLineAtCaret(page, line.id, 4);
+    const lines = split.blocks[0].paragraphs[0].lines;
+    expect(lines.map(item => item.correctedText)).toEqual(["A🙂", "book"]);
+    expect(lines.map(item => item.originalText)).toEqual(["A🙂", "book"]);
+    expect(lines[0].bbox.right).toBe(27);
+    expect(lines[1].bbox.left).toBe(60);
+    expect(lines[0].baseline?.intercept).toBe(32);
+    expect(lines[1].baseline?.intercept).toBe(27);
+    expect(lines[1].hocrClasses).toEqual(["ocr_line"]);
+    expect(exportText([split])).toBe("A🙂\nbook");
+  });
+
+  it("splits inside an OCR word, partitions character boxes, and remaps formatting", () => {
+    const [page] = parseHocr(fixture);
+    const line = page.blocks[0].paragraphs[0].lines[0];
+    const formatted = updateLineFormatting(page, line.id, 0, 3, "bold");
+    const split = splitLineAtCaret(formatted, line.id, 1);
+    const lines = split.blocks[0].paragraphs[0].lines;
+    expect(lines.map(item => item.correctedText)).toEqual(["A", "🙂 book"]);
+    expect(lines[0].words[0].bbox.right).toBe(18);
+    expect(lines[1].words[0].bbox.left).toBe(19);
+    expect(lines[0].formatting).toEqual([{ start: 0, end: 1, kind: "bold" }]);
+    expect(lines[1].formatting).toEqual([{ start: 0, end: 2, kind: "bold" }]);
+  });
+
+  it("uses LCS anchors for an edited line and refuses a split with no reliable alignment", () => {
+    const [page] = parseHocr(fixture);
+    const line = page.blocks[0].paragraphs[0].lines[0];
+    const edited = updateLineText(page, line.id, "A🙂 corrected book");
+    const split = splitLineAtCaret(edited, line.id, 12);
+    expect(split.blocks[0].paragraphs[0].lines).toHaveLength(2);
+    const unaligned = updateLineText(page, line.id, "different");
+    expect(splitLineAtCaret(unaligned, line.id, 4)).toEqual(unaligned);
   });
 });

@@ -160,6 +160,7 @@ button:disabled { cursor: not-allowed; opacity: .42; }
 .selection-toolbar button { min-height:23px; padding:2px 6px; border:0; border-radius:3px; background:#e8efeb; color:#244943; font:10px ui-monospace, monospace; cursor:pointer; }
 .selection-toolbar .text-candidate { font-family: var(--ocr-font); }
 .selection-toolbar button:hover, .selection-toolbar button:focus-visible { background:#cce4dd; outline:2px solid #3d8f8c; }
+.selection-toolbar button:disabled, .selection-toolbar button:disabled:hover, .selection-toolbar button:disabled:focus-visible { color:#91a19d; background:#e8efeb; cursor:not-allowed; outline:0; }
 
 .page-complete-toggle { display: inline-flex; align-items: center; gap: 5px; color: #73807b; font: 10px Manrope, sans-serif; cursor: pointer; }
 .page-complete-toggle input { margin: 0; accent-color: var(--teal); }

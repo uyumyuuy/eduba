@@ -539,4 +539,31 @@ describe("saved project loading", () => {
     await waitFor(() => expect(container.textContent).toContain("stored page one"));
     expect(container.querySelectorAll<HTMLButtonElement>(".page-item")[0].className).toContain("active");
   });
+
+  it("splits a collapsed caret and supports undo and redo", async () => {
+    await act(async () => root.render(<App />));
+    const page = JSON.parse(savedPage("page-1", "left right", 1));
+    const chars = Array.from("left right").map((character, index) => ({ index, originalText: character, correctedText: character, bbox: { left: 5 + index * 8, top: 10, right: 12 + index * 8, bottom: 30 }, source: "ocr" }));
+    page.blocks[0].paragraphs[0].lines[0].words = [
+      { id: "left", bbox: { left: 5, top: 10, right: 36, bottom: 30 }, originalText: "left", correctedText: "left", chars: chars.slice(0, 4) },
+      { id: "right", bbox: { left: 45, top: 10, right: 95, bottom: 30 }, originalText: "right", correctedText: "right", chars: chars.slice(5) },
+    ];
+    page.blocks[0].paragraphs[0].lines[0].chars = chars;
+    persistedPages.set("page-1", JSON.stringify(page));
+    const open = Array.from(container.querySelectorAll<HTMLButtonElement>("button")).find(button => button.textContent?.includes("Open"));
+    await act(async () => open?.click());
+    await waitFor(() => expect(container.textContent).toContain("left right"));
+    await act(async () => container.querySelector<SVGRectElement>("svg rect")!.dispatchEvent(new MouseEvent("click", { bubbles: true })));
+    const editor = container.querySelector<HTMLTextAreaElement>("textarea.line-overlay")!;
+    await act(async () => { editor.setSelectionRange(5, 5); editor.dispatchEvent(new Event("select", { bubbles: true })); await new Promise(resolve => setTimeout(resolve, 0)); });
+    await waitFor(() => expect(container.querySelector<HTMLButtonElement>(".selection-toolbar button")?.disabled).toBe(false));
+    await act(async () => container.querySelector<HTMLButtonElement>(".selection-toolbar button")!.click());
+    await waitFor(() => expect(container.querySelectorAll("svg text")).toHaveLength(2));
+    const undo = Array.from(container.querySelectorAll<HTMLButtonElement>("button")).find(button => button.textContent?.includes("Undo"))!;
+    await act(async () => undo.click());
+    await waitFor(() => expect(container.querySelectorAll("svg text")).toHaveLength(1));
+    const redo = Array.from(container.querySelectorAll<HTMLButtonElement>("button")).find(button => button.textContent?.includes("Redo"))!;
+    await act(async () => redo.click());
+    await waitFor(() => expect(container.querySelectorAll("svg text")).toHaveLength(2));
+  });
 });

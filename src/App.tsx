@@ -37,6 +37,7 @@ import {
   parseHocr,
   processCanvas,
   updateLineText,
+  splitLineAtCaret,
   updateLineFormatting,
   applyScriptDetection,
   type OcrLine,
@@ -242,8 +243,8 @@ function PageThumbnail({ cache, page }: { cache: LogicalPageThumbnailCache | nul
 
   return <span ref={frameRef} className="thumb" aria-hidden="true"><canvas ref={canvasRef} /></span>;
 }
-type LineOverlayProps = { value:string; formatting:TextFormatRange[]; left:number; top:number; width:number; height:number; fontSize:number; onChange:(value:string)=>void; onFinish:()=>void; onUndo:()=>void; onRedo:()=>void; onFormat:(start:number,end:number,kind:TextFormatKind)=>void; onOpenBulk:(selection:string,start:number,end:number)=>void; };
-function LineOverlay({value,formatting,left,top,width,height,fontSize:naturalFontSize,onChange,onFinish,onUndo,onRedo,onFormat,onOpenBulk}:LineOverlayProps) {
+type LineOverlayProps = { value:string; formatting:TextFormatRange[]; left:number; top:number; width:number; height:number; fontSize:number; onChange:(value:string)=>void; onFinish:()=>void; onUndo:()=>void; onRedo:()=>void; onFormat:(start:number,end:number,kind:TextFormatKind)=>void; onOpenBulk:(selection:string,start:number,end:number)=>void; onSplit:(caret:number)=>void; };
+function LineOverlay({value,formatting,left,top,width,height,fontSize:naturalFontSize,onChange,onFinish,onUndo,onRedo,onFormat,onOpenBulk,onSplit}:LineOverlayProps) {
  const { t } = useTranslation(); const inputRef=useRef<HTMLTextAreaElement>(null); const mirrorRef=useRef<HTMLDivElement>(null); const [selection,setSelection]=useState({start:0,end:0}); const [ctrl,setCtrl]=useState(false);
  const selected=value.slice(selection.start,selection.end); const candidates=selected?candidatesForSelection(selected):[];
  // Keep the normal text baseline fixed while giving raised glyphs room above it.
@@ -257,6 +258,7 @@ function LineOverlay({value,formatting,left,top,width,height,fontSize:naturalFon
  const format=(kind:TextFormatKind)=>{if(selection.start<selection.end)onFormat(selection.start,selection.end,kind)};
  const replace=(text:string)=>{onChange(value.slice(0,selection.start)+text+value.slice(selection.end));setSelection({start:selection.start,end:selection.start+text.length})};
  return <>{formatting.length>0&&<FormattedEditMirror mirrorRef={mirrorRef} value={value} formatting={formatting} className="line-edit-mirror" style={editStyle} />}<textarea ref={inputRef} autoFocus wrap="off" className={`line-overlay ${formatting.length?"has-formatting":""}`} value={value} onChange={event=>onChange(event.currentTarget.value)} onSelect={capture} onScroll={event=>{if(mirrorRef.current){mirrorRef.current.scrollLeft=event.currentTarget.scrollLeft;mirrorRef.current.scrollTop=event.currentTarget.scrollTop}}} onKeyDown={event=>{setCtrl(event.ctrlKey);const key=event.key.toLowerCase();if(event.ctrlKey&&!event.nativeEvent.isComposing&&(key==='z'||key==='y')){event.preventDefault();if(key==='y'||event.shiftKey)onRedo();else onUndo();return}if(event.key==='Escape'||(event.key==='Enter'&&!event.nativeEvent.isComposing&&event.keyCode!==229)){event.preventDefault();onFinish();return}if(event.ctrlKey&&selection.start<selection.end){const kind=key==='b'?'bold':key==='i'?'italic':event.key==='ArrowUp'?'superscript':event.key==='ArrowDown'?'subscript':null;if(kind){event.preventDefault();format(kind)}else if(/^[1-9]$/.test(key)&&candidates[Number(key)-1]){event.preventDefault();replace(candidates[Number(key)-1])}else if(key==='g'){event.preventDefault();onOpenBulk(selected,selection.start,selection.end)}}}} onKeyUp={event=>setCtrl(event.ctrlKey)} onBlur={onFinish} style={editStyle} />
+ {!selected&&<div className="selection-toolbar" style={{left,top:Math.max(0,editTop-48)}} onMouseDown={event=>event.preventDefault()} role="toolbar" aria-label="Line tools"><EditToolbarButton label={t("toolbar.splitLine")} onClick={()=>onSplit(selection.start)} disabled={selection.start===0||selection.start===value.length}>{t("toolbar.splitLine")}</EditToolbarButton></div>}
  {selected&&<div className="selection-toolbar" style={{left,top:Math.max(0,editTop-48)}} onMouseDown={event=>event.preventDefault()} role="toolbar" aria-label="Selected text tools">
   <EditToolbarButton label={t("toolbar.bold")} shortcut="B" showShortcut={ctrl} onClick={()=>format("bold")}>{t("toolbar.bold")}</EditToolbarButton>
   <EditToolbarButton label={t("toolbar.italic")} shortcut="I" showShortcut={ctrl} onClick={()=>format("italic")}>{t("toolbar.italic")}</EditToolbarButton>
@@ -1777,6 +1779,7 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
                             onRedo={() => void redo()}
                             onFormat={(start, end, kind) => commitLineEdit(line.id, (before) => updateLineFormatting(before, line.id, start, end, kind))}
                             onOpenBulk={(selection) => void openBulkReplace(selection)}
+                            onSplit={(caret) => { const before = docRef.current; if (!before) return; const after = splitLineAtCaret(before, line.id, caret); if (after === before) { setNotice("notices.splitUnavailable"); return; } commitLineEdit(line.id, () => after); finishLineEdit(line.id); }}
                             left={line.bbox.left * zoom}
                             top={line.bbox.top * zoom}
                             width={Math.max(20, (line.bbox.right - line.bbox.left) * zoom)}

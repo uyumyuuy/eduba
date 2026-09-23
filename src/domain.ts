@@ -369,6 +369,222 @@ export function allLines(page: DocumentPage): OcrLine[] {
   );
 }
 
+
+// Split support intentionally keeps OCR boxes only when their source characters have them.
+function unionBoxes(boxes: (Rect | undefined)[]): Rect | undefined {
+  const present = boxes.filter((box): box is Rect => box != null);
+  if (!present.length) return undefined;
+  return {
+    left: Math.min(...present.map(box => box.left)),
+    top: Math.min(...present.map(box => box.top)),
+    right: Math.max(...present.map(box => box.right)),
+    bottom: Math.max(...present.map(box => box.bottom)),
+  };
+}
+
+function nextSplitId(base: string, ids: Set<string>): string {
+  let number = 1;
+  let candidate = base + "--split";
+  while (ids.has(candidate)) candidate = base + "--split-" + (++number);
+  ids.add(candidate);
+  return candidate;
+}
+
+function splitFormattingAt(ranges: TextFormatRange[] | undefined, offset: number): [TextFormatRange[] | undefined, TextFormatRange[] | undefined] {
+  if (!ranges?.length) return [undefined, undefined];
+  const left = ranges.flatMap(range => range.start < offset ? [{ ...range, end: Math.min(range.end, offset) }] : []).filter(range => range.end > range.start);
+  const right = ranges.flatMap(range => range.end > offset ? [{ ...range, start: Math.max(0, range.start - offset), end: range.end - offset }] : []).filter(range => range.end > range.start);
+  return [left.length ? left : undefined, right.length ? right : undefined];
+}
+
+function splitCorrectedChars(chars: OcrChar[], offset: number): [OcrChar[], OcrChar[]] | undefined {
+  let position = 0;
+  const left: OcrChar[] = [], right: OcrChar[] = [];
+  for (const char of chars) {
+    const end = position + char.correctedText.length;
+    if (position < offset && offset < end) return undefined;
+    (end <= offset ? left : right).push(char);
+    position = end;
+  }
+  return [left, right];
+}
+
+function codePointOffset(text: string, utf16Offset: number): number | undefined {
+  let position = 0;
+  let points = 0;
+  for (const char of Array.from(text)) {
+    if (position === utf16Offset) return points;
+    position += char.length;
+    points++;
+  }
+  return position === utf16Offset ? points : undefined;
+}
+
+function utf16Offset(text: string[], pointOffset: number): number {
+  return text.slice(0, pointOffset).join("").length;
+}
+
+/** Maps a corrected caret to original OCR text through exact LCS anchors.
+ * A split is rejected if an entirely replaced region has no reliable anchor. */
+function alignedOriginalOffset(line: OcrLine, correctedOffset: number): number | undefined {
+  if (line.correctedText === line.originalText) return correctedOffset;
+  const corrected = Array.from(line.correctedText);
+  const original = Array.from(line.originalText);
+  const caret = codePointOffset(line.correctedText, correctedOffset);
+  if (caret == null || !corrected.length || !original.length || corrected.length * original.length > 1_000_000) return undefined;
+
+  const table = Array.from({ length: corrected.length + 1 }, () => new Uint16Array(original.length + 1));
+  for (let c = corrected.length - 1; c >= 0; c--) {
+    for (let o = original.length - 1; o >= 0; o--) {
+      table[c][o] = corrected[c] === original[o]
+        ? table[c + 1][o + 1] + 1
+        : Math.max(table[c + 1][o], table[c][o + 1]);
+    }
+  }
+
+  const matches: Array<[number, number]> = [];
+  for (let c = 0, o = 0; c < corrected.length && o < original.length;) {
+    if (corrected[c] === original[o]) {
+      matches.push([c++, o++]);
+    } else if (table[c + 1][o] >= table[c][o + 1]) {
+      c++;
+    } else {
+      o++;
+    }
+  }
+  const previous = [...matches].reverse().find(([correctedIndex]) => correctedIndex < caret);
+  const next = matches.find(([correctedIndex]) => correctedIndex >= caret);
+  if (!previous && !next) return undefined;
+  // Insertions follow their previous unchanged character; leading insertions
+  // precede their next unchanged character.
+  return utf16Offset(original, previous ? previous[1] + 1 : next![1]);
+}
+
+function splitWordAt(word: OcrWord, offset: number, wordIds: Set<string>): [OcrWord | undefined, OcrWord | undefined] | undefined {
+  if (offset <= 0) return [undefined, { ...word, chars: word.chars.map((char, index) => ({ ...char, index })) }];
+  if (offset >= word.originalText.length) return [{ ...word, chars: word.chars.map((char, index) => ({ ...char, index })) }, undefined];
+
+  let position = 0;
+  const leftChars: OcrChar[] = [], rightChars: OcrChar[] = [];
+  for (const char of word.chars) {
+    const end = position + char.originalText.length;
+    if (position < offset && offset < end) return undefined;
+    (end <= offset ? leftChars : rightChars).push(char);
+    position = end;
+  }
+  if (position !== word.originalText.length) return undefined;
+
+  const part = (chars: OcrChar[], text: string, id: string, start: number, end: number): OcrWord | undefined => {
+    if (!text) return undefined;
+    const allBoxed = chars.length > 0 && chars.every(char => char.bbox);
+    const width = word.bbox.right - word.bbox.left;
+    const proportional = {
+      ...word.bbox,
+      left: word.bbox.left + width * start / word.originalText.length,
+      right: word.bbox.left + width * end / word.originalText.length,
+    };
+    return {
+      ...word,
+      id,
+      bbox: allBoxed ? unionBoxes(chars.map(char => char.bbox))! : proportional,
+      originalText: text,
+      correctedText: text,
+      chars: chars.map((char, index) => ({ ...char, index })),
+    };
+  };
+
+  return [
+    part(leftChars, word.originalText.slice(0, offset), word.id, 0, offset),
+    part(rightChars, word.originalText.slice(offset), nextSplitId(word.id, wordIds), offset, word.originalText.length),
+  ];
+}
+
+function lineBox(words: OcrWord[], fallback: Rect): { bbox: Rect; approximate: boolean } {
+  const chars = words.flatMap(word => word.chars);
+  if (chars.length > 0 && chars.every(char => char.bbox)) {
+    return { bbox: unionBoxes(chars.map(char => char.bbox))!, approximate: false };
+  }
+  return { bbox: unionBoxes(words.map(word => word.bbox)) ?? fallback, approximate: true };
+}
+
+/** Split a line at a textarea caret. The child lines remain adjacent in the
+ * original paragraph, preserving hOCR reading order and exporter order. */
+export function splitLineAtCaret(page: DocumentPage, lineId: string, correctedOffset: number): DocumentPage {
+  const source = allLines(page).find(line => line.id === lineId);
+  if (!source || correctedOffset <= 0 || correctedOffset >= source.correctedText.length || source.chars.map(char => char.correctedText).join("") !== source.correctedText) return page;
+  const copy: DocumentPage = JSON.parse(JSON.stringify(page)) as DocumentPage;
+  const lineIds = new Set(allLines(copy).map(line => line.id));
+  const wordIds = new Set(allLines(copy).flatMap(line => line.words.map(word => word.id)));
+
+  for (const block of copy.blocks) for (const paragraph of block.paragraphs) {
+    const index = paragraph.lines.findIndex(line => line.id === lineId);
+    if (index < 0) continue;
+    const line = paragraph.lines[index];
+    if (correctedOffset <= 0 || correctedOffset >= line.correctedText.length) return page;
+
+    const originalOffset = alignedOriginalOffset(line, correctedOffset);
+    const leftText = line.correctedText.slice(0, correctedOffset).replace(/\s+$/, "");
+    const rightText = line.correctedText.slice(correctedOffset).replace(/^\s+/, "");
+    const leftOffset = leftText.length;
+    const rightOffset = line.correctedText.length - rightText.length;
+    const leftChars = splitCorrectedChars(line.chars, leftOffset);
+    const rightChars = splitCorrectedChars(line.chars, rightOffset);
+    if (originalOffset == null || originalOffset <= 0 || originalOffset >= line.originalText.length || !leftChars || !rightChars || !leftText || !rightText) return page;
+
+    const leftWords: OcrWord[] = [];
+    const rightWords: OcrWord[] = [];
+    let position = 0;
+    for (const word of line.words) {
+      const end = position + word.originalText.length;
+      if (end <= originalOffset) {
+        leftWords.push({ ...word, chars: word.chars.map((char, charIndex) => ({ ...char, index: charIndex })) });
+      } else if (position >= originalOffset) {
+        rightWords.push({ ...word, chars: word.chars.map((char, charIndex) => ({ ...char, index: charIndex })) });
+      } else {
+        const split = splitWordAt(word, originalOffset - position, wordIds);
+        if (!split) return page;
+        if (split[0]) leftWords.push(split[0]);
+        if (split[1]) rightWords.push(split[1]);
+      }
+      position = end + 1; // Parsed hOCR words are reconstructed with one space.
+    }
+    // An inserted-only side has no honest OCR geometry to display or export.
+    if (!leftWords.length || !rightWords.length) return page;
+
+    const [leftFormatting] = splitFormattingAt(line.formatting, leftOffset);
+    const [, rightFormatting] = splitFormattingAt(line.formatting, rightOffset);
+    const [leftAutoFormatting] = splitFormattingAt(line.autoFormatting, leftOffset);
+    const [, rightAutoFormatting] = splitFormattingAt(line.autoFormatting, rightOffset);
+    const makeLine = (right: boolean, words: OcrWord[], chars: OcrChar[], correctedText: string, originalText: string, formatting: TextFormatRange[] | undefined, autoFormatting: TextFormatRange[] | undefined): OcrLine => {
+      const geometry = lineBox(words, line.bbox);
+      const baselineY = line.baseline
+        ? line.bbox.bottom + line.baseline.intercept + line.baseline.slope * (geometry.bbox.left - line.bbox.left)
+        : undefined;
+      return {
+        ...line,
+        id: right ? nextSplitId(line.id, lineIds) : line.id,
+        bbox: geometry.bbox,
+        baseline: line.baseline && baselineY != null ? { ...line.baseline, intercept: baselineY - geometry.bbox.bottom } : undefined,
+        confidence: words.length ? words.reduce((sum, word) => sum + (word.confidence ?? 0), 0) / words.length : undefined,
+        originalText,
+        correctedText,
+        formatting,
+        autoFormatting,
+        words,
+        chars: chars.map((char, charIndex) => ({ ...char, index: charIndex })),
+        geometryApproximate: line.geometryApproximate || geometry.approximate,
+        scriptDetectionManuallyEdited: true,
+      };
+    };
+    paragraph.lines.splice(index, 1,
+      makeLine(false, leftWords, leftChars[0], leftText, line.originalText.slice(0, originalOffset).replace(/\s+$/, ""), leftFormatting, leftAutoFormatting),
+      makeLine(true, rightWords, rightChars[1], rightText, line.originalText.slice(originalOffset).replace(/^\s+/, ""), rightFormatting, rightAutoFormatting),
+    );
+    return copy;
+  }
+  return copy;
+}
+
 function remapFormatting(ranges: TextFormatRange[] | undefined, before: string, after: string): TextFormatRange[] | undefined {
   if (!ranges?.length || before === after) return ranges;
   let prefix = 0; while (prefix < before.length && prefix < after.length && before[prefix] === after[prefix]) prefix++;
