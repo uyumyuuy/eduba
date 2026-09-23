@@ -2,7 +2,7 @@
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import App from "./App";
+import App, { synchronizePageScroll } from "./App";
 import i18n from "./i18n";
 
 const mocks = vi.hoisted(() => ({
@@ -87,6 +87,31 @@ async function waitFor(assertion: () => void): Promise<void> {
   await vi.waitFor(assertion, { timeout: 1_000 });
 }
 
+describe("proofing pane scroll synchronization", () => {
+  it("maps the page coordinate at the viewport centre across different scales and viewport sizes", () => {
+    const element = (dimensions: { left?: number; top?: number; width: number; height: number }) => {
+      const value = document.createElement("div");
+      Object.defineProperties(value, {
+        offsetLeft: { value: dimensions.left ?? 0 }, offsetTop: { value: dimensions.top ?? 0 },
+        clientWidth: { value: dimensions.width }, clientHeight: { value: dimensions.height },
+      });
+      return value;
+    };
+    const source = element({ width: 400, height: 300 });
+    const target = element({ width: 600, height: 200 });
+    const sourcePage = element({ left: 27, top: 27, width: 1000, height: 2000 });
+    const targetPage = element({ left: 27, top: 27, width: 2000, height: 1000 });
+    source.scrollLeft = 260;
+    source.scrollTop = 100;
+    target.scrollLeft = 50;
+    target.scrollTop = 10;
+
+    expect(synchronizePageScroll(source, target, sourcePage, targetPage)).toBe(true);
+    expect(target.scrollLeft).toBeCloseTo(593);
+    expect(target.scrollTop).toBeCloseTo(38.5);
+    expect(synchronizePageScroll(source, target, sourcePage, targetPage)).toBe(false);
+  });
+});
 describe("saved project loading", () => {
   let container: HTMLDivElement;
   let root: Root;
@@ -443,6 +468,39 @@ describe("saved project loading", () => {
     const redoButton = Array.from(container.querySelectorAll<HTMLButtonElement>("button")).find((button) => button.textContent?.includes("Redo"))!;
     await act(async () => redoButton.click());
     await waitFor(() => expect(container.textContent).toContain("third"));
+  });
+  it("wires both scroll panes and ignores the reciprocal programmatic scroll", async () => {
+    await openSavedProject();
+    const pdfStage = container.querySelector<HTMLDivElement>(".pdf-stage")!;
+    const ocrStage = container.querySelector<HTMLDivElement>(".ocr-stage")!;
+    const sourcePage = container.querySelector<HTMLCanvasElement>(".rendered-page")!;
+    const targetPage = container.querySelector<HTMLDivElement>(".layout-card")!;
+    const dimensions = (element: HTMLElement, left: number, top: number, width: number, height: number) => {
+      Object.defineProperties(element, {
+        offsetLeft: { configurable: true, value: left }, offsetTop: { configurable: true, value: top },
+        clientWidth: { configurable: true, value: width }, clientHeight: { configurable: true, value: height },
+      });
+    };
+    dimensions(pdfStage, 0, 0, 400, 300);
+    dimensions(ocrStage, 0, 0, 600, 200);
+    dimensions(sourcePage, 27, 27, 1000, 2000);
+    dimensions(targetPage, 27, 27, 2000, 1000);
+
+    pdfStage.scrollLeft = 260;
+    pdfStage.scrollTop = 100;
+    await act(async () => pdfStage.dispatchEvent(new Event("scroll", { bubbles: true })));
+    expect(ocrStage.scrollLeft).toBeCloseTo(593);
+    expect(ocrStage.scrollTop).toBeCloseTo(38.5);
+
+    await act(async () => ocrStage.dispatchEvent(new Event("scroll", { bubbles: true })));
+    expect(pdfStage.scrollLeft).toBe(260);
+    expect(pdfStage.scrollTop).toBe(100);
+
+    ocrStage.scrollLeft = 800;
+    ocrStage.scrollTop = 120;
+    await act(async () => ocrStage.dispatchEvent(new Event("scroll", { bubbles: true })));
+    expect(pdfStage.scrollLeft).toBeCloseTo(363.5);
+    expect(pdfStage.scrollTop).toBeCloseTo(263);
   });
   it("switches the displayed page when undoing and redoing a cross-page edit", async () => {
     await openSavedProject();

@@ -66,7 +66,7 @@ button:disabled { cursor: not-allowed; opacity: .42; }
 .pane-hint { display: flex; gap: 5px; align-items: center; color: #a5aaa2; font-family: Manrope, sans-serif; font-size: 9px; letter-spacing: 0; text-transform: none; }
 .legend-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--teal); }
 .pdf-stage, .ocr-stage { position: relative; flex: 1; min-height: 0; overflow: auto; }
-.pdf-stage { display: grid; place-items: start center; padding: 27px; }
+.pdf-stage { display: grid; place-items: start safe center; padding: 27px; }
 .pdf-stage canvas { max-width: 100%; height: auto; background: white; box-shadow: 0 5px 17px rgba(42,49,46,.13); }
 .empty-state { display: flex; flex-direction: column; align-items: center; gap: 9px; margin-top: 17vh; color: #a3a8a1; font-size: 11px; text-align: center; }
 .empty-state svg { color: #b8bbb2; }

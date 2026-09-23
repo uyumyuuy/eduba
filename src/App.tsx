@@ -103,6 +103,30 @@ function projectSettings(input?: Partial<Settings>): Settings {
 }
 const errorText = (error: unknown) =>
   error instanceof Error ? error.message : String(error);
+/** Maps the page coordinate at one viewport centre into the other viewport. */
+export function synchronizePageScroll(
+  source: HTMLElement,
+  target: HTMLElement,
+  sourcePage: HTMLElement,
+  targetPage: HTMLElement,
+) {
+  const sourceWidth = sourcePage.clientWidth;
+  const sourceHeight = sourcePage.clientHeight;
+  const targetWidth = targetPage.clientWidth;
+  const targetHeight = targetPage.clientHeight;
+  if (!sourceWidth || !sourceHeight || !targetWidth || !targetHeight) return false;
+
+  const pageX = (source.scrollLeft + source.clientWidth / 2 - sourcePage.offsetLeft) / sourceWidth;
+  const pageY = (source.scrollTop + source.clientHeight / 2 - sourcePage.offsetTop) / sourceHeight;
+  const nextLeft = targetPage.offsetLeft + pageX * targetWidth - target.clientWidth / 2;
+  const nextTop = targetPage.offsetTop + pageY * targetHeight - target.clientHeight / 2;
+  const beforeLeft = target.scrollLeft;
+  const beforeTop = target.scrollTop;
+  target.scrollLeft = nextLeft;
+  target.scrollTop = nextTop;
+  return Math.abs(target.scrollLeft - beforeLeft) >= 0.5 || Math.abs(target.scrollTop - beforeTop) >= 0.5;
+}
+
 const copy = <T,>(value: T): T => JSON.parse(JSON.stringify(value)) as T;
 function encode(value: string) {
   const bytes = new TextEncoder().encode(value);
@@ -322,6 +346,9 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
   const [confirmOcr, setConfirmOcr] = useState<"current" | "all" | null>(null);
   const [exportScope, setExportScope] = useState<"current" | "all">("all");
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const pdfStageRef = useRef<HTMLDivElement>(null);
+  const ocrStageRef = useRef<HTMLDivElement>(null);
+  const layoutCardRef = useRef<HTMLDivElement>(null);
   const projectRef = useRef<ProjectInfo | null>(null),
     manifestRef = useRef(manifest),
     indexRef = useRef(0),
@@ -353,7 +380,9 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
     historyApplying = useRef(false),
     lastProjectWrite = useRef<Promise<void>>(Promise.resolve()),
     restorationStarted = useRef(false),
-    restorationGeneration = useRef(0);
+    restorationGeneration = useRef(0),
+    scrollSyncTarget = useRef<"pdf" | "ocr" | null>(null),
+    lastScrolledPane = useRef<"pdf" | "ocr">("pdf");
   const current = manifest.pages[index] ?? null;
   const [thumbnailCacheState, setThumbnailCacheState] = useState<{ pdf: PDFDocumentProxy; cache: LogicalPageThumbnailCache } | null>(null);
   // Create the cache in an effect. React StrictMode intentionally tears down
@@ -1502,6 +1531,47 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
   const lines = useMemo(() => (doc ? allLines(doc) : []), [doc]);
   const w = canvasSize.width * zoom,
     h = canvasSize.height * zoom;
+  const synchronizeProofingPane = useCallback((sourcePane: "pdf" | "ocr") => {
+    const pdfStage = pdfStageRef.current;
+    const ocrStage = ocrStageRef.current;
+    const canvas = canvasRef.current;
+    const layoutCard = layoutCardRef.current;
+    if (!pdfStage || !ocrStage || !canvas || !layoutCard) return;
+    const targetPane = sourcePane === "pdf" ? "ocr" : "pdf";
+    const changed = sourcePane === "pdf"
+      ? synchronizePageScroll(pdfStage, ocrStage, canvas, layoutCard)
+      : synchronizePageScroll(ocrStage, pdfStage, layoutCard, canvas);
+    if (changed) scrollSyncTarget.current = targetPane;
+  }, []);
+  const onProofingScroll = useCallback((sourcePane: "pdf" | "ocr") => {
+    if (scrollSyncTarget.current === sourcePane) {
+      scrollSyncTarget.current = null;
+      return;
+    }
+    lastScrolledPane.current = sourcePane;
+    synchronizeProofingPane(sourcePane);
+  }, [synchronizeProofingPane]);
+  useLayoutEffect(() => {
+    const pdfStage = pdfStageRef.current;
+    const ocrStage = ocrStageRef.current;
+    if (!pdfStage || !ocrStage) return;
+    pdfStage.scrollLeft = 0;
+    pdfStage.scrollTop = 0;
+    ocrStage.scrollLeft = 0;
+    ocrStage.scrollTop = 0;
+    scrollSyncTarget.current = null;
+    lastScrolledPane.current = "pdf";
+  }, [current?.id]);
+  useLayoutEffect(() => {
+    synchronizeProofingPane(lastScrolledPane.current);
+  }, [h, synchronizeProofingPane, w]);
+  useEffect(() => {
+    if (typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(() => synchronizeProofingPane(lastScrolledPane.current));
+    if (pdfStageRef.current) observer.observe(pdfStageRef.current);
+    if (ocrStageRef.current) observer.observe(ocrStageRef.current);
+    return () => observer.disconnect();
+  }, [synchronizeProofingPane]);
   return (
     <main className="app-shell">
       <header className="topbar">
@@ -1702,7 +1772,7 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
               <div className="pane-label">
                 <span>{t("ui.processedImage")}</span>
               </div>
-              <div className="pdf-stage">
+              <div ref={pdfStageRef} className="pdf-stage" onScroll={() => onProofingScroll("pdf")}>
                 {project ? (
                   <canvas
                     ref={canvasRef}
@@ -1719,9 +1789,10 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
                 <span>{t("ui.recognitionLayout")}</span>
                 <span className="pane-hint">{t("ui.clickLine")}</span>
               </div>
-              <div className="ocr-stage">
+              <div ref={ocrStageRef} className="ocr-stage" onScroll={() => onProofingScroll("ocr")}>
                 {doc && canvasSize.width ? (
                   <div
+                    ref={layoutCardRef}
                     className="layout-card"
                     style={{ width: w, height: h, minHeight: h }}
                   >
