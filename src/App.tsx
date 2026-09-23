@@ -22,6 +22,7 @@ import {
   Undo2,
   Redo2,
   ScanLine,
+  Eraser,
   X,
 } from "lucide-react";
 import { canvasToBase64, openProjectPdf, openSourcePdf } from "./pdf";
@@ -54,7 +55,7 @@ import { ScriptCalibrationDialog, type ScriptCalibrationCandidate, type ScriptCa
 import { DEFAULT_SCRIPT_DETECTION_SETTINGS, SCRIPT_HEIGHT_REFERENCE_VERSION, ScriptHeightTrainer, detectScriptRanges, migrateLegacyScriptSettings, referenceHeightsForPage, type ScriptDetectionSettings, type ScriptHeightProfile } from "./scriptDetection";
 import { BulkReplaceDialog, type BulkMatch, type BulkReplaceRequest } from "./BulkReplaceDialog";
 import { prepareBulkUpdates } from "./bulkApply";
-import { addOcrRegion, prepareRegionOcrImage } from "./ocrRegion";
+import { addOcrRegion, prepareRegionOcrImage, removeOcrLinesInRegion, removeOcrLineAtPoint } from "./ocrRegion";
 import { candidatesForSelection } from "./correctionCandidates";
 import { importEntries, type ImportConfig } from "./importConfig";
 import { loadPageImage, type ImportMode } from "./pageImage";
@@ -325,7 +326,7 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
   const [canvasSize, setCanvasSize] = useState({ width: 0, height: 0 });
   const [selected, setSelected] = useState<string | null>(null);
   const [editing, setEditing] = useState<string | null>(null);
-  const [regionMode, setRegionMode] = useState(false);
+  const [regionMode, setRegionMode] = useState<"add" | "delete" | null>(null);
   const [regionSelection, setRegionSelection] = useState<Rect | null>(null);
   const [regionHintHidden, setRegionHintHidden] = useState(false);
   const [undoStack, setUndoStack] = useState<HistoryOperation[]>([]);
@@ -355,6 +356,7 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const pdfPageRef = useRef<HTMLDivElement>(null);
   const regionHintRef = useRef<HTMLDivElement>(null);
+  const suppressLayoutClick = useRef(false);
   const regionDrag = useRef<{ pointerId: number; x: number; y: number; clientX: number; clientY: number } | null>(null);
   const regionScrollTimer = useRef<number | null>(null);
   const pdfStageRef = useRef<HTMLDivElement>(null);
@@ -1023,6 +1025,7 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
       const active = manifestRef.current.pages[indexRef.current];
       const hasManualCorrections = scope === "current" && Boolean(docRef.current && (
         (docRef.current.manualOcrRegions?.length ?? 0) > 0 ||
+        (docRef.current.deletedOcrLineIds?.length ?? 0) > 0 ||
         allLines(docRef.current).some(line =>
           line.correctedText !== line.originalText ||
           Boolean(line.formatting?.length) ||
@@ -1073,7 +1076,7 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
       const result = addOcrRegion(beforePage, recognized, selection, padding, regionId);
       if (!result.addedWords) {
         setNotice("notices.regionEmpty");
-        setRegionMode(true);
+        setRegionMode("add");
         return;
       }
       const beforeData = JSON.stringify(copy(beforePage));
@@ -1089,29 +1092,61 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
       setNotice("notices.regionAdded", { count: result.addedLines });
     } catch (error) {
       setNotice(cancelled.current ? "notices.ocrCancelled" : "notices.ocrFailed", cancelled.current ? undefined : { error: errorText(error) });
-      setRegionMode(true);
+      setRegionMode("add");
     } finally {
       working.current = false;
       setBusy(null);
     }
   }, [flush, putDoc, setNotice]);
-  const clientToPage = useCallback((clientX: number, clientY: number) => {
-    const canvas = canvasRef.current;
-    if (!canvas) return null;
-    const bounds = canvas.getBoundingClientRect();
+  const deleteSelectedRegion = useCallback(async (selection: Rect | { x: number; y: number }) => {
+    const entry = manifestRef.current.pages[indexRef.current];
+    const beforePage = docRef.current;
+    const info = projectRef.current;
+    if (!entry || entry.status !== "review" || !beforePage || !info || working.current || importActive.current) return;
+    const result = "x" in selection ? removeOcrLineAtPoint(beforePage, selection.x, selection.y) : removeOcrLinesInRegion(beforePage, selection);
+    if (!result.removedLines) { setNotice("notices.regionDeleteEmpty"); setRegionMode("delete"); return; }
+    working.current = true;
+    setBusy("save");
+    try {
+      await flush();
+      const beforeData = JSON.stringify(copy(beforePage));
+      const afterData = JSON.stringify(copy(result.page));
+      const changes = await invokeCommand("apply_bulk_corrections", {
+        projectPath: info.path,
+        updates: [{ pageId: entry.id, expectedData: beforeData, data: afterData }],
+      });
+      if (changes.length !== 1) throw new Error("The OCR region could not be deleted.");
+      putDoc(result.page);
+      setUndoStack(old => [...old, { targetPageId: entry.id, changes }].slice(-100));
+      setRedoStack([]);
+      setNotice("notices.regionDeleted", { count: result.removedLines });
+    } catch (error) {
+      setNotice("notices.saveFailed", { error: errorText(error) });
+      setRegionMode("delete");
+    } finally {
+      working.current = false;
+      setBusy(null);
+    }
+  }, [flush, putDoc, setNotice]);
+  const clientToRegionPage = useCallback((clientX: number, clientY: number) => {
+    const target = regionMode === "delete" ? layoutCardRef.current : canvasRef.current;
+    if (!target || !canvasSize.width || !canvasSize.height) return null;
+    const bounds = target.getBoundingClientRect();
     if (!bounds.width || !bounds.height) return null;
     return {
-      x: Math.max(0, Math.min(canvas.width, (clientX - bounds.left) * canvas.width / bounds.width)),
-      y: Math.max(0, Math.min(canvas.height, (clientY - bounds.top) * canvas.height / bounds.height)),
+      x: Math.max(0, Math.min(canvasSize.width, (clientX - bounds.left) * canvasSize.width / bounds.width)),
+      y: Math.max(0, Math.min(canvasSize.height, (clientY - bounds.top) * canvasSize.height / bounds.height)),
     };
-  }, []);
+  }, [canvasSize.height, canvasSize.width, regionMode]);
   const stopRegionScroll = useCallback(() => {
     if (regionScrollTimer.current !== null) window.clearInterval(regionScrollTimer.current);
     regionScrollTimer.current = null;
   }, []);
   const onRegionPointerDown = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
-    if (!regionMode || event.button !== 0 || busy) return;
-    const point = clientToPage(event.clientX, event.clientY);
+    if (!regionMode || event.button !== 0 || busy ||
+      (regionMode === "add" && event.currentTarget !== pdfPageRef.current) ||
+      (regionMode === "delete" && event.currentTarget !== layoutCardRef.current)) return;
+    const point = clientToRegionPage(event.clientX, event.clientY);
     if (!point || point.x <= 0 || point.x >= canvasSize.width || point.y <= 0 || point.y >= canvasSize.height) return;
     event.preventDefault();
     event.currentTarget.setPointerCapture(event.pointerId);
@@ -1119,7 +1154,7 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
     setRegionSelection({ left: point.x, top: point.y, right: point.x, bottom: point.y });
     stopRegionScroll();
     regionScrollTimer.current = window.setInterval(() => {
-      const drag = regionDrag.current, stage = pdfStageRef.current;
+      const drag = regionDrag.current, stage = regionMode === "delete" ? ocrStageRef.current : pdfStageRef.current;
       if (!drag || !stage) return;
       const bounds = stage.getBoundingClientRect();
       const edge = 28;
@@ -1129,40 +1164,50 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
       const oldLeft = stage.scrollLeft, oldTop = stage.scrollTop;
       stage.scrollLeft += dx; stage.scrollTop += dy;
       if (oldLeft === stage.scrollLeft && oldTop === stage.scrollTop) return;
-      const current = clientToPage(drag.clientX, drag.clientY);
+      const current = clientToRegionPage(drag.clientX, drag.clientY);
       if (current) setRegionSelection({ left: Math.min(drag.x, current.x), top: Math.min(drag.y, current.y),
         right: Math.max(drag.x, current.x), bottom: Math.max(drag.y, current.y) });
     }, 30);
-  }, [busy, canvasSize.height, canvasSize.width, clientToPage, regionMode, stopRegionScroll]);
+  }, [busy, canvasSize.height, canvasSize.width, clientToRegionPage, regionMode, stopRegionScroll]);
   const onRegionPointerMove = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
     const drag = regionDrag.current;
     if (!drag || drag.pointerId !== event.pointerId) return;
     drag.clientX = event.clientX; drag.clientY = event.clientY;
-    const point = clientToPage(event.clientX, event.clientY);
+    const point = clientToRegionPage(event.clientX, event.clientY);
     if (!point) return;
     setRegionSelection({ left: Math.min(drag.x, point.x), top: Math.min(drag.y, point.y),
       right: Math.max(drag.x, point.x), bottom: Math.max(drag.y, point.y) });
-  }, [clientToPage]);
+  }, [clientToRegionPage]);
   const onRegionPointerUp = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
     const drag = regionDrag.current;
     if (!drag || drag.pointerId !== event.pointerId) return;
     regionDrag.current = null;
     stopRegionScroll();
     if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
-    const point = clientToPage(event.clientX, event.clientY);
+    const point = clientToRegionPage(event.clientX, event.clientY);
     setRegionSelection(null);
     if (!point) return;
     const selection: Rect = {
       left: Math.floor(Math.min(drag.x, point.x)), top: Math.floor(Math.min(drag.y, point.y)),
       right: Math.ceil(Math.max(drag.x, point.x)), bottom: Math.ceil(Math.max(drag.y, point.y)),
     };
+    const isClick = Math.abs(drag.x - point.x) < 4 && Math.abs(drag.y - point.y) < 4;
+    if (regionMode === "delete") {
+      suppressLayoutClick.current = true;
+      window.setTimeout(() => { suppressLayoutClick.current = false; }, 0);
+      setRegionMode(null);
+      if (isClick) void deleteSelectedRegion({ x: point.x, y: point.y });
+      else if (selection.right - selection.left >= 4 && selection.bottom - selection.top >= 4) void deleteSelectedRegion(selection);
+      else setNotice("notices.regionTooSmall");
+      return;
+    }
     if (selection.right - selection.left < 4 || selection.bottom - selection.top < 4) {
       setNotice("notices.regionTooSmall");
       return;
     }
-    setRegionMode(false);
+    setRegionMode(null);
     void addSelectedRegion(selection);
-  }, [addSelectedRegion, clientToPage, setNotice, stopRegionScroll]);
+  }, [addSelectedRegion, clientToRegionPage, deleteSelectedRegion, regionMode, setNotice, stopRegionScroll]);
   const exportFile = useCallback(
     async (type: "txt" | "hocr" | "svg", scope: "current" | "all" = "all") => {
       if (!projectRef.current || working.current || importActive.current)
@@ -1693,10 +1738,11 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
     lastScrolledPane.current = sourcePane;
     synchronizeProofingPane(sourcePane);
   }, [synchronizeProofingPane]);
-  useEffect(() => { setRegionMode(false); setRegionSelection(null); regionDrag.current = null; stopRegionScroll(); }, [current?.id, stopRegionScroll]);
+  useEffect(() => { setRegionMode(null); setRegionSelection(null); regionDrag.current = null; stopRegionScroll(); }, [current?.id, stopRegionScroll]);
+  useEffect(() => { setRegionHintHidden(false); }, [regionMode]);
   useEffect(() => {
     if (regionMode && (current?.completed || busy === "ocr")) {
-      regionDrag.current = null; stopRegionScroll(); setRegionSelection(null); setRegionMode(false);
+      regionDrag.current = null; stopRegionScroll(); setRegionSelection(null); setRegionMode(null);
     } else if (!regionMode) stopRegionScroll();
   }, [busy, current?.completed, regionMode, stopRegionScroll]);
   useEffect(() => {
@@ -1707,7 +1753,7 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
       regionDrag.current = null;
       stopRegionScroll();
       setRegionSelection(null);
-      setRegionMode(false);
+      setRegionMode(null);
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
@@ -1891,21 +1937,37 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
               </span>
             </div>
             <button
-              className={"region-add-button" + (regionMode ? " active" : "")}
+              className={"region-add-button" + (regionMode === "add" ? " active" : "")}
               disabled={current?.status !== "review" || !doc || !canvasSize.width || Boolean(busy)}
-              aria-pressed={regionMode}
+              aria-pressed={regionMode === "add"}
               onClick={() => {
-                if (regionMode) { regionDrag.current = null; stopRegionScroll(); setRegionSelection(null); setRegionMode(false); return; }
+                if (regionMode === "add") { regionDrag.current = null; stopRegionScroll(); setRegionSelection(null); setRegionMode(null); return; }
                 void (async () => {
                   const active = manifestRef.current.pages[indexRef.current];
                   if (!active || !await clearCompletion([active.id])) return;
                   if (manifestRef.current.pages[indexRef.current]?.id !== active.id) return;
                   finishLineEditRef.current();
                   setSelected(null);
-                  setRegionMode(true);
+                  setRegionMode("add");
                 })();
               }}
             ><ScanLine size={15} /> {t("ui.addOcrRegion")}</button>
+            <button
+              className={"region-add-button region-delete-button" + (regionMode === "delete" ? " active" : "")}
+              disabled={current?.status !== "review" || !doc || !canvasSize.width || Boolean(busy)}
+              aria-pressed={regionMode === "delete"}
+              onClick={() => {
+                if (regionMode === "delete") { regionDrag.current = null; stopRegionScroll(); setRegionSelection(null); setRegionMode(null); return; }
+                void (async () => {
+                  const active = manifestRef.current.pages[indexRef.current];
+                  if (!active || !await clearCompletion([active.id])) return;
+                  if (manifestRef.current.pages[indexRef.current]?.id !== active.id) return;
+                  finishLineEditRef.current();
+                  setSelected(null);
+                  setRegionMode("delete");
+                })();
+              }}
+            ><Eraser size={15} /> {t("ui.deleteOcrRegion")}</button>
             {current?.status === "review" && <label className="page-complete-toggle" title={t("ui.pageCompleteHint")}>
               <input type="checkbox" checked={Boolean(current.completed)} disabled={Boolean(busy)} onChange={(event) => {
                 if (event.currentTarget.checked) finishLineEditRef.current();
@@ -1945,25 +2007,25 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
               </button>
             </div>
           </div>
-          <div className="proofing-grid">
-            <article className="pdf-pane" onPointerMove={(event) => {
+          <div className="proofing-grid" onPointerMove={(event) => {
               if (!regionMode || !regionHintRef.current) return;
               const box = regionHintRef.current.getBoundingClientRect();
               const margin = 40;
               setRegionHintHidden(event.clientX >= box.left - margin && event.clientX <= box.right + margin &&
                 event.clientY >= box.top - margin && event.clientY <= box.bottom + margin);
             }} onPointerLeave={() => setRegionHintHidden(false)}>
+            <article className={"pdf-pane" + (regionMode === "delete" ? " region-inactive" : "")}>
               <div className="pane-label">
                 <span>{t("ui.processedImage")}</span>
               </div>
-              {regionMode && <div ref={regionHintRef} className={"region-instruction" + (regionHintHidden ? " hidden" : "")} role="status">
+              {regionMode === "add" && <div ref={regionHintRef} className={"region-instruction" + (regionHintHidden ? " hidden" : "")} role="status">
                 {t("ui.regionSelectHint")}
               </div>}
               <div ref={pdfStageRef} className="pdf-stage" onScroll={() => onProofingScroll("pdf")}>
                 {project ? (
                   <div
                     ref={pdfPageRef}
-                    className={"pdf-page" + (regionMode ? " selecting" : "")}
+                    className={"pdf-page" + (regionMode === "add" ? " selecting" : "")}
                     style={{ width: w || undefined, height: h || undefined }}
                     onPointerDown={onRegionPointerDown}
                     onPointerMove={onRegionPointerMove}
@@ -1976,7 +2038,7 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
                     }}
                   >
                     <canvas ref={canvasRef} className="rendered-page" />
-                    {regionSelection && <div className="region-selection" style={{
+                    {regionMode === "add" && regionSelection && <div className="region-selection" style={{
                       left: regionSelection.left * zoom, top: regionSelection.top * zoom,
                       width: (regionSelection.right - regionSelection.left) * zoom,
                       height: (regionSelection.bottom - regionSelection.top) * zoom,
@@ -1987,17 +2049,32 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
                 )}
               </div>
             </article>
-            <article className={"ocr-pane" + (regionMode ? " region-inactive" : "")}>
+            <article className={"ocr-pane" + (regionMode === "add" ? " region-inactive" : "")}>
               <div className="pane-label">
                 <span>{t("ui.recognitionLayout")}</span>
-                <span className="pane-hint">{t("ui.clickLine")}</span>
+                {regionMode !== "delete" && <span className="pane-hint">{t("ui.clickLine")}</span>}
               </div>
+              {regionMode === "delete" && <div ref={regionHintRef} className={"region-instruction" + (regionHintHidden ? " hidden" : "")} role="status">
+                {t("ui.regionDeleteHint")}
+              </div>}
               <div ref={ocrStageRef} className="ocr-stage" onScroll={() => onProofingScroll("ocr")}>
                 {doc && canvasSize.width ? (
                   <div
                     ref={layoutCardRef}
-                    className="layout-card"
+                    className={"layout-card" + (regionMode === "delete" ? " selecting" : "")}
                     style={{ width: w, height: h, minHeight: h }}
+                    onPointerDown={onRegionPointerDown}
+                    onPointerMove={onRegionPointerMove}
+                    onPointerUp={onRegionPointerUp}
+                    onPointerCancel={(event) => {
+                      if (regionDrag.current?.pointerId !== event.pointerId) return;
+                      regionDrag.current = null;
+                      stopRegionScroll();
+                      setRegionSelection(null);
+                    }}
+                    onClickCapture={(event) => {
+                      if (suppressLayoutClick.current) { event.stopPropagation(); suppressLayoutClick.current = false; }
+                    }}
                   >
                     <svg
                       className="layout-svg"
@@ -2040,6 +2117,11 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
                         </g>
                       ))}
                     </svg>
+                    {regionMode === "delete" && regionSelection && <div className="region-selection deleting" style={{
+                      left: regionSelection.left * zoom, top: regionSelection.top * zoom,
+                      width: (regionSelection.right - regionSelection.left) * zoom,
+                      height: (regionSelection.bottom - regionSelection.top) * zoom,
+                    }} />}
                     {editing &&
                       (() => {
                         const line = lines.find((v) => v.id === editing);

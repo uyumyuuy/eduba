@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { describe, expect, it, vi } from "vitest";
 import { allLines, exportHocr, exportText, type DocumentPage, type OcrChar, type OcrLine, type OcrWord, type Rect } from "./domain";
-import { addOcrRegion, prepareRegionOcrImage } from "./ocrRegion";
+import { addOcrRegion, prepareRegionOcrImage, removeOcrLineAtPoint, removeOcrLinesInRegion } from "./ocrRegion";
 
 function word(id: string, text: string, bbox: Rect): OcrWord {
   const chars: OcrChar[] = Array.from(text).map((value, index) => ({ index, originalText: value, correctedText: value, bbox: { ...bbox }, source: "ocr" }));
@@ -81,6 +81,34 @@ describe("manual OCR region", () => {
     const result = addOcrRegion(page([body()]), page([marker()]),
       { left: 50, top: 230, right: 75, bottom: 270 }, 20, "region-footer");
     expect(allLines(result.page).map(item => item.correctedText)).toEqual(["Dies", "15"]);
+  });
+
+  it("deletes entire overlapping lines and repairs empty paragraphs and boxes", () => {
+    const first = body();
+    const second = line("second", "Remains", { left: 80, top: 140, right: 165, bottom: 160 });
+    const initial = page([first, second]);
+    first.correctedText = "Edited text";
+    const result = removeOcrLinesInRegion(initial, { left: 100, top: 110, right: 108, bottom: 115 });
+    expect(result.removedLines).toBe(1);
+    expect(allLines(result.page).map(item => item.id)).toEqual(["second"]);
+    expect(result.page.blocks[0].bbox).toEqual(second.bbox);
+    expect(exportText([result.page])).toBe("Remains");
+    expect(exportHocr([result.page])).not.toContain("Edited text");
+    expect(result.page.deletedOcrLineIds).toEqual(["body"]);
+    expect(allLines(initial)).toHaveLength(2);
+    expect(removeOcrLinesInRegion(initial, { left: 200, top: 100, right: 220, bottom: 120 }).page).toBe(initial);
+  });
+
+  it("clicks only one overlapping line and prunes deleted manual-region references", () => {
+    const large = line("large", "Large", { left: 10, top: 10, right: 80, bottom: 40 });
+    const small = line("small", "Small", { left: 20, top: 15, right: 35, bottom: 25 });
+    const initial = page([large, small]);
+    initial.manualOcrRegions = [{ id: "manual", bbox: small.bbox, psm: 11, addedWordIds: ["small-word"], addedLineIds: ["small"] }];
+    const result = removeOcrLineAtPoint(initial, 25, 20);
+    expect(result.removedLines).toBe(1);
+    expect(allLines(result.page).map(item => item.id)).toEqual(["large"]);
+    expect(result.page.manualOcrRegions).toBeUndefined();
+    expect(removeOcrLineAtPoint(initial, 200, 200).page).toBe(initial);
   });
 
   it("leaves the page untouched when Tesseract returns no new words", () => {

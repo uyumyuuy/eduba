@@ -171,3 +171,42 @@ export function addOcrRegion(page: DocumentPage, recognized: DocumentPage, selec
   next.manualOcrRegions = [...(next.manualOcrRegions ?? []), { id: regionId, bbox: selection, psm: 11, addedWordIds, addedLineIds }];
   return { page: next, addedLines: lines.length, addedWords: addedWordIds.length };
 }
+
+/** Removes complete OCR lines and repairs the page hierarchy and manual-region references. */
+function removeLineIds(page: DocumentPage, ids: Set<string>): { page: DocumentPage; removedLines: number } {
+  if (!ids.size) return { page, removedLines: 0 };
+  const next: DocumentPage = JSON.parse(JSON.stringify(page));
+  for (const block of next.blocks) {
+    for (const paragraph of block.paragraphs) {
+      paragraph.lines = paragraph.lines.filter(line => !ids.has(line.id));
+    }
+    block.paragraphs = block.paragraphs.filter(paragraph => paragraph.lines.length > 0);
+    for (const paragraph of block.paragraphs) paragraph.bbox = union(paragraph.lines.map(line => line.bbox));
+    if (block.paragraphs.length) block.bbox = union(block.paragraphs.map(paragraph => paragraph.bbox));
+  }
+  next.blocks = next.blocks.filter(block => block.paragraphs.length > 0);
+  next.deletedOcrLineIds = [...new Set([...(next.deletedOcrLineIds ?? []), ...ids])];
+  if (next.manualOcrRegions) {
+    const remainingLines = allLines(next);
+    const wordIds = new Set(remainingLines.flatMap(line => line.words.map(word => word.id)));
+    const lineIds = new Set(remainingLines.map(line => line.id));
+    const regions = next.manualOcrRegions.map(region => ({ ...region,
+      addedWordIds: region.addedWordIds.filter(id => wordIds.has(id)),
+      addedLineIds: region.addedLineIds.filter(id => lineIds.has(id)),
+    })).filter(region => region.addedWordIds.length || region.addedLineIds.length);
+    next.manualOcrRegions = regions.length ? regions : undefined;
+  }
+  return { page: next, removedLines: ids.size };
+}
+
+/** A drag on the OCR layout removes each line whose visible line box overlaps it. */
+export function removeOcrLinesInRegion(page: DocumentPage, selection: Rect): { page: DocumentPage; removedLines: number } {
+  return removeLineIds(page, new Set(allLines(page).filter(line => intersects(line.bbox, selection)).map(line => line.id)));
+}
+
+/** A click removes one line. Prefer the smallest line box if OCR boxes overlap. */
+export function removeOcrLineAtPoint(page: DocumentPage, x: number, y: number): { page: DocumentPage; removedLines: number } {
+  const target = allLines(page).filter(line => x >= line.bbox.left && x <= line.bbox.right && y >= line.bbox.top && y <= line.bbox.bottom)
+    .sort((a, b) => area(a.bbox) - area(b.bbox))[0];
+  return removeLineIds(page, new Set(target ? [target.id] : []));
+}

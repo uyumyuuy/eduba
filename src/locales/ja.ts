@@ -9,6 +9,8 @@ const ja = {
   },
   notice: { welcome: "PDF を読み込み、OCR 結果を校正します。" },
   notices: {
+    regionDeleteEmpty: "指定範囲に OCR 行はありません。",
+    regionDeleted: "{{count}} 行の OCR 結果を削除しました。",
     regionEmpty: "指定範囲に新しい文字は見つかりませんでした。",
     regionAdded: "{{count}} 行の OCR 結果を追加しました。",
     regionTooSmall: "もう少し大きい範囲を選択してください。",
@@ -55,6 +57,8 @@ const ja = {
   bulkReplace: { title: "一括置換", source: "選択した文字列", replacement: "置換後の文字列", results: "{{count}} 件", selectPage: "この結果ページをすべて選択", clearPage: "この結果ページを解除", noResults: "一致する行はありません", previous: "前の結果ページ", next: "次の結果ページ", cancel: "キャンセル", apply: "選択した {{count}} 件を置換", applying: "置換中…", close: "閉じる" },
   scriptCalibration: { open: "上付き・下付きの自動認識", title: "上付き・下付きの自動認識", close: "閉じる", description: "文字の大きさと位置のしきい値を調整します。例はすぐに更新され、適用するまで保存されません。", superscript: "上付き", subscript: "下付き", maxHeight: "文字高の最大比率", maxHeightHelp: "推定した通常の大文字高に対し、文字高がこの比率以下なら対象にします。", minRise: "上方向の最小正規化変位", minRiseHelp: "基線から文字の下端までの上方向の距離を、推定大文字高で割った値です。", minDrop: "下方向の最小正規化変位", minDropHelp: "文字の下端から基線までの下方向の距離を、推定大文字高で割った値です。", subscriptScope: "下付きとして認識する文字", digitsAndX: "数字 0–9 と x", allCharacters: "すべての文字", examples: "代表的な例", previewHint: "左：元画像（青線＝基線、橙枠＝文字矩形、緑＝基準文字高 H）　右：検出した書式", reshuffleCurrentPage: "例を入れ替える（編集中ページから）", reshuffleAllPages: "例を入れ替える（全ページから）", loading: "バランスの取れた例を探しています…", loadingProgress: "例を探しています… {{completed}} / {{total}}", noExamples: "このプロジェクトには適した例がありません。", unsavedHint: "適用するまで変更は保存されません。", cancel: "キャンセル", apply: "適用", applying: "適用中…" },
   ui: {
+    deleteOcrRegion: "OCR 領域を削除",
+    regionDeleteHint: "削除する行をクリック、または範囲をドラッグ・ESCキーで中止",
     addOcrRegion: "OCR 領域を追加",
     regionSelectHint: "追加する範囲をドラッグ・ESCキーで中止",
     settings: "設定", language: "言語", close: "閉じる", model: "モデル（.traineddata）", selectModel: "モデルを選択",
@@ -65,7 +69,7 @@ const ja = {
     recognizeAgain: "OCR を再実行", ocrSettings: "OCR 設定", sourcePage: "元ページ {{page}}",
     runOcrHint: "現在のページに OCR を実行します。",
     singleFileHint: "1 つの .eduba ファイルに保存されます。",
-    replaceDescription: "このページの校正・装飾・手動追加した OCR 領域は、新しい OCR 結果で置き換えられます。",
+    replaceDescription: "このページの校正・装飾・手動追加または削除した OCR 領域は、新しい OCR 結果で置き換えられます。",
     logicalPageCount_one: "{{count}} 論理ページ", logicalPageCount_other: "{{count}} 論理ページ",
     clickLine: "行をクリックして編集", newProject: "新規プロジェクト",
     projectFile: ".eduba プロジェクト", whole: "全体", left: "左", right: "右", leftPage: "左ページ", rightPage: "右ページ",

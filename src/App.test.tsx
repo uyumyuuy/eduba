@@ -515,6 +515,68 @@ describe("saved project loading", () => {
     await act(async () => undoButton.click());
     await waitFor(() => expect(JSON.parse(persistedPages.get("page-1")!).manualOcrRegions).toBeUndefined());
   });
+  it("deletes a clicked line from the OCR pane and can undo it", async () => {
+    await openSavedProject();
+    const button = Array.from(container.querySelectorAll<HTMLButtonElement>("button")).find(item => item.textContent?.includes("Delete OCR region"))!;
+    expect(button.disabled).toBe(false);
+    await act(async () => button.click());
+    expect(button.getAttribute("aria-pressed")).toBe("true");
+    expect(container.querySelector(".pdf-pane.region-inactive")).not.toBeNull();
+    expect(container.querySelector(".ocr-pane.region-inactive")).toBeNull();
+    expect(container.querySelector(".region-instruction")?.textContent).toContain("Click a line");
+    const surface = container.querySelector<HTMLDivElement>(".layout-card")!;
+    vi.spyOn(surface, "getBoundingClientRect").mockReturnValue({ left: 0, top: 0, right: 100, bottom: 80, width: 100, height: 80 } as DOMRect);
+    Object.defineProperties(surface, {
+      setPointerCapture: { configurable: true, value: vi.fn() },
+      hasPointerCapture: { configurable: true, value: vi.fn(() => true) },
+      releasePointerCapture: { configurable: true, value: vi.fn() },
+    });
+    const pointer = (type: string) => {
+      const event = new MouseEvent(type, { bubbles: true, button: 0, clientX: 10, clientY: 20 });
+      Object.defineProperty(event, "pointerId", { value: 2 });
+      return event;
+    };
+    await act(async () => surface.dispatchEvent(pointer("pointerdown")));
+    await act(async () => surface.dispatchEvent(pointer("pointerup")));
+    await act(async () => surface.dispatchEvent(new MouseEvent("click", { bubbles: true, clientX: 10, clientY: 20 })));
+    await waitFor(() => expect(JSON.parse(persistedPages.get("page-1")!).blocks).toHaveLength(0));
+    expect(container.querySelector("textarea.line-overlay")).toBeNull();
+    const undoButton = Array.from(container.querySelectorAll<HTMLButtonElement>("button")).find(item => item.textContent?.includes("Undo"))!;
+    await act(async () => undoButton.click());
+    await waitFor(() => expect(container.textContent).toContain("saved page one"));
+  });
+
+  it("deletes every OCR line overlapped by a drag on the recognition layout", async () => {
+    const saved = JSON.parse(persistedPages.get("page-1")!);
+    saved.blocks[0].paragraphs[0].lines.push({ ...saved.blocks[0].paragraphs[0].lines[0],
+      id: "page-1-second-line", bbox: { left: 5, top: 40, right: 95, bottom: 60 },
+      originalText: "second OCR line", correctedText: "second OCR line" });
+    persistedPages.set("page-1", JSON.stringify(saved));
+    await openSavedProject();
+    const button = Array.from(container.querySelectorAll<HTMLButtonElement>("button")).find(item => item.textContent?.includes("Delete OCR region"))!;
+    await act(async () => button.click());
+    const surface = container.querySelector<HTMLDivElement>(".layout-card")!;
+    vi.spyOn(surface, "getBoundingClientRect").mockReturnValue({ left: 0, top: 0, right: 100, bottom: 80, width: 100, height: 80 } as DOMRect);
+    Object.defineProperties(surface, {
+      setPointerCapture: { configurable: true, value: vi.fn() },
+      hasPointerCapture: { configurable: true, value: vi.fn(() => true) },
+      releasePointerCapture: { configurable: true, value: vi.fn() },
+    });
+    const pointer = (type: string, x: number, y: number) => {
+      const event = new MouseEvent(type, { bubbles: true, button: 0, clientX: x, clientY: y });
+      Object.defineProperty(event, "pointerId", { value: 3 });
+      return event;
+    };
+    await act(async () => {
+      surface.dispatchEvent(pointer("pointerdown", 10, 15));
+      surface.dispatchEvent(pointer("pointermove", 50, 55));
+    });
+    expect(container.querySelector(".region-selection.deleting")).not.toBeNull();
+    await act(async () => surface.dispatchEvent(pointer("pointerup", 50, 55)));
+    await waitFor(() => expect(JSON.parse(persistedPages.get("page-1")!).blocks).toHaveLength(0));
+    expect(container.textContent).toContain("Deleted 2 OCR line");
+  });
+
   it("wires both scroll panes and ignores the reciprocal programmatic scroll", async () => {
     await openSavedProject();
     const pdfStage = container.querySelector<HTMLDivElement>(".pdf-stage")!;

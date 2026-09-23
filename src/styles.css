@@ -168,11 +168,17 @@ button:disabled { cursor: not-allowed; opacity: .42; }
 
 .region-add-button { display: inline-flex; align-items: center; gap: 6px; height: 29px; padding: 0 10px; border-radius: 5px; background: #e8efeb; color: #2a6768; font-size: 10px; font-weight: 600; }
 .region-add-button:hover:not(:disabled), .region-add-button.active { background: #d2e8df; color: #195c59; }
-.pdf-pane { position: relative; }
-.ocr-pane.region-inactive { opacity: .46; filter: grayscale(1); pointer-events: none; }
-.region-instruction { position: absolute; z-index: 5; top: 52px; left: 50%; transform: translateX(-50%); max-width: calc(100% - 32px); padding: 13px 18px; border-radius: 8px; background: rgba(255,254,250,.95); color: #214944; box-shadow: 0 7px 24px rgba(20,38,35,.28), 0 1px 4px rgba(20,38,35,.14); font: 700 16px/1.4 Manrope, sans-serif; text-align: center; white-space: nowrap; pointer-events: none; transition: opacity .12s ease; }
+.pdf-pane, .ocr-pane { position: relative; }
+.pdf-pane.region-inactive, .ocr-pane.region-inactive { opacity: .46; filter: grayscale(1); pointer-events: none; }
+.region-instruction { position: absolute; z-index: 5; top: 52px; left: 50%; transform: translateX(-50%); max-width: calc(100% - 32px); padding: 13px 18px; border-radius: 8px; background: rgba(255,254,250,.95); color: #214944; box-shadow: 0 7px 24px rgba(20,38,35,.28), 0 1px 4px rgba(20,38,35,.14); font: 700 16px/1.4 Manrope, sans-serif; text-align: center; width: max-content; white-space: normal; pointer-events: none; transition: opacity .12s ease; }
 .region-instruction.hidden { opacity: 0; }
 .pdf-page { position: relative; flex: 0 0 auto; background: white; box-shadow: 0 5px 17px rgba(42,49,46,.13); }
 .pdf-page canvas { display: block; width: 100%; height: 100%; box-shadow: none; }
 .pdf-page.selecting { cursor: crosshair; touch-action: none; user-select: none; }
 .region-selection { position: absolute; z-index: 2; pointer-events: none; border: 2px solid #2d8b80; background: rgba(61,143,140,.22); box-shadow: 0 0 0 1px rgba(255,255,255,.8) inset; }
+
+.region-delete-button { background: #f2e8e5; color: #815048; }
+.region-delete-button:hover:not(:disabled), .region-delete-button.active { background: #ecd4cc; color: #713c34; }
+.layout-card.selecting { cursor: crosshair; touch-action: none; user-select: none; }
+.layout-card.selecting * { cursor: crosshair; }
+.region-selection.deleting { z-index: 6; border-color: #b75f4b; background: rgba(192,91,72,.22); }
