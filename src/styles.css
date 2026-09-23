@@ -176,6 +176,10 @@ button:disabled { cursor: not-allowed; opacity: .42; }
 .region-instruction.hidden { opacity: 0; }
 .pdf-page { position: relative; flex: 0 0 auto; background: white; box-shadow: 0 5px 17px rgba(42,49,46,.13); }
 .pdf-page canvas { display: block; width: 100%; height: 100%; box-shadow: none; }
+.edit-image-focus { position: absolute; inset: 0; z-index: 3; width: 100%; height: 100%; overflow: visible; pointer-events: none; }
+.edit-image-focus-line { fill: rgba(48, 137, 130, .16); stroke: rgba(24, 108, 104, .7); stroke-width: 2; vector-effect: non-scaling-stroke; }
+.edit-image-focus-underline { stroke: rgba(204, 91, 37, .78); stroke-width: 5; stroke-linecap: round; vector-effect: non-scaling-stroke; }
+.pdf-page canvas.edit-image-magnifier { position: absolute; z-index: 4; border: 2px solid rgba(26, 99, 96, .8); border-radius: 7px; background: #fff; box-shadow: 0 5px 17px rgba(23, 49, 46, .35); pointer-events: none; }
 .pdf-page.selecting { cursor: crosshair; touch-action: none; user-select: none; }
 .region-selection { position: absolute; z-index: 2; pointer-events: none; border: 2px solid #2d8b80; background: rgba(61,143,140,.22); box-shadow: 0 0 0 1px rgba(255,255,255,.8) inset; }
 

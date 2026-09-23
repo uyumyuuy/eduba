@@ -186,14 +186,14 @@ describe("saved project loading", () => {
   });
 
 
-  async function openSavedProject() {
+  async function openSavedProject(expectedText = "saved page one") {
     await act(async () => root.render(<App />));
     await waitFor(() =>
       expect(Array.from(container.querySelectorAll("button")).find((button) => button.textContent?.includes("Open"))).toBeTruthy(),
     );
     const openButton = Array.from(container.querySelectorAll("button")).find((button) => button.textContent?.includes("Open"));
     await act(async () => openButton?.click());
-    await waitFor(() => expect(container.textContent).toContain("saved page one"));
+    await waitFor(() => expect(container.textContent).toContain(expectedText));
   }
 
   it("reopens the last project on its saved logical page", async () => {
@@ -301,6 +301,42 @@ describe("saved project loading", () => {
     finishPageWrite!();
     await act(async () => { await closing; });
     expect(mocks.destroy).toHaveBeenCalled();
+  });
+
+  it("highlights the source scan and moves the magnifier with the edit caret", async () => {
+    const saved = JSON.parse(persistedPages.get("page-1")!);
+    const line = saved.blocks[0].paragraphs[0].lines[0];
+    line.originalText = "ABCD";
+    line.correctedText = "ABCD";
+    line.bbox = { left: 10, top: 20, right: 60, bottom: 35 };
+    const edges = [10, 20, 30, 47, 60];
+    const chars = Array.from("ABCD").map((text, index) => ({ index, originalText: text, correctedText: text,
+      bbox: { left: edges[index], top: 20, right: edges[index + 1], bottom: 35 }, source: "ocr" }));
+    line.words = [{ id: "word", originalText: "ABCD", correctedText: "ABCD", bbox: line.bbox, chars }];
+    line.chars = chars;
+    persistedPages.set("page-1", JSON.stringify(saved));
+    await openSavedProject("ABCD");
+    await act(async () => container.querySelector<SVGRectElement>(".layout-svg rect")!.dispatchEvent(new MouseEvent("click", { bubbles: true })));
+    const editor = container.querySelector<HTMLTextAreaElement>("textarea.line-overlay")!;
+    expect(editor).toBeTruthy();
+    expect(container.querySelector(".edit-image-focus-line")?.getAttribute("x")).toBe("10");
+    const magnifier = container.querySelector<HTMLCanvasElement>(".edit-image-magnifier")!;
+    expect(magnifier).not.toBeNull();
+    const source = container.querySelector<HTMLCanvasElement>(".rendered-page")!;
+    const draws = () => vi.mocked(magnifier.getContext("2d")!.drawImage).mock.calls.filter(args => args[0] === source);
+    expect(draws().length).toBeGreaterThan(0);
+    const firstDraw = draws().at(-1)!;
+    const initialSize = [magnifier.style.width, magnifier.style.height, magnifier.width, magnifier.height];
+    await act(async () => { editor.setSelectionRange(2, 2); editor.dispatchEvent(new Event("select", { bubbles: true })); document.dispatchEvent(new Event("selectionchange")); });
+    await waitFor(() => expect(container.querySelector(".edit-image-focus-underline")?.getAttribute("x1")).toBe("30"));
+    expect(container.querySelector(".edit-image-focus-underline")?.getAttribute("y1")).toBe("35");
+    const nextDraw = draws().at(-1)!;
+    expect([magnifier.style.width, magnifier.style.height, magnifier.width, magnifier.height]).toEqual(initialSize);
+    expect([nextDraw[3], nextDraw[4], nextDraw[7], nextDraw[8]]).toEqual([firstDraw[3], firstDraw[4], firstDraw[7], firstDraw[8]]);
+    expect(nextDraw[1]).not.toBe(firstDraw[1]);
+    await act(async () => editor.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true })));
+    expect(container.querySelector(".edit-image-focus")).toBeNull();
+    expect(container.querySelector(".edit-image-magnifier")).toBeNull();
   });
 
   it("keeps a completed page protected when its edit confirmation is declined", async () => {

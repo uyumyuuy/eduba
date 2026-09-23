@@ -2,6 +2,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, typ
 import { useTranslation } from "react-i18next";
 import { EditToolbarButton } from "./EditToolbarButton";
 import { FormattedEditMirror } from "./FormattedEditMirror";
+import { EditImageFocus } from "./EditImageFocus";
 import { applyLanguage, t as globalT, type LocalePreference } from "./i18n";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
@@ -275,8 +276,8 @@ function PageThumbnail({ cache, page }: { cache: LogicalPageThumbnailCache | nul
 
   return <span ref={frameRef} className="thumb" aria-hidden="true"><canvas ref={canvasRef} /></span>;
 }
-type LineOverlayProps = { value:string; formatting:TextFormatRange[]; left:number; top:number; width:number; height:number; fontSize:number; onChange:(value:string)=>void; onFinish:()=>void; onUndo:()=>void; onRedo:()=>void; onFormat:(start:number,end:number,kind:TextFormatKind)=>void; onOpenBulk:(selection:string,start:number,end:number)=>void; onSplit:(caret:number)=>void; };
-function LineOverlay({value,formatting,left,top,width,height,fontSize:naturalFontSize,onChange,onFinish,onUndo,onRedo,onFormat,onOpenBulk,onSplit}:LineOverlayProps) {
+type LineOverlayProps = { value:string; formatting:TextFormatRange[]; left:number; top:number; width:number; height:number; fontSize:number; onChange:(value:string)=>void; onCaretChange:(offset:number)=>void; onFinish:()=>void; onUndo:()=>void; onRedo:()=>void; onFormat:(start:number,end:number,kind:TextFormatKind)=>void; onOpenBulk:(selection:string,start:number,end:number)=>void; onSplit:(caret:number)=>void; };
+function LineOverlay({value,formatting,left,top,width,height,fontSize:naturalFontSize,onChange,onCaretChange,onFinish,onUndo,onRedo,onFormat,onOpenBulk,onSplit}:LineOverlayProps) {
  const { t } = useTranslation(); const inputRef=useRef<HTMLTextAreaElement>(null); const mirrorRef=useRef<HTMLDivElement>(null); const [selection,setSelection]=useState({start:0,end:0}); const [ctrl,setCtrl]=useState(false);
  const selected=value.slice(selection.start,selection.end); const candidates=selected?candidatesForSelection(selected):[];
  // Keep the normal text baseline fixed while giving raised glyphs room above it.
@@ -286,10 +287,11 @@ function LineOverlay({value,formatting,left,top,width,height,fontSize:naturalFon
  const editStyle={left,top:editTop,width,height:editHeight,paddingTop:extraTop,fontSize:naturalFontSize};
  useLayoutEffect(()=>{const input=inputRef.current;if(!input)return;input.style.fontSize=`${naturalFontSize}px`;const ratio=Math.min(1,Math.max(1,input.clientWidth-4)/Math.max(1,input.scrollWidth-4),Math.max(1,input.clientHeight-2)/Math.max(1,input.scrollHeight-2));input.style.fontSize=`${Math.max(1,naturalFontSize*(ratio<1?ratio*.98:1))}px`;if(mirrorRef.current){mirrorRef.current.style.fontSize=input.style.fontSize;mirrorRef.current.scrollLeft=input.scrollLeft;mirrorRef.current.scrollTop=input.scrollTop;}},[height,naturalFontSize,value,width,formatting]);
  useEffect(()=>{const up=(event:KeyboardEvent)=>{if(event.key==='Control'||!event.ctrlKey)setCtrl(false)};const blur=()=>setCtrl(false);document.addEventListener('keyup',up);window.addEventListener('blur',blur);return()=>{document.removeEventListener('keyup',up);window.removeEventListener('blur',blur)}},[]);
- const capture=()=>{const input=inputRef.current;if(input)setSelection({start:input.selectionStart,end:input.selectionEnd})};
+ const capture=()=>{const input=inputRef.current;if(input){setSelection({start:input.selectionStart,end:input.selectionEnd});onCaretChange(input.selectionDirection==="backward"?input.selectionStart:input.selectionEnd)}};
+ useEffect(()=>{const timer=window.setTimeout(()=>{if(inputRef.current===document.activeElement)capture()},0);return()=>window.clearTimeout(timer)},[]);
  const format=(kind:TextFormatKind)=>{if(selection.start<selection.end)onFormat(selection.start,selection.end,kind)};
- const replace=(text:string)=>{onChange(value.slice(0,selection.start)+text+value.slice(selection.end));setSelection({start:selection.start,end:selection.start+text.length})};
- return <>{formatting.length>0&&<FormattedEditMirror mirrorRef={mirrorRef} value={value} formatting={formatting} className="line-edit-mirror" style={editStyle} />}<textarea ref={inputRef} autoFocus wrap="off" className={`line-overlay ${formatting.length?"has-formatting":""}`} value={value} onChange={event=>onChange(event.currentTarget.value)} onSelect={capture} onScroll={event=>{if(mirrorRef.current){mirrorRef.current.scrollLeft=event.currentTarget.scrollLeft;mirrorRef.current.scrollTop=event.currentTarget.scrollTop}}} onKeyDown={event=>{setCtrl(event.ctrlKey);const key=event.key.toLowerCase();if(event.ctrlKey&&!event.nativeEvent.isComposing&&(key==='z'||key==='y')){event.preventDefault();if(key==='y'||event.shiftKey)onRedo();else onUndo();return}if(event.key==='Escape'||(event.key==='Enter'&&!event.nativeEvent.isComposing&&event.keyCode!==229)){event.preventDefault();onFinish();return}if(event.ctrlKey&&selection.start<selection.end){const kind=key==='b'?'bold':key==='i'?'italic':event.key==='ArrowUp'?'superscript':event.key==='ArrowDown'?'subscript':null;if(kind){event.preventDefault();format(kind)}else if(/^[1-9]$/.test(key)&&candidates[Number(key)-1]){event.preventDefault();replace(candidates[Number(key)-1])}else if(key==='g'){event.preventDefault();onOpenBulk(selected,selection.start,selection.end)}}}} onKeyUp={event=>setCtrl(event.ctrlKey)} onBlur={onFinish} style={editStyle} />
+ const replace=(text:string)=>{onChange(value.slice(0,selection.start)+text+value.slice(selection.end));setSelection({start:selection.start,end:selection.start+text.length});onCaretChange(selection.start+text.length)};
+ return <>{formatting.length>0&&<FormattedEditMirror mirrorRef={mirrorRef} value={value} formatting={formatting} className="line-edit-mirror" style={editStyle} />}<textarea ref={inputRef} autoFocus wrap="off" className={`line-overlay ${formatting.length?"has-formatting":""}`} value={value} onChange={event=>{onChange(event.currentTarget.value);onCaretChange(event.currentTarget.selectionStart)}} onSelect={capture} onScroll={event=>{if(mirrorRef.current){mirrorRef.current.scrollLeft=event.currentTarget.scrollLeft;mirrorRef.current.scrollTop=event.currentTarget.scrollTop}}} onKeyDown={event=>{setCtrl(event.ctrlKey);const key=event.key.toLowerCase();if(event.ctrlKey&&!event.nativeEvent.isComposing&&(key==='z'||key==='y')){event.preventDefault();if(key==='y'||event.shiftKey)onRedo();else onUndo();return}if(event.key==='Escape'||(event.key==='Enter'&&!event.nativeEvent.isComposing&&event.keyCode!==229)){event.preventDefault();onFinish();return}if(event.ctrlKey&&selection.start<selection.end){const kind=key==='b'?'bold':key==='i'?'italic':event.key==='ArrowUp'?'superscript':event.key==='ArrowDown'?'subscript':null;if(kind){event.preventDefault();format(kind)}else if(/^[1-9]$/.test(key)&&candidates[Number(key)-1]){event.preventDefault();replace(candidates[Number(key)-1])}else if(key==='g'){event.preventDefault();onOpenBulk(selected,selection.start,selection.end)}}}} onKeyUp={event=>{setCtrl(event.ctrlKey);capture()}} onBlur={onFinish} style={editStyle} />
  {!selected&&<div className="selection-toolbar" style={{left,top:Math.max(0,editTop-48)}} onMouseDown={event=>event.preventDefault()} role="toolbar" aria-label="Line tools"><EditToolbarButton label={t("toolbar.splitLine")} onClick={()=>onSplit(selection.start)} disabled={selection.start===0||selection.start===value.length}>{t("toolbar.splitLine")}</EditToolbarButton></div>}
  {selected&&<div className="selection-toolbar" style={{left,top:Math.max(0,editTop-48)}} onMouseDown={event=>event.preventDefault()} role="toolbar" aria-label="Selected text tools">
   <EditToolbarButton label={t("toolbar.bold")} shortcut="B" showShortcut={ctrl} onClick={()=>format("bold")}>{t("toolbar.bold")}</EditToolbarButton>
@@ -329,6 +331,7 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
   const [canvasSize, setCanvasSize] = useState({ width: 0, height: 0 });
   const [selected, setSelected] = useState<string | null>(null);
   const [editing, setEditing] = useState<string | null>(null);
+  const [editCaret, setEditCaret] = useState<{ lineId: string; offset: number } | null>(null);
   const [regionMode, setRegionMode] = useState<"add" | "delete" | "merge" | "order" | null>(null);
   const [regionSelection, setRegionSelection] = useState<Rect | null>(null);
   const [regionHintHidden, setRegionHintHidden] = useState(false);
@@ -2255,6 +2258,11 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
                     }}
                   >
                     <canvas ref={canvasRef} className="rendered-page" />
+                    {editing && doc && (() => {
+                      const line = allLines(doc).find(candidate => candidate.id === editing);
+                      return line ? <EditImageFocus line={line} caret={editCaret?.lineId === line.id ? editCaret.offset : 0}
+                        zoom={zoom} pageWidth={canvasSize.width} sourceRef={canvasRef} /> : null;
+                    })()}
                     {regionMode === "add" && regionSelection && <div className="region-selection" style={{
                       left: regionSelection.left * zoom, top: regionSelection.top * zoom,
                       width: (regionSelection.right - regionSelection.left) * zoom,
@@ -2372,9 +2380,11 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
                         const line = lines.find((v) => v.id === editing);
                         return line ? (
                           <LineOverlay
+                            key={line.id}
                             value={line.correctedText}
                             formatting={effectiveFormatting(line)}
                             onChange={(value) => editLine(line.id, value)}
+                            onCaretChange={(offset) => setEditCaret({ lineId: line.id, offset })}
                             onFinish={() => finishLineEdit(line.id)}
                             onUndo={() => void undo()}
                             onRedo={() => void redo()}
