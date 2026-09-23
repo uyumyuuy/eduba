@@ -3,6 +3,9 @@ const en = {
   language: { auto: "Automatic (system setting)", en: "English", ja: "日本語", "zh-Hans": "简体中文", "zh-Hant": "繁體中文" },
   notice: { welcome: "Import a PDF to proofread OCR results." },
   notices: {
+    regionMergeUnavailable: "Cannot merge these lines: {{reason}}",
+    regionMerged: "Merged {{count}} OCR lines.",
+    mergeReason: { tooFew: "Select at least two lines.", readingOrder: "Selected lines must be adjacent in reading order.", differentRows: "Selected lines must be on the same row.", overlap: "Selected lines overlap horizontally.", classes: "Selected lines have different hOCR classes." },
     regionDeleteEmpty: "No OCR line was found in the selected area.",
     regionDeleted: "Deleted {{count}} OCR line(s).",
     regionEmpty: "No new text was found in the selected area.",
@@ -13,6 +16,8 @@ const en = {
   bulkReplace: { title: "Replace all", source: "Selected text", replacement: "Replace with", results: "{{count}} results", selectPage: "Select this results page", clearPage: "Clear this results page", noResults: "No matching lines", previous: "Previous results page", next: "Next results page", cancel: "Cancel", apply: "Replace {{count}} selected", applying: "Replacing…", close: "Close" },
   scriptCalibration: { open: "Auto script detection", title: "Automatic superscript & subscript", close: "Close", description: "Tune the size and position thresholds used to recognize raised and lowered characters. Examples update immediately and are not saved until you apply.", superscript: "Superscript", subscript: "Subscript", maxHeight: "Maximum relative character height", maxHeightHelp: "A character qualifies when its height is at most this fraction of the estimated ordinary capital height.", minRise: "Minimum normalized upward displacement", minRiseHelp: "Minimum baseline-to-character-bottom distance divided by estimated capital height.", minDrop: "Minimum normalized downward displacement", minDropHelp: "Minimum character-bottom-to-baseline distance divided by estimated capital height.", subscriptScope: "Recognize subscripts in", digitsAndX: "Digits 0–9 and x", allCharacters: "All characters", examples: "Representative examples", previewHint: "Left: image (blue baseline, orange boxes, green reference height H) · Right: detected formatting", reshuffleCurrentPage: "Reshuffle examples (from current page)", reshuffleAllPages: "Reshuffle examples (from all pages)", loading: "Finding balanced examples…", loadingProgress: "Finding examples… {{completed}} / {{total}}", noExamples: "No suitable examples were found in this project.", unsavedHint: "Changes are saved only when you apply.", cancel: "Cancel", apply: "Apply", applying: "Applying…" },
   ui: {
+    mergeOcrRegions: "Merge OCR regions",
+    regionMergeHint: "Drag over the lines to merge · ESC to cancel",
     deleteOcrRegion: "Delete OCR region",
     regionDeleteHint: "Click a line or drag to select lines · ESC to cancel",
     addOcrRegion: "Add OCR region",

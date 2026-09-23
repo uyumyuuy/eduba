@@ -23,6 +23,7 @@ import {
   Redo2,
   ScanLine,
   Eraser,
+  GitMerge,
   X,
 } from "lucide-react";
 import { canvasToBase64, openProjectPdf, openSourcePdf } from "./pdf";
@@ -55,7 +56,7 @@ import { ScriptCalibrationDialog, type ScriptCalibrationCandidate, type ScriptCa
 import { DEFAULT_SCRIPT_DETECTION_SETTINGS, SCRIPT_HEIGHT_REFERENCE_VERSION, ScriptHeightTrainer, detectScriptRanges, migrateLegacyScriptSettings, referenceHeightsForPage, type ScriptDetectionSettings, type ScriptHeightProfile } from "./scriptDetection";
 import { BulkReplaceDialog, type BulkMatch, type BulkReplaceRequest } from "./BulkReplaceDialog";
 import { prepareBulkUpdates } from "./bulkApply";
-import { addOcrRegion, prepareRegionOcrImage, removeOcrLinesInRegion, removeOcrLineAtPoint } from "./ocrRegion";
+import { addOcrRegion, prepareRegionOcrImage, removeOcrLinesInRegion, removeOcrLineAtPoint, mergeOcrLinesInRegion } from "./ocrRegion";
 import { candidatesForSelection } from "./correctionCandidates";
 import { importEntries, type ImportConfig } from "./importConfig";
 import { loadPageImage, type ImportMode } from "./pageImage";
@@ -326,7 +327,7 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
   const [canvasSize, setCanvasSize] = useState({ width: 0, height: 0 });
   const [selected, setSelected] = useState<string | null>(null);
   const [editing, setEditing] = useState<string | null>(null);
-  const [regionMode, setRegionMode] = useState<"add" | "delete" | null>(null);
+  const [regionMode, setRegionMode] = useState<"add" | "delete" | "merge" | null>(null);
   const [regionSelection, setRegionSelection] = useState<Rect | null>(null);
   const [regionHintHidden, setRegionHintHidden] = useState(false);
   const [undoStack, setUndoStack] = useState<HistoryOperation[]>([]);
@@ -1026,6 +1027,7 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
       const hasManualCorrections = scope === "current" && Boolean(docRef.current && (
         (docRef.current.manualOcrRegions?.length ?? 0) > 0 ||
         (docRef.current.deletedOcrLineIds?.length ?? 0) > 0 ||
+        allLines(docRef.current).some(line => line.scriptDetectionManuallyEdited) ||
         allLines(docRef.current).some(line =>
           line.correctedText !== line.originalText ||
           Boolean(line.formatting?.length) ||
@@ -1128,8 +1130,42 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
       setBusy(null);
     }
   }, [flush, putDoc, setNotice]);
+  const mergeSelectedRegion = useCallback(async (selection: Rect) => {
+    const entry = manifestRef.current.pages[indexRef.current];
+    const beforePage = docRef.current;
+    const info = projectRef.current;
+    if (!entry || entry.status !== "review" || !beforePage || !info || working.current || importActive.current) return;
+    const result = mergeOcrLinesInRegion(beforePage, selection);
+    if (!result.mergedLines) {
+      setNotice("notices.regionMergeUnavailable", { reason: globalT(`notices.mergeReason.${result.reason ?? "tooFew"}`) });
+      setRegionMode("merge");
+      return;
+    }
+    working.current = true;
+    setBusy("save");
+    try {
+      await flush();
+      const beforeData = JSON.stringify(copy(beforePage));
+      const afterData = JSON.stringify(copy(result.page));
+      const changes = await invokeCommand("apply_bulk_corrections", {
+        projectPath: info.path,
+        updates: [{ pageId: entry.id, expectedData: beforeData, data: afterData }],
+      });
+      if (changes.length !== 1) throw new Error("The OCR regions could not be merged.");
+      putDoc(result.page);
+      setUndoStack(old => [...old, { targetPageId: entry.id, changes }].slice(-100));
+      setRedoStack([]);
+      setNotice("notices.regionMerged", { count: result.mergedLines });
+    } catch (error) {
+      setNotice("notices.saveFailed", { error: errorText(error) });
+      setRegionMode("merge");
+    } finally {
+      working.current = false;
+      setBusy(null);
+    }
+  }, [flush, putDoc, setNotice]);
   const clientToRegionPage = useCallback((clientX: number, clientY: number) => {
-    const target = regionMode === "delete" ? layoutCardRef.current : canvasRef.current;
+    const target = regionMode === "add" ? canvasRef.current : layoutCardRef.current;
     if (!target || !canvasSize.width || !canvasSize.height) return null;
     const bounds = target.getBoundingClientRect();
     if (!bounds.width || !bounds.height) return null;
@@ -1145,7 +1181,7 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
   const onRegionPointerDown = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
     if (!regionMode || event.button !== 0 || busy ||
       (regionMode === "add" && event.currentTarget !== pdfPageRef.current) ||
-      (regionMode === "delete" && event.currentTarget !== layoutCardRef.current)) return;
+      (regionMode !== "add" && event.currentTarget !== layoutCardRef.current)) return;
     const point = clientToRegionPage(event.clientX, event.clientY);
     if (!point || point.x <= 0 || point.x >= canvasSize.width || point.y <= 0 || point.y >= canvasSize.height) return;
     event.preventDefault();
@@ -1154,7 +1190,7 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
     setRegionSelection({ left: point.x, top: point.y, right: point.x, bottom: point.y });
     stopRegionScroll();
     regionScrollTimer.current = window.setInterval(() => {
-      const drag = regionDrag.current, stage = regionMode === "delete" ? ocrStageRef.current : pdfStageRef.current;
+      const drag = regionDrag.current, stage = regionMode === "add" ? pdfStageRef.current : ocrStageRef.current;
       if (!drag || !stage) return;
       const bounds = stage.getBoundingClientRect();
       const edge = 28;
@@ -1201,13 +1237,24 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
       else setNotice("notices.regionTooSmall");
       return;
     }
+    if (regionMode === "merge") {
+      suppressLayoutClick.current = true;
+      window.setTimeout(() => { suppressLayoutClick.current = false; }, 0);
+      if (selection.right - selection.left < 4 || selection.bottom - selection.top < 4) {
+        setNotice("notices.regionMergeUnavailable", { reason: globalT("notices.mergeReason.tooFew") });
+        return;
+      }
+      setRegionMode(null);
+      void mergeSelectedRegion(selection);
+      return;
+    }
     if (selection.right - selection.left < 4 || selection.bottom - selection.top < 4) {
       setNotice("notices.regionTooSmall");
       return;
     }
     setRegionMode(null);
     void addSelectedRegion(selection);
-  }, [addSelectedRegion, clientToRegionPage, deleteSelectedRegion, regionMode, setNotice, stopRegionScroll]);
+  }, [addSelectedRegion, clientToRegionPage, deleteSelectedRegion, mergeSelectedRegion, regionMode, setNotice, stopRegionScroll]);
   const exportFile = useCallback(
     async (type: "txt" | "hocr" | "svg", scope: "current" | "all" = "all") => {
       if (!projectRef.current || working.current || importActive.current)
@@ -1968,6 +2015,22 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
                 })();
               }}
             ><Eraser size={15} /> {t("ui.deleteOcrRegion")}</button>
+            <button
+              className={"region-add-button region-merge-button" + (regionMode === "merge" ? " active" : "")}
+              disabled={current?.status !== "review" || !doc || !canvasSize.width || Boolean(busy)}
+              aria-pressed={regionMode === "merge"}
+              onClick={() => {
+                if (regionMode === "merge") { regionDrag.current = null; stopRegionScroll(); setRegionSelection(null); setRegionMode(null); return; }
+                void (async () => {
+                  const active = manifestRef.current.pages[indexRef.current];
+                  if (!active || !await clearCompletion([active.id])) return;
+                  if (manifestRef.current.pages[indexRef.current]?.id !== active.id) return;
+                  finishLineEditRef.current();
+                  setSelected(null);
+                  setRegionMode("merge");
+                })();
+              }}
+            ><GitMerge size={15} /> {t("ui.mergeOcrRegions")}</button>
             {current?.status === "review" && <label className="page-complete-toggle" title={t("ui.pageCompleteHint")}>
               <input type="checkbox" checked={Boolean(current.completed)} disabled={Boolean(busy)} onChange={(event) => {
                 if (event.currentTarget.checked) finishLineEditRef.current();
@@ -2014,7 +2077,7 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
               setRegionHintHidden(event.clientX >= box.left - margin && event.clientX <= box.right + margin &&
                 event.clientY >= box.top - margin && event.clientY <= box.bottom + margin);
             }} onPointerLeave={() => setRegionHintHidden(false)}>
-            <article className={"pdf-pane" + (regionMode === "delete" ? " region-inactive" : "")}>
+            <article className={"pdf-pane" + (regionMode && regionMode !== "add" ? " region-inactive" : "")}>
               <div className="pane-label">
                 <span>{t("ui.processedImage")}</span>
               </div>
@@ -2052,16 +2115,16 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
             <article className={"ocr-pane" + (regionMode === "add" ? " region-inactive" : "")}>
               <div className="pane-label">
                 <span>{t("ui.recognitionLayout")}</span>
-                {regionMode !== "delete" && <span className="pane-hint">{t("ui.clickLine")}</span>}
+                {regionMode === null || regionMode === "add" ? <span className="pane-hint">{t("ui.clickLine")}</span> : null}
               </div>
-              {regionMode === "delete" && <div ref={regionHintRef} className={"region-instruction" + (regionHintHidden ? " hidden" : "")} role="status">
-                {t("ui.regionDeleteHint")}
+              {(regionMode === "delete" || regionMode === "merge") && <div ref={regionHintRef} className={"region-instruction" + (regionHintHidden ? " hidden" : "")} role="status">
+                {t(regionMode === "merge" ? "ui.regionMergeHint" : "ui.regionDeleteHint")}
               </div>}
               <div ref={ocrStageRef} className="ocr-stage" onScroll={() => onProofingScroll("ocr")}>
                 {doc && canvasSize.width ? (
                   <div
                     ref={layoutCardRef}
-                    className={"layout-card" + (regionMode === "delete" ? " selecting" : "")}
+                    className={"layout-card" + (regionMode === "delete" || regionMode === "merge" ? " selecting" : "")}
                     style={{ width: w, height: h, minHeight: h }}
                     onPointerDown={onRegionPointerDown}
                     onPointerMove={onRegionPointerMove}
@@ -2117,7 +2180,7 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
                         </g>
                       ))}
                     </svg>
-                    {regionMode === "delete" && regionSelection && <div className="region-selection deleting" style={{
+                    {(regionMode === "delete" || regionMode === "merge") && regionSelection && <div className={"region-selection " + (regionMode === "merge" ? "merging" : "deleting")} style={{
                       left: regionSelection.left * zoom, top: regionSelection.top * zoom,
                       width: (regionSelection.right - regionSelection.left) * zoom,
                       height: (regionSelection.bottom - regionSelection.top) * zoom,

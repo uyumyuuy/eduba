@@ -210,3 +210,83 @@ export function removeOcrLineAtPoint(page: DocumentPage, x: number, y: number): 
     .sort((a, b) => area(a.bbox) - area(b.bbox))[0];
   return removeLineIds(page, new Set(target ? [target.id] : []));
 }
+
+export type MergeRegionResult = { page: DocumentPage; mergedLines: number; reason?: "tooFew" | "readingOrder" | "differentRows" | "overlap" | "classes" };
+
+/** Join adjacent reading-order lines on one visual row without discarding edits or OCR boxes. */
+export function mergeOcrLinesInRegion(page: DocumentPage, selection: Rect): MergeRegionResult {
+  const ordered = allLines(page);
+  const selected = ordered.map((line, index) => ({ line, index })).filter(item => intersects(item.line.bbox, selection));
+  if (selected.length < 2) return { page, mergedLines: 0, reason: "tooFew" };
+  if (selected.some((item, index) => index && item.index !== selected[index - 1].index + 1))
+    return { page, mergedLines: 0, reason: "readingOrder" };
+  const byX = selected.map(item => item.line).sort((a, b) => a.bbox.left - b.bbox.left || a.bbox.top - b.bbox.top);
+  const classes = (line: OcrLine) => (line.hocrClasses?.length ? line.hocrClasses : ["ocr_line"]).slice().sort().join(" ");
+  if (byX.some(line => classes(line) !== classes(byX[0]))) return { page, mergedLines: 0, reason: "classes" };
+  for (let i = 0; i < byX.length; i++) for (let j = i + 1; j < byX.length; j++) {
+    const a = byX[i].bbox, b = byX[j].bbox;
+    const small = Math.min(height(a), height(b)), large = Math.max(height(a), height(b));
+    const verticalOverlap = Math.max(0, Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top));
+    const verticalGap = Math.max(0, a.top - b.bottom, b.top - a.bottom);
+    const smallRaisedOrLowered = small / large <= 0.65 && verticalGap <= large * 0.2 &&
+      Math.abs(centreY(a) - centreY(b)) <= large * 0.8;
+    if (verticalOverlap < small * 0.35 && !smallRaisedOrLowered)
+      return { page, mergedLines: 0, reason: "differentRows" };
+  }
+  for (let i = 1; i < byX.length; i++) {
+    const a = byX[i - 1].bbox, b = byX[i].bbox;
+    const allowedOverlap = Math.max(2, Math.min(height(a), height(b)) * 0.1);
+    if (a.right - b.left > allowedOverlap) return { page, mergedLines: 0, reason: "overlap" };
+  }
+  const next: DocumentPage = JSON.parse(JSON.stringify(page));
+  const selectedIds = new Set(selected.map(item => item.line.id));
+  const primaryId = selected[0].line.id;
+  const mergedBox = union(byX.map(line => line.bbox));
+  const originalText = byX.map(line => line.originalText).join(" ");
+  const correctedText = byX.map(line => line.correctedText).join(" ");
+  const chars: OcrChar[] = [];
+  const formatting: TextFormatRange[] = [], autoFormatting: TextFormatRange[] = [];
+  let offset = 0;
+  for (const [index, line] of byX.entries()) {
+    if (index) chars.push({ index: 0, originalText: " ", correctedText: " ", source: "inserted" });
+    const sourceChars = line.chars.map(char => char.correctedText).join("") === line.correctedText
+      ? line.chars : Array.from(line.correctedText).map(text => ({ index: 0, originalText: "", correctedText: text, source: "inserted" as const }));
+    chars.push(...sourceChars);
+    formatting.push(...(line.formatting ?? []).map(range => ({ ...range, start: range.start + offset, end: range.end + offset })));
+    autoFormatting.push(...(line.autoFormatting ?? []).map(range => ({ ...range, start: range.start + offset, end: range.end + offset })));
+    offset += line.correctedText.length + 1;
+  }
+  const baselineSource = byX.filter(line => line.baseline).sort((a, b) => (b.bbox.right - b.bbox.left) - (a.bbox.right - a.bbox.left))[0];
+  const baseline = baselineSource?.baseline && {
+    slope: baselineSource.baseline.slope,
+    intercept: baselineSource.bbox.bottom + baselineSource.baseline.intercept +
+      baselineSource.baseline.slope * (mergedBox.left - baselineSource.bbox.left) - mergedBox.bottom,
+  };
+  const first = allLines(next).find(line => line.id === primaryId)!;
+  Object.assign(first, {
+    bbox: mergedBox, baseline,
+    fontSize: Math.max(...byX.map(line => line.fontSize ?? 0)) || undefined,
+    originalText, correctedText,
+    words: byX.flatMap(line => line.words),
+    chars: chars.map((char, index) => ({ ...char, index })),
+    formatting: formatting.length ? formatting : undefined,
+    autoFormatting: autoFormatting.length ? autoFormatting : undefined,
+    scriptDetectionManuallyEdited: true,
+    geometryApproximate: byX.some(line => line.geometryApproximate),
+  });
+  for (const block of next.blocks) {
+    for (const paragraph of block.paragraphs) paragraph.lines = paragraph.lines.filter(line => line.id === primaryId || !selectedIds.has(line.id));
+    block.paragraphs = block.paragraphs.filter(paragraph => paragraph.lines.length);
+    for (const paragraph of block.paragraphs) paragraph.bbox = union(paragraph.lines.map(line => line.bbox));
+    if (block.paragraphs.length) block.bbox = union(block.paragraphs.map(paragraph => paragraph.bbox));
+  }
+  next.blocks = next.blocks.filter(block => block.paragraphs.length);
+  if (next.manualOcrRegions) {
+    const remaining = new Set(allLines(next).map(line => line.id));
+    const regions = next.manualOcrRegions.map(region => ({ ...region,
+      addedLineIds: region.addedLineIds.filter(id => remaining.has(id)),
+    })).filter(region => region.addedLineIds.length || region.addedWordIds.length);
+    next.manualOcrRegions = regions.length ? regions : undefined;
+  }
+  return { page: next, mergedLines: selected.length };
+}

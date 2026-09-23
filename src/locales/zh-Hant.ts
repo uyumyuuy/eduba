@@ -9,6 +9,9 @@ const zhHant = {
   },
   notice: { welcome: "匯入 PDF 以校對 OCR 結果。" },
   notices: {
+    regionMergeUnavailable: "無法合併這些行：{{reason}}",
+    regionMerged: "已合併 {{count}} 行 OCR 結果。",
+    mergeReason: { tooFew: "請至少選取兩行。", readingOrder: "所選行的閱讀順序必須連續。", differentRows: "所選行必須位於同一行。", overlap: "所選行在水平方向重疊。", classes: "所選行的 hOCR 分類不同。" },
     regionDeleteEmpty: "所選區域沒有 OCR 行。",
     regionDeleted: "已刪除 {{count}} 行 OCR 結果。",
     regionEmpty: "所選區域中找不到新文字。",
@@ -57,6 +60,8 @@ const zhHant = {
   bulkReplace: { title: "全部取代", source: "已選文字", replacement: "取代為", results: "{{count}} 項結果", selectPage: "選取本頁結果", clearPage: "取消本頁選取", noResults: "沒有相符行", previous: "上一頁結果", next: "下一頁結果", cancel: "取消", apply: "取代已選 {{count}} 項", applying: "正在取代…", close: "關閉" },
   scriptCalibration: { open: "自動辨識上標與下標", title: "自動辨識上標與下標", close: "關閉", description: "調整用於辨識上移與下移字元的大小和位置閾值。範例會立即更新，套用前不會儲存。", superscript: "上標", subscript: "下標", maxHeight: "最大相對字元高度", maxHeightHelp: "字元高度不超過估計的一般大寫字母高度的此比例時才會被辨識。", minRise: "最小正規化上移量", minRiseHelp: "基線到字元下緣的向上距離，除以估計的大寫字母高度。", minDrop: "最小正規化下移量", minDropHelp: "字元下緣到基線的向下距離，除以估計的大寫字母高度。", subscriptScope: "下標辨識範圍", digitsAndX: "數字 0–9 與 x", allCharacters: "所有字元", examples: "代表性範例", previewHint: "左側：原始影像（藍線：基線；橙框：字元框；綠線：基準字元高度 H） · 右側：偵測到的格式", reshuffleCurrentPage: "重新抽取範例（目前頁面）", reshuffleAllPages: "重新抽取範例（全部頁面）", loading: "正在尋找平衡的範例…", loadingProgress: "正在尋找範例… {{completed}} / {{total}}", noExamples: "此專案中找不到適合的範例。", unsavedHint: "只會在套用時儲存變更。", cancel: "取消", apply: "套用", applying: "正在套用…" },
   ui: {
+    mergeOcrRegions: "合併 OCR 區域",
+    regionMergeHint: "拖曳框選要合併的行 · 按 ESC 取消",
     deleteOcrRegion: "刪除 OCR 區域",
     regionDeleteHint: "點擊要刪除的行，或拖曳選取範圍 · 按 ESC 取消",
     addOcrRegion: "新增 OCR 區域",

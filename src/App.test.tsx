@@ -577,6 +577,50 @@ describe("saved project loading", () => {
     expect(container.textContent).toContain("Deleted 2 OCR line");
   });
 
+  it("merges same-row OCR regions dragged on the recognition layout and can undo", async () => {
+    const saved = JSON.parse(persistedPages.get("page-1")!);
+    const first = saved.blocks[0].paragraphs[0].lines[0];
+    first.bbox = { left: 5, top: 10, right: 40, bottom: 30 };
+    first.originalText = "left";
+    first.correctedText = "left";
+    saved.blocks[0].paragraphs[0].lines.push({ ...first, id: "page-1-right-line",
+      bbox: { left: 55, top: 10, right: 95, bottom: 30 }, originalText: "right", correctedText: "right" });
+    persistedPages.set("page-1", JSON.stringify(saved));
+    await act(async () => root.render(<App />));
+    const open = Array.from(container.querySelectorAll<HTMLButtonElement>("button")).find(item => item.textContent?.includes("Open"))!;
+    await act(async () => open.click());
+    await waitFor(() => expect(container.textContent).toContain("right"));
+    const button = Array.from(container.querySelectorAll<HTMLButtonElement>("button")).find(item => item.textContent?.includes("Merge OCR regions"))!;
+    await act(async () => button.click());
+    expect(button.getAttribute("aria-pressed")).toBe("true");
+    expect(container.querySelector(".pdf-pane.region-inactive")).not.toBeNull();
+    const surface = container.querySelector<HTMLDivElement>(".layout-card")!;
+    vi.spyOn(surface, "getBoundingClientRect").mockReturnValue({ left: 0, top: 0, right: 100, bottom: 80, width: 100, height: 80 } as DOMRect);
+    Object.defineProperties(surface, {
+      setPointerCapture: { configurable: true, value: vi.fn() },
+      hasPointerCapture: { configurable: true, value: vi.fn(() => true) },
+      releasePointerCapture: { configurable: true, value: vi.fn() },
+    });
+    const pointer = (type: string, x: number, y: number) => {
+      const event = new MouseEvent(type, { bubbles: true, button: 0, clientX: x, clientY: y });
+      Object.defineProperty(event, "pointerId", { value: 4 });
+      return event;
+    };
+    await act(async () => {
+      surface.dispatchEvent(pointer("pointerdown", 10, 15));
+      surface.dispatchEvent(pointer("pointermove", 90, 25));
+    });
+    expect(container.querySelector(".region-selection.merging")).not.toBeNull();
+    await act(async () => surface.dispatchEvent(pointer("pointerup", 90, 25)));
+    await act(async () => surface.dispatchEvent(new MouseEvent("click", { bubbles: true, clientX: 90, clientY: 25 })));
+    await waitFor(() => expect(JSON.parse(persistedPages.get("page-1")!).blocks[0].paragraphs[0].lines).toHaveLength(1));
+    expect(container.querySelector("textarea.line-overlay")).toBeNull();
+    expect(JSON.parse(persistedPages.get("page-1")!).blocks[0].paragraphs[0].lines[0].correctedText).toBe("left right");
+    const undoButton = Array.from(container.querySelectorAll<HTMLButtonElement>("button")).find(item => item.textContent?.includes("Undo"))!;
+    await act(async () => undoButton.click());
+    await waitFor(() => expect(JSON.parse(persistedPages.get("page-1")!).blocks[0].paragraphs[0].lines).toHaveLength(2));
+  });
+
   it("wires both scroll panes and ignores the reciprocal programmatic scroll", async () => {
     await openSavedProject();
     const pdfStage = container.querySelector<HTMLDivElement>(".pdf-stage")!;

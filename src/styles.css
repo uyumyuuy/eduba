@@ -182,3 +182,6 @@ button:disabled { cursor: not-allowed; opacity: .42; }
 .layout-card.selecting { cursor: crosshair; touch-action: none; user-select: none; }
 .layout-card.selecting * { cursor: crosshair; }
 .region-selection.deleting { z-index: 6; border-color: #b75f4b; background: rgba(192,91,72,.22); }
+.region-merge-button { background: #e6edf3; color: #47657d; }
+.region-merge-button:hover:not(:disabled), .region-merge-button.active { background: #d2e3ef; color: #2e5678; }
+.region-selection.merging { z-index: 6; border-color: #4c82a7; background: rgba(75,133,176,.22); }

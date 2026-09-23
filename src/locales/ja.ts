@@ -9,6 +9,9 @@ const ja = {
   },
   notice: { welcome: "PDF を読み込み、OCR 結果を校正します。" },
   notices: {
+    regionMergeUnavailable: "この行は結合できません: {{reason}}",
+    regionMerged: "{{count}} 行の OCR 結果を結合しました。",
+    mergeReason: { tooFew: "2 行以上を選択してください。", readingOrder: "読み順が連続する行を選択してください。", differentRows: "同じ高さに並ぶ行を選択してください。", overlap: "行が横方向に重なっています。", classes: "行の hOCR 分類が異なります。" },
     regionDeleteEmpty: "指定範囲に OCR 行はありません。",
     regionDeleted: "{{count}} 行の OCR 結果を削除しました。",
     regionEmpty: "指定範囲に新しい文字は見つかりませんでした。",
@@ -57,6 +60,8 @@ const ja = {
   bulkReplace: { title: "一括置換", source: "選択した文字列", replacement: "置換後の文字列", results: "{{count}} 件", selectPage: "この結果ページをすべて選択", clearPage: "この結果ページを解除", noResults: "一致する行はありません", previous: "前の結果ページ", next: "次の結果ページ", cancel: "キャンセル", apply: "選択した {{count}} 件を置換", applying: "置換中…", close: "閉じる" },
   scriptCalibration: { open: "上付き・下付きの自動認識", title: "上付き・下付きの自動認識", close: "閉じる", description: "文字の大きさと位置のしきい値を調整します。例はすぐに更新され、適用するまで保存されません。", superscript: "上付き", subscript: "下付き", maxHeight: "文字高の最大比率", maxHeightHelp: "推定した通常の大文字高に対し、文字高がこの比率以下なら対象にします。", minRise: "上方向の最小正規化変位", minRiseHelp: "基線から文字の下端までの上方向の距離を、推定大文字高で割った値です。", minDrop: "下方向の最小正規化変位", minDropHelp: "文字の下端から基線までの下方向の距離を、推定大文字高で割った値です。", subscriptScope: "下付きとして認識する文字", digitsAndX: "数字 0–9 と x", allCharacters: "すべての文字", examples: "代表的な例", previewHint: "左：元画像（青線＝基線、橙枠＝文字矩形、緑＝基準文字高 H）　右：検出した書式", reshuffleCurrentPage: "例を入れ替える（編集中ページから）", reshuffleAllPages: "例を入れ替える（全ページから）", loading: "バランスの取れた例を探しています…", loadingProgress: "例を探しています… {{completed}} / {{total}}", noExamples: "このプロジェクトには適した例がありません。", unsavedHint: "適用するまで変更は保存されません。", cancel: "キャンセル", apply: "適用", applying: "適用中…" },
   ui: {
+    mergeOcrRegions: "OCR 領域を結合",
+    regionMergeHint: "結合する行をドラッグで囲む・ESCキーで中止",
     deleteOcrRegion: "OCR 領域を削除",
     regionDeleteHint: "削除する行をクリック、または範囲をドラッグ・ESCキーで中止",
     addOcrRegion: "OCR 領域を追加",

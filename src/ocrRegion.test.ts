@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { describe, expect, it, vi } from "vitest";
 import { allLines, exportHocr, exportText, type DocumentPage, type OcrChar, type OcrLine, type OcrWord, type Rect } from "./domain";
-import { addOcrRegion, prepareRegionOcrImage, removeOcrLineAtPoint, removeOcrLinesInRegion } from "./ocrRegion";
+import { addOcrRegion, prepareRegionOcrImage, removeOcrLineAtPoint, removeOcrLinesInRegion, mergeOcrLinesInRegion } from "./ocrRegion";
 
 function word(id: string, text: string, bbox: Rect): OcrWord {
   const chars: OcrChar[] = Array.from(text).map((value, index) => ({ index, originalText: value, correctedText: value, bbox: { ...bbox }, source: "ocr" }));
@@ -109,6 +109,60 @@ describe("manual OCR region", () => {
     expect(allLines(result.page).map(item => item.id)).toEqual(["large"]);
     expect(result.page.manualOcrRegions).toBeUndefined();
     expect(removeOcrLineAtPoint(initial, 200, 200).page).toBe(initial);
+  });
+
+  it("joins adjacent same-row regions left to right and retains corrections and formatting", () => {
+    const right = line("right", "text", { left: 100, top: 100, right: 140, bottom: 120 });
+    const left = line("left", "15", { left: 60, top: 102, right: 75, bottom: 112 });
+    right.correctedText = "corrected";
+    right.formatting = [{ start: 0, end: 9, kind: "italic" }];
+    const initial = page([right, left]);
+    const result = mergeOcrLinesInRegion(initial, { left: 55, top: 95, right: 145, bottom: 125 });
+    expect(result.mergedLines).toBe(2);
+    const merged = allLines(result.page)[0];
+    expect(allLines(result.page)).toHaveLength(1);
+    expect(merged.id).toBe("right");
+    expect(merged.originalText).toBe("15 text");
+    expect(merged.correctedText).toBe("15 corrected");
+    expect(merged.formatting).toEqual([{ start: 3, end: 12, kind: "italic" }]);
+    expect(merged.bbox).toEqual({ left: 60, top: 100, right: 140, bottom: 120 });
+    expect(merged.words.map(word => word.id)).toEqual(["left-word", "right-word"]);
+    expect(merged.scriptDetectionManuallyEdited).toBe(true);
+    expect(exportHocr([result.page])).toContain('id="right"');
+    expect(allLines(initial)).toHaveLength(2);
+  });
+
+  it("merges lines across independent blocks and removes the empty block", () => {
+    const a = line("a", "15", { left: 20, top: 100, right: 35, bottom: 115 });
+    const b = line("b", "Text", { left: 45, top: 100, right: 100, bottom: 120 });
+    const initial = page([a]);
+    initial.blocks.push({ id: "manual-block", bbox: b.bbox, paragraphs: [{ id: "manual-paragraph", bbox: b.bbox, lines: [b] }] });
+    initial.manualOcrRegions = [{ id: "manual", bbox: b.bbox, psm: 11, addedWordIds: ["b-word"], addedLineIds: ["b"] }];
+    const result = mergeOcrLinesInRegion(initial, { left: 15, top: 95, right: 105, bottom: 125 });
+    expect(result.page.blocks).toHaveLength(1);
+    expect(allLines(result.page)[0].correctedText).toBe("15 Text");
+    expect(result.page.manualOcrRegions?.[0].addedWordIds).toEqual(["b-word"]);
+    expect(result.page.manualOcrRegions?.[0].addedLineIds).toEqual([]);
+    expect(exportHocr([result.page])).toContain('id="b-word"');
+  });
+
+  it("rejects different rows, overlapping OCR, and nonconsecutive reading order", () => {
+    const a = line("a", "A", { left: 10, top: 10, right: 40, bottom: 30 });
+    const b = line("b", "B", { left: 50, top: 50, right: 80, bottom: 70 });
+    const row = page([a, b]);
+    expect(mergeOcrLinesInRegion(row, { left: 0, top: 0, right: 90, bottom: 75 }).reason).toBe("differentRows");
+    const nearNextRow = line("next", "Next", { left: 50, top: 25, right: 80, bottom: 45 });
+    expect(mergeOcrLinesInRegion(page([a, nearNextRow]), { left: 0, top: 0, right: 90, bottom: 50 }).reason).toBe("differentRows");
+    const raisedNumber = line("raised", "15", { left: 50, top: 2, right: 62, bottom: 10 });
+    expect(mergeOcrLinesInRegion(page([a, raisedNumber]), { left: 0, top: 0, right: 70, bottom: 35 }).mergedLines).toBe(2);
+    const c = line("c", "C", { left: 30, top: 10, right: 60, bottom: 30 });
+    expect(mergeOcrLinesInRegion(page([a, c]), { left: 0, top: 0, right: 70, bottom: 35 }).reason).toBe("overlap");
+    const differentClass = line("header", "Heading", { left: 50, top: 10, right: 90, bottom: 30 });
+    differentClass.hocrClasses = ["ocr_header"];
+    expect(mergeOcrLinesInRegion(page([a, differentClass]), { left: 0, top: 0, right: 95, bottom: 35 }).reason).toBe("classes");
+    const between = line("between", "Middle", { left: 0, top: 50, right: 10, bottom: 70 });
+    const d = line("d", "D", { left: 70, top: 10, right: 90, bottom: 30 });
+    expect(mergeOcrLinesInRegion(page([a, between, d]), { left: 0, top: 0, right: 95, bottom: 35 }).reason).toBe("readingOrder");
   });
 
   it("leaves the page untouched when Tesseract returns no new words", () => {
