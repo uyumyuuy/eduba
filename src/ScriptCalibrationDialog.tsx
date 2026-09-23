@@ -25,8 +25,10 @@ export type ScriptCalibrationDialogProps = {
   getSnippet: (candidate: ScriptCalibrationCandidate) => Promise<string | null> | string | null;
   /** Calculates the ranges to show using the draft settings. It never persists a change. */
   detectPreview: (candidate: ScriptCalibrationCandidate, settings: ScriptDetectionSettings) => TextFormatRange[];
-  /** Ask the project layer for another small, balanced randomized selection. */
-  onReshuffle?: (settings: ScriptDetectionSettings) => void;
+  /** Ask the project layer for another small, balanced selection from the displayed page. */
+  onReshuffleCurrentPage?: (settings: ScriptDetectionSettings) => void;
+  /** Ask the project layer for another small, balanced selection from the whole project. */
+  onReshuffleAllPages?: (settings: ScriptDetectionSettings) => void;
   onApply: (settings: ScriptDetectionSettings) => Promise<void> | void;
   onClose: () => void;
 };
@@ -64,7 +66,7 @@ function CandidateRow({ candidate, settings, getSnippet, detectPreview }: Pick<S
   </article>;
 }
 
-export function ScriptCalibrationDialog({ open, initialSettings, candidates, loading = false, progress, getSnippet, detectPreview, onReshuffle, onApply, onClose }: ScriptCalibrationDialogProps) {
+export function ScriptCalibrationDialog({ open, initialSettings, candidates, loading = false, progress, getSnippet, detectPreview, onReshuffleCurrentPage, onReshuffleAllPages, onApply, onClose }: ScriptCalibrationDialogProps) {
   const { t } = useTranslation();
   const [settings, setSettings] = useState<ScriptDetectionSettings>(initialSettings);
   const [working, setWorking] = useState(false);
@@ -107,7 +109,7 @@ export function ScriptCalibrationDialog({ open, initialSettings, candidates, loa
           <label className="script-calibration-scope"><span>{t("scriptCalibration.subscriptScope")}</span><select aria-label={t("scriptCalibration.subscriptScope")} value={settings.subscriptScope} onChange={event => setSettings(previous => ({ ...previous, subscriptScope: event.currentTarget.value as ScriptDetectionSettings["subscriptScope"] }))}><option value="digits-and-x">{t("scriptCalibration.digitsAndX")}</option><option value="all">{t("scriptCalibration.allCharacters")}</option></select></label>
         </fieldset>
       </div>
-      <div className="script-calibration-examples-head"><div><strong>{t("scriptCalibration.examples")}</strong><span>{t("scriptCalibration.previewHint")}</span></div><button type="button" className="text-button" onClick={() => onReshuffle?.(settings)} disabled={loading || working || !onReshuffle}><RefreshCw size={14} />{t("scriptCalibration.reshuffle")}</button></div>
+      <div className="script-calibration-examples-head"><div><strong>{t("scriptCalibration.examples")}</strong><span>{t("scriptCalibration.previewHint")}</span></div><div className="script-calibration-reshuffle-actions"><button type="button" className="text-button" onClick={() => onReshuffleCurrentPage?.(settings)} disabled={loading || working || !onReshuffleCurrentPage}><RefreshCw size={14} />{t("scriptCalibration.reshuffleCurrentPage")}</button><button type="button" className="text-button" onClick={() => onReshuffleAllPages?.(settings)} disabled={loading || working || !onReshuffleAllPages}><RefreshCw size={14} />{t("scriptCalibration.reshuffleAllPages")}</button></div></div>
       <div className="script-calibration-examples" aria-live="polite">
         {loading ? <p className="script-calibration-loading">{progress ? t("scriptCalibration.loadingProgress", progress) : t("scriptCalibration.loading")}</p> : candidates.map(candidate => <CandidateRow key={`${candidate.pageId}:${candidate.lineId}`} candidate={candidate} settings={settings} getSnippet={getSnippet} detectPreview={detectPreview} />)}
         {!loading && !candidates.length && <p className="script-calibration-loading">{t("scriptCalibration.noExamples")}</p>}

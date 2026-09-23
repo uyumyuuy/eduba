@@ -12,9 +12,10 @@
 .script-calibration-scope span { grid-column: 1; }
 .script-calibration-scope select { grid-column: 1 / -1; margin-top: 5px; }
 .script-calibration-examples-head { margin-top: 15px; padding: 9px 1px; border-top: 1px solid #e5e2d9; color: #64716c; }
-.script-calibration-examples-head > div { display: flex; flex-direction: column; gap: 3px; }
+.script-calibration-examples-head > div:first-child { display: flex; flex-direction: column; gap: 3px; }
 .script-calibration-examples-head strong { font: 10px "DM Mono", monospace; }
 .script-calibration-examples-head span { font-size: 10px; }
+.script-calibration-reshuffle-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 7px; }
 .script-calibration-examples-head .text-button { display: flex; align-items: center; gap: 5px; }
 .script-calibration-examples { min-height: 126px; max-height: 350px; overflow: auto; border: 1px solid #e0ddd4; border-radius: 6px; }
 .script-calibration-example { display: grid; grid-template-columns: minmax(200px, 1fr) minmax(200px, 1fr); min-height: 68px; border-bottom: 1px solid #ece9e1; }

@@ -79,6 +79,7 @@ type Entry = LogicalPageProvenance & {
 type Settings = { modelPath: string; psm: 3 | 6 | 11; dpi: number; scriptHeightReferenceVersion: number; scriptHeightProfile?: ScriptHeightProfile } & ScriptDetectionSettings;
 type Manifest = { version: 1; pages: Entry[]; settings: Settings };
 type HistoryChange = { pageId: string; beforeData: string; afterData: string };
+type ScriptCalibrationSampleScope = { kind: "all-pages" } | { kind: "current-page"; pageId: string };
 type LineEditSession = { id: number; pageId: string; lineId: string; beforeData: string };
 type HistoryOperation = { changes: HistoryChange[]; targetPageId: string; lineEditSessionId?: number; beforeSettings?: Settings; afterSettings?: Settings };
 type RenderedEntry = { canvas: HTMLCanvasElement; modeUsed: ImportMode; dpiX: number; dpiY: number; reason?: string; sourceWidth?: number; sourceHeight?: number; };
@@ -1241,7 +1242,10 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
     const remainder = shuffle(scriptCandidatePool.current.filter(item => !pickedKeys.has(`${item.pageId}:${item.lineId}`)));
     setScriptCalibrationCandidates([...picked, ...remainder].slice(0, 18));
   }, []);
-  const scanScriptCalibrationCandidates = useCallback(async (draftSettings: ScriptDetectionSettings = manifestRef.current.settings) => {
+  const scanScriptCalibrationCandidates = useCallback(async (
+    draftSettings: ScriptDetectionSettings = manifestRef.current.settings,
+    scope: ScriptCalibrationSampleScope = { kind: "all-pages" },
+  ) => {
     const projectInfo = projectRef.current;
     if (!projectInfo || scriptCalibrationLoading) return;
     const generation = ++scriptScanGeneration.current;
@@ -1250,11 +1254,14 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
     scriptCandidateLines.current.clear();
     scriptCandidateHeights.current.clear();
     scriptSnippetCanvases.current.clear();
-    const eligible = manifestRef.current.pages.filter(page => page.status === "review" && !page.completed);
+    const eligibleAll = manifestRef.current.pages.filter(page => page.status === "review" && !page.completed);
+    const eligible = scope.kind === "current-page"
+      ? eligibleAll.filter(page => page.id === scope.pageId)
+      : eligibleAll;
     const cached = scriptHeightProfileRef.current?.projectPath === projectInfo.path
       ? scriptHeightProfileRef.current.profile : undefined;
     const learning = !cached;
-    const total = eligible.length * (learning ? 2 : 1);
+    const total = eligible.length + (learning ? eligibleAll.length : 0);
     setScriptCalibrationProgress({ completed: 0, total });
     type Stored = { candidate: ScriptCalibrationCandidate; line: OcrLine; referenceHeight?: number };
     const buckets: Stored[][] = [[], [], []];
@@ -1271,9 +1278,9 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
       let profile = cached;
       if (!profile) {
         const trainer = new ScriptHeightTrainer();
-        for (let pageIndex = 0; pageIndex < eligible.length; pageIndex += 1) {
+        for (let pageIndex = 0; pageIndex < eligibleAll.length; pageIndex += 1) {
           if (generation !== scriptScanGeneration.current) return;
-          const saved = await invokeCommand("load_page", { projectPath: projectInfo.path, pageId: eligible[pageIndex].id });
+          const saved = await invokeCommand("load_page", { projectPath: projectInfo.path, pageId: eligibleAll[pageIndex].id });
           if (saved) trainer.addPage(JSON.parse(saved) as DocumentPage);
           setScriptCalibrationProgress({ completed: pageIndex + 1, total });
         }
@@ -1291,23 +1298,25 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
             line.correctedText === line.originalText && !line.geometryApproximate &&
             !line.scriptDetectionManuallyEdited && !line.formatting?.length,
           );
-          // Retain at most one page-local example per category, then reservoir
-          // sample each category. This keeps pages spread across a large book.
+          // Keep all eligible lines when sampling one page so its selection can
+          // still fill the balanced 18-example preview. Across all pages, retain
+          // one page-local line per category before reservoir sampling.
           const selected: Array<{ line: OcrLine; referenceHeight?: number } | undefined> = [undefined, undefined, undefined];
           for (const line of lines) {
             const referenceHeight = references.get(line.id);
             if (!referenceHeight) continue;
             const ranges = detectScriptRanges(line, draftSettings, referenceHeight, profile);
             const category = ranges.some(range => range.kind === "superscript") ? 0 : ranges.some(range => range.kind === "subscript") ? 1 : 2;
-            if (!selected[category] || Math.random() < 0.5) selected[category] = { line, referenceHeight };
+            if (scope.kind === "current-page") add(category, { candidate: { pageId: entry.id, lineId: line.id, lineText: line.correctedText, bbox: line.bbox }, line, referenceHeight });
+            else if (!selected[category] || Math.random() < 0.5) selected[category] = { line, referenceHeight };
           }
-          selected.forEach((item, category) => {
+          if (scope.kind !== "current-page") selected.forEach((item, category) => {
             if (!item) return;
             const { line, referenceHeight } = item;
             add(category, { candidate: { pageId: entry.id, lineId: line.id, lineText: line.correctedText, bbox: line.bbox }, line, referenceHeight });
           });
         }
-        setScriptCalibrationProgress({ completed: (learning ? eligible.length : 0) + pageIndex + 1, total });
+        setScriptCalibrationProgress({ completed: (learning ? eligibleAll.length : 0) + pageIndex + 1, total });
       }
       if (generation !== scriptScanGeneration.current) return;
       const retained = buckets.flat();
@@ -1900,7 +1909,8 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
             const line = scriptCandidateLines.current.get(`${candidate.pageId}:${candidate.lineId}`);
             return line ? detectScriptRanges(line, settings, scriptCandidateHeights.current.get(`${candidate.pageId}:${candidate.lineId}`), scriptHeightProfileRef.current?.profile) : [];
           }}
-          onReshuffle={(settings) => void scanScriptCalibrationCandidates(settings)}
+          onReshuffleCurrentPage={current?.status === "review" && !current.completed ? (settings) => void scanScriptCalibrationCandidates(settings, { kind: "current-page", pageId: current.id }) : undefined}
+          onReshuffleAllPages={(settings) => void scanScriptCalibrationCandidates(settings, { kind: "all-pages" })}
           onApply={applyScriptCalibration}
           onClose={() => {
             scriptScanGeneration.current += 1;
