@@ -211,16 +211,14 @@ export function removeOcrLineAtPoint(page: DocumentPage, x: number, y: number): 
   return removeLineIds(page, new Set(target ? [target.id] : []));
 }
 
-export type MergeRegionResult = { page: DocumentPage; mergedLines: number; reason?: "tooFew" | "readingOrder" | "differentRows" | "overlap" | "classes" };
+export type MergeRegionResult = { page: DocumentPage; mergedLines: number; reason?: "tooFew" | "differentRows" | "overlap" | "classes" };
 
-/** Join adjacent reading-order lines on one visual row without discarding edits or OCR boxes. */
+/** Join selected lines on one visual row without discarding edits or OCR boxes. */
 export function mergeOcrLinesInRegion(page: DocumentPage, selection: Rect): MergeRegionResult {
   const ordered = allLines(page);
-  const selected = ordered.map((line, index) => ({ line, index })).filter(item => intersects(item.line.bbox, selection));
+  const selected = ordered.filter(line => intersects(line.bbox, selection));
   if (selected.length < 2) return { page, mergedLines: 0, reason: "tooFew" };
-  if (selected.some((item, index) => index && item.index !== selected[index - 1].index + 1))
-    return { page, mergedLines: 0, reason: "readingOrder" };
-  const byX = selected.map(item => item.line).sort((a, b) => a.bbox.left - b.bbox.left || a.bbox.top - b.bbox.top);
+  const byX = selected.slice().sort((a, b) => a.bbox.left - b.bbox.left || a.bbox.top - b.bbox.top);
   const classes = (line: OcrLine) => (line.hocrClasses?.length ? line.hocrClasses : ["ocr_line"]).slice().sort().join(" ");
   if (byX.some(line => classes(line) !== classes(byX[0]))) return { page, mergedLines: 0, reason: "classes" };
   for (let i = 0; i < byX.length; i++) for (let j = i + 1; j < byX.length; j++) {
@@ -239,8 +237,8 @@ export function mergeOcrLinesInRegion(page: DocumentPage, selection: Rect): Merg
     if (a.right - b.left > allowedOverlap) return { page, mergedLines: 0, reason: "overlap" };
   }
   const next: DocumentPage = JSON.parse(JSON.stringify(page));
-  const selectedIds = new Set(selected.map(item => item.line.id));
-  const primaryId = selected[0].line.id;
+  const selectedIds = new Set(selected.map(line => line.id));
+  const primaryId = selected[0].id;
   const mergedBox = union(byX.map(line => line.bbox));
   const originalText = byX.map(line => line.originalText).join(" ");
   const correctedText = byX.map(line => line.correctedText).join(" ");

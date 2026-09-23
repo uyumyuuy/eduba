@@ -621,6 +621,84 @@ describe("saved project loading", () => {
     await waitFor(() => expect(JSON.parse(persistedPages.get("page-1")!).blocks[0].paragraphs[0].lines).toHaveLength(2));
   });
 
+  it("shows an exit button for each active OCR region mode", async () => {
+    await openSavedProject();
+    for (const [start, finish] of [
+      ["Add OCR region", "Finish adding OCR regions"],
+      ["Delete OCR region", "Finish deleting OCR regions"],
+      ["Merge OCR regions", "Finish merging OCR regions"],
+    ]) {
+      const button = Array.from(container.querySelectorAll<HTMLButtonElement>("button"))
+        .find(item => item.textContent?.includes(start))!;
+      await act(async () => button.click());
+      expect(button.textContent).toContain(finish);
+      expect(button.getAttribute("aria-pressed")).toBe("true");
+      await act(async () => button.click());
+      expect(button.textContent).toContain(start);
+      expect(button.getAttribute("aria-pressed")).toBe("false");
+    }
+  });
+
+  it("shows reading-order badges and arrows, then saves clicks and a drag as undoable steps", async () => {
+    const saved = JSON.parse(persistedPages.get("page-1")!);
+    const first = saved.blocks[0].paragraphs[0].lines[0];
+    first.bbox = { left: 5, top: 10, right: 45, bottom: 20 };
+    for (const [id, top] of [["b", 30], ["c", 50], ["d", 65]] as const) {
+      saved.blocks[0].paragraphs[0].lines.push({ ...first, id, bbox: { left: 5, top, right: 45, bottom: top + 10 },
+        originalText: id, correctedText: id });
+    }
+    persistedPages.set("page-1", JSON.stringify(saved));
+    await openSavedProject();
+    const button = Array.from(container.querySelectorAll<HTMLButtonElement>("button")).find(item => item.textContent?.includes("Change reading order"))!;
+    await act(async () => button.click());
+    expect(container.querySelector(".region-instruction")?.textContent).toContain("Select the first");
+    expect(container.querySelector(".region-instruction")?.textContent).toContain("or Esc");
+    expect(button.textContent).toContain("Finish changing reading order");
+    expect(container.querySelectorAll(".reading-order-overlay circle")).toHaveLength(4);
+    expect(container.querySelectorAll(".reading-order-overlay line")).toHaveLength(3);
+    const surface = container.querySelector<HTMLDivElement>(".layout-card")!;
+    vi.spyOn(surface, "getBoundingClientRect").mockReturnValue({ left: 0, top: 0, right: 100, bottom: 80, width: 100, height: 80 } as DOMRect);
+    Object.defineProperties(surface, {
+      setPointerCapture: { configurable: true, value: vi.fn() },
+      hasPointerCapture: { configurable: true, value: vi.fn(() => true) },
+      releasePointerCapture: { configurable: true, value: vi.fn() },
+    });
+    const pointer = (type: string, x: number, y: number) => {
+      const event = new MouseEvent(type, { bubbles: true, button: 0, clientX: x, clientY: y });
+      Object.defineProperty(event, "pointerId", { value: 5 });
+      return event;
+    };
+    const clickLine = async (y: number) => {
+      await act(async () => { surface.dispatchEvent(pointer("pointerdown", 10, y)); surface.dispatchEvent(pointer("pointerup", 10, y)); });
+    };
+    await clickLine(15);
+    expect(container.querySelector(".region-instruction")?.textContent).toContain("Select the next");
+    expect(container.querySelectorAll(".layout-svg rect.reading-order-active")).toHaveLength(1);
+    await clickLine(70);
+    await waitFor(() => expect(JSON.parse(persistedPages.get("page-1")!).blocks[0].paragraphs[0].lines.map((line: { id: string }) => line.id)).toEqual(["page-1-line", "d", "b", "c"]));
+    expect(Array.from(container.querySelectorAll<SVGGElement>(".reading-order-overlay g")).find(group => group.querySelector("circle")?.getAttribute("cy") === "70")?.textContent).toBe("2");
+    await act(async () => {
+      surface.dispatchEvent(pointer("pointerdown", 10, 55));
+      surface.dispatchEvent(pointer("pointermove", 10, 35));
+      surface.dispatchEvent(pointer("pointermove", 10, 55));
+      surface.dispatchEvent(pointer("pointermove", 10, 35));
+    });
+    await act(async () => surface.dispatchEvent(pointer("pointerup", 10, 35)));
+    await waitFor(() => expect(JSON.parse(persistedPages.get("page-1")!).blocks[0].paragraphs[0].lines.map((line: { id: string }) => line.id)).toEqual(["page-1-line", "d", "c", "b"]));
+    expect(Array.from(container.querySelectorAll<SVGGElement>(".reading-order-overlay g")).find(group => group.querySelector("circle")?.getAttribute("cy") === "55")?.textContent).toBe("3");
+    const undoButton = Array.from(container.querySelectorAll<HTMLButtonElement>("button")).find(item => item.textContent?.includes("Undo"))!;
+    await act(async () => undoButton.click());
+    await waitFor(() => expect(JSON.parse(persistedPages.get("page-1")!).blocks[0].paragraphs[0].lines.map((line: { id: string }) => line.id)).toEqual(["page-1-line", "d", "b", "c"]));
+    await act(async () => button.click());
+    expect(container.querySelector(".reading-order-overlay")).toBeNull();
+    expect(button.textContent).toContain("Change reading order");
+    await act(async () => button.click());
+    expect(container.querySelector(".reading-order-overlay")).not.toBeNull();
+    await act(async () => window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })));
+    expect(container.querySelector(".reading-order-overlay")).toBeNull();
+    expect(button.textContent).toContain("Change reading order");
+  });
+
   it("wires both scroll panes and ignores the reciprocal programmatic scroll", async () => {
     await openSavedProject();
     const pdfStage = container.querySelector<HTMLDivElement>(".pdf-stage")!;

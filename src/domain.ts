@@ -68,6 +68,8 @@ export interface OcrLine {
   chars: OcrChar[];
   /** True when the line is rendered from approximate line geometry. */
   geometryApproximate: boolean;
+  /** Original hOCR grouping retained when manual reading order splits containers. */
+  readingOrderOrigin?: { blockId: string; paragraphId: string };
 }
 
 /** Formatting for render/export. Manual script choices override automatic ones. */
@@ -127,6 +129,8 @@ export interface DocumentPage extends LogicalPageProvenance {
   manualOcrRegions?: { id: string; bbox: Rect; psm: 11; addedWordIds: string[]; addedLineIds: string[] }[];
   /** Removed OCR lines are retained only as a manual-change marker until full-page OCR. */
   deletedOcrLineIds?: string[];
+  /** A user has changed the line reading order on this page. */
+  manualReadingOrder?: boolean;
 }
 
 export interface HocrParseOptions {

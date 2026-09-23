@@ -77,6 +77,8 @@ button:disabled { cursor: not-allowed; opacity: .42; }
 .layout-svg { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
 .layout-svg rect { fill: rgba(73, 148, 140, .08); stroke: rgba(73, 148, 140, .42); stroke-width: 2; stroke-dasharray: 5 4; }
 .layout-svg rect.selected { fill: rgba(47, 116, 112, .17); stroke: var(--teal); stroke-width: 3; stroke-dasharray: none; }
+.layout-svg rect.reading-order-chosen { fill: rgba(55, 125, 130, .2); stroke: #377d82; stroke-width: 3; stroke-dasharray: none; }
+.layout-svg rect.reading-order-active { fill: rgba(217, 149, 63, .24); stroke: #ae712f; stroke-width: 3; stroke-dasharray: none; }
 .line-editor { position: relative; z-index: 1; display: flex; flex-direction: column; gap: 12px; }
 .line-row { display: grid; grid-template-columns: 22px 1fr 26px; align-items: start; gap: 5px; min-height: 28px; padding: 3px 5px; border: 1px solid transparent; border-radius: 4px; }
 .line-row:hover { border-color: #c8ddd6; background: rgba(235,245,241,.7); }
@@ -185,3 +187,13 @@ button:disabled { cursor: not-allowed; opacity: .42; }
 .region-merge-button { background: #e6edf3; color: #47657d; }
 .region-merge-button:hover:not(:disabled), .region-merge-button.active { background: #d2e3ef; color: #2e5678; }
 .region-selection.merging { z-index: 6; border-color: #4c82a7; background: rgba(75,133,176,.22); }
+.region-order-button { background: #e8eef1; color: #345d67; }
+.region-order-button:hover:not(:disabled), .region-order-button.active { background: #cee3e9; color: #1f5360; }
+.reading-order-overlay { position: absolute; z-index: 5; inset: 0; width: 100%; height: 100%; pointer-events: none; overflow: visible; }
+.reading-order-overlay circle { fill: #fffefa; stroke: #275e6a; stroke-width: 2.5px; vector-effect: non-scaling-stroke; filter: drop-shadow(0 1px 3px rgba(0,0,0,.35)); }
+.reading-order-overlay text { fill: #173b45; font-family: Manrope, sans-serif; paint-order: stroke; }
+.reading-order-overlay .reading-order-chosen circle { fill: #377d82; stroke: #fff; }
+.reading-order-overlay .reading-order-chosen text { fill: #fff; }
+.reading-order-overlay .reading-order-active circle { fill: #d9953f; stroke: #fff; }
+.reading-order-overlay .reading-order-active text { fill: #fff; }
+.reading-order-overlay .reading-order-hover circle { fill: #fff3d7; stroke: #ae712f; }

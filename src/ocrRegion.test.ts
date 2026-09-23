@@ -146,7 +146,7 @@ describe("manual OCR region", () => {
     expect(exportHocr([result.page])).toContain('id="b-word"');
   });
 
-  it("rejects different rows, overlapping OCR, and nonconsecutive reading order", () => {
+  it("rejects different rows and overlapping OCR, but merges nonconsecutive same-row lines", () => {
     const a = line("a", "A", { left: 10, top: 10, right: 40, bottom: 30 });
     const b = line("b", "B", { left: 50, top: 50, right: 80, bottom: 70 });
     const row = page([a, b]);
@@ -162,7 +162,11 @@ describe("manual OCR region", () => {
     expect(mergeOcrLinesInRegion(page([a, differentClass]), { left: 0, top: 0, right: 95, bottom: 35 }).reason).toBe("classes");
     const between = line("between", "Middle", { left: 0, top: 50, right: 10, bottom: 70 });
     const d = line("d", "D", { left: 70, top: 10, right: 90, bottom: 30 });
-    expect(mergeOcrLinesInRegion(page([a, between, d]), { left: 0, top: 0, right: 95, bottom: 35 }).reason).toBe("readingOrder");
+    const nonconsecutive = mergeOcrLinesInRegion(page([a, between, d]), { left: 0, top: 0, right: 95, bottom: 35 });
+    expect(nonconsecutive.mergedLines).toBe(2);
+    expect(allLines(nonconsecutive.page).map(item => item.id)).toEqual(["a", "between"]);
+    expect(allLines(nonconsecutive.page)[0].correctedText).toBe("A D");
+    expect(exportHocr([nonconsecutive.page]).indexOf('id="a"')).toBeLessThan(exportHocr([nonconsecutive.page]).indexOf('id="between"'));
   });
 
   it("leaves the page untouched when Tesseract returns no new words", () => {

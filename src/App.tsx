@@ -24,6 +24,7 @@ import {
   ScanLine,
   Eraser,
   GitMerge,
+  ListOrdered,
   X,
 } from "lucide-react";
 import { canvasToBase64, openProjectPdf, openSourcePdf } from "./pdf";
@@ -57,6 +58,7 @@ import { DEFAULT_SCRIPT_DETECTION_SETTINGS, SCRIPT_HEIGHT_REFERENCE_VERSION, Scr
 import { BulkReplaceDialog, type BulkMatch, type BulkReplaceRequest } from "./BulkReplaceDialog";
 import { prepareBulkUpdates } from "./bulkApply";
 import { addOcrRegion, prepareRegionOcrImage, removeOcrLinesInRegion, removeOcrLineAtPoint, mergeOcrLinesInRegion } from "./ocrRegion";
+import { lineIdsCrossed, moveLineAfter, reorderPageLines, type Point } from "./readingOrder";
 import { candidatesForSelection } from "./correctionCandidates";
 import { importEntries, type ImportConfig } from "./importConfig";
 import { loadPageImage, type ImportMode } from "./pageImage";
@@ -327,9 +329,13 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
   const [canvasSize, setCanvasSize] = useState({ width: 0, height: 0 });
   const [selected, setSelected] = useState<string | null>(null);
   const [editing, setEditing] = useState<string | null>(null);
-  const [regionMode, setRegionMode] = useState<"add" | "delete" | "merge" | null>(null);
+  const [regionMode, setRegionMode] = useState<"add" | "delete" | "merge" | "order" | null>(null);
   const [regionSelection, setRegionSelection] = useState<Rect | null>(null);
   const [regionHintHidden, setRegionHintHidden] = useState(false);
+  const [orderVisited, setOrderVisited] = useState<string[]>([]);
+  const [orderPendingVisited, setOrderPendingVisited] = useState<string[]>([]);
+  const [orderPreviewIds, setOrderPreviewIds] = useState<string[] | null>(null);
+  const [orderHoverId, setOrderHoverId] = useState<string | null>(null);
   const [undoStack, setUndoStack] = useState<HistoryOperation[]>([]);
   const [redoStack, setRedoStack] = useState<HistoryOperation[]>([]);
   const [zoom, setZoom] = useState(0.42);
@@ -358,6 +364,8 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
   const pdfPageRef = useRef<HTMLDivElement>(null);
   const regionHintRef = useRef<HTMLDivElement>(null);
   const suppressLayoutClick = useRef(false);
+  const orderVisitedRef = useRef<string[]>([]);
+  const orderDrag = useRef<{ pointerId: number; page: DocumentPage; last: Point; clientX: number; clientY: number; ids: string[]; priorVisited: string[]; visits: string[] } | null>(null);
   const regionDrag = useRef<{ pointerId: number; x: number; y: number; clientX: number; clientY: number } | null>(null);
   const regionScrollTimer = useRef<number | null>(null);
   const pdfStageRef = useRef<HTMLDivElement>(null);
@@ -850,6 +858,7 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
     const targetChange = operation.changes.find((change) => change.pageId === operation.targetPageId);
     if (target === indexRef.current && targetChange) putDoc(JSON.parse(reverse ? targetChange.beforeData : targetChange.afterData) as DocumentPage);
     else putIndex(target);
+    orderVisitedRef.current = []; setOrderVisited([]); setOrderPendingVisited([]); setOrderPreviewIds(null);
   }, [flush, putDoc, putIndex, putManifest]);
   const undo = useCallback(async () => {
     if (working.current || importActive.current || historyApplying.current) return;
@@ -1027,6 +1036,7 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
       const hasManualCorrections = scope === "current" && Boolean(docRef.current && (
         (docRef.current.manualOcrRegions?.length ?? 0) > 0 ||
         (docRef.current.deletedOcrLineIds?.length ?? 0) > 0 ||
+        Boolean(docRef.current.manualReadingOrder) ||
         allLines(docRef.current).some(line => line.scriptDetectionManuallyEdited) ||
         allLines(docRef.current).some(line =>
           line.correctedText !== line.originalText ||
@@ -1255,6 +1265,117 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
     setRegionMode(null);
     void addSelectedRegion(selection);
   }, [addSelectedRegion, clientToRegionPage, deleteSelectedRegion, mergeSelectedRegion, regionMode, setNotice, stopRegionScroll]);
+  const extendReadingOrder = useCallback((drag: NonNullable<typeof orderDrag.current>, point: Point) => {
+    const previous = drag.last;
+    drag.last = point;
+    const already = new Set([...drag.priorVisited, ...drag.visits]);
+    let changed = false;
+    for (const id of lineIdsCrossed(allLines(drag.page), previous, point)) {
+      if (already.has(id)) continue;
+      const anchor = drag.visits.at(-1) ?? drag.priorVisited.at(-1);
+      if (anchor) drag.ids = moveLineAfter(drag.ids, anchor, id);
+      drag.visits.push(id);
+      already.add(id);
+      changed = true;
+    }
+    if (changed) {
+      setOrderPendingVisited(drag.visits.slice());
+      setOrderPreviewIds(drag.ids.slice());
+    }
+  }, []);
+  const onOrderPointerDown = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
+    if (regionMode !== "order" || event.button !== 0 || busy || working.current || !docRef.current) return;
+    const point = clientToRegionPage(event.clientX, event.clientY);
+    if (!point) return;
+    event.preventDefault();
+    event.currentTarget.setPointerCapture(event.pointerId);
+    const page = docRef.current;
+    const drag = { pointerId: event.pointerId, page, last: point,
+      clientX: event.clientX, clientY: event.clientY,
+      ids: allLines(page).map(line => line.id), priorVisited: orderVisitedRef.current.slice(), visits: [] as string[] };
+    orderDrag.current = drag;
+    extendReadingOrder(drag, point);
+    stopRegionScroll();
+    regionScrollTimer.current = window.setInterval(() => {
+      const active = orderDrag.current, stage = ocrStageRef.current;
+      if (!active || !stage) return;
+      const bounds = stage.getBoundingClientRect();
+      const edge = 28;
+      const dx = active.clientX < bounds.left + edge ? -14 : active.clientX > bounds.right - edge ? 14 : 0;
+      const dy = active.clientY < bounds.top + edge ? -14 : active.clientY > bounds.bottom - edge ? 14 : 0;
+      if (!dx && !dy) return;
+      const oldLeft = stage.scrollLeft, oldTop = stage.scrollTop;
+      stage.scrollLeft += dx; stage.scrollTop += dy;
+      if (oldLeft === stage.scrollLeft && oldTop === stage.scrollTop) return;
+      const next = clientToRegionPage(active.clientX, active.clientY);
+      if (next) extendReadingOrder(active, next);
+    }, 30);
+  }, [busy, clientToRegionPage, extendReadingOrder, regionMode, stopRegionScroll]);
+  const onOrderPointerMove = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
+    if (regionMode !== "order") return;
+    const point = clientToRegionPage(event.clientX, event.clientY);
+    if (!point) return;
+    const drag = orderDrag.current;
+    if (drag && drag.pointerId === event.pointerId) {
+      drag.clientX = event.clientX; drag.clientY = event.clientY;
+      extendReadingOrder(drag, point);
+    } else if (!drag && docRef.current) {
+      setOrderHoverId(lineIdsCrossed(allLines(docRef.current), point, point)[0] ?? null);
+    }
+  }, [clientToRegionPage, extendReadingOrder, regionMode]);
+  const onOrderPointerUp = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
+    const drag = orderDrag.current;
+    if (!drag || drag.pointerId !== event.pointerId) return;
+    const point = clientToRegionPage(event.clientX, event.clientY);
+    if (point) extendReadingOrder(drag, point);
+    orderDrag.current = null;
+    stopRegionScroll();
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
+    suppressLayoutClick.current = true;
+    window.setTimeout(() => { suppressLayoutClick.current = false; }, 0);
+    if (!drag.visits.length) { setOrderPendingVisited([]); setOrderPreviewIds(null); return; }
+    const visited = [...drag.priorVisited, ...drag.visits];
+    const oldIds = allLines(drag.page).map(line => line.id);
+    if (drag.ids.every((id, index) => id === oldIds[index])) {
+      orderVisitedRef.current = visited; setOrderVisited(visited); setOrderPendingVisited([]); setOrderPreviewIds(null);
+      return;
+    }
+    const entry = manifestRef.current.pages[indexRef.current];
+    const info = projectRef.current;
+    if (!entry || entry.id !== drag.page.id || !info || working.current) { setOrderPendingVisited([]); setOrderPreviewIds(null); return; }
+    working.current = true;
+    setBusy("save");
+    void (async () => {
+      try {
+        await flush();
+        const next = reorderPageLines(drag.page, drag.ids);
+        const changes = await invokeCommand("apply_bulk_corrections", {
+          projectPath: info.path,
+          updates: [{ pageId: entry.id, expectedData: JSON.stringify(copy(drag.page)), data: JSON.stringify(copy(next)) }],
+        });
+        if (changes.length !== 1) throw new Error("Reading order could not be saved.");
+        putDoc(next);
+        setUndoStack(old => [...old, { targetPageId: entry.id, changes }].slice(-100));
+        setRedoStack([]);
+        orderVisitedRef.current = visited; setOrderVisited(visited);
+        setNotice("notices.readingOrderUpdated");
+      } catch (error) {
+        setNotice("notices.saveFailed", { error: errorText(error) });
+      } finally {
+        setOrderPendingVisited([]);
+        setOrderPreviewIds(null);
+        working.current = false;
+        setBusy(null);
+      }
+    })();
+  }, [clientToRegionPage, extendReadingOrder, flush, putDoc, setNotice, stopRegionScroll]);
+  const onOrderPointerCancel = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
+    if (orderDrag.current?.pointerId !== event.pointerId) return;
+    orderDrag.current = null;
+    stopRegionScroll();
+    setOrderPendingVisited([]);
+    setOrderPreviewIds(null);
+  }, [stopRegionScroll]);
   const exportFile = useCallback(
     async (type: "txt" | "hocr" | "svg", scope: "current" | "all" = "all") => {
       if (!projectRef.current || working.current || importActive.current)
@@ -1763,6 +1884,13 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
     setBulkReplace(null);
   }, [flush, project, putDoc]);
   const lines = useMemo(() => (doc ? allLines(doc) : []), [doc]);
+  const orderedLines = useMemo(() => {
+    if (!orderPreviewIds) return lines;
+    const byId = new Map(lines.map(line => [line.id, line]));
+    return orderPreviewIds.map(id => byId.get(id)).filter((line): line is OcrLine => line != null);
+  }, [lines, orderPreviewIds]);
+  const orderChosenIds = new Set([...orderVisited, ...orderPendingVisited]);
+  const activeOrderId = orderPendingVisited.at(-1) ?? orderVisited.at(-1);
   const w = canvasSize.width * zoom,
     h = canvasSize.height * zoom;
   const synchronizeProofingPane = useCallback((sourcePane: "pdf" | "ocr") => {
@@ -1787,6 +1915,15 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
   }, [synchronizeProofingPane]);
   useEffect(() => { setRegionMode(null); setRegionSelection(null); regionDrag.current = null; stopRegionScroll(); }, [current?.id, stopRegionScroll]);
   useEffect(() => { setRegionHintHidden(false); }, [regionMode]);
+  useEffect(() => {
+    if (regionMode === "order") return;
+    orderDrag.current = null;
+    orderVisitedRef.current = [];
+    setOrderVisited([]);
+    setOrderPendingVisited([]);
+    setOrderPreviewIds(null);
+    setOrderHoverId(null);
+  }, [regionMode]);
   useEffect(() => {
     if (regionMode && (current?.completed || busy === "ocr")) {
       regionDrag.current = null; stopRegionScroll(); setRegionSelection(null); setRegionMode(null);
@@ -1998,7 +2135,7 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
                   setRegionMode("add");
                 })();
               }}
-            ><ScanLine size={15} /> {t("ui.addOcrRegion")}</button>
+            >{regionMode === "add" ? <X size={15} /> : <ScanLine size={15} />} {t(regionMode === "add" ? "ui.finishAddOcrRegion" : "ui.addOcrRegion")}</button>
             <button
               className={"region-add-button region-delete-button" + (regionMode === "delete" ? " active" : "")}
               disabled={current?.status !== "review" || !doc || !canvasSize.width || Boolean(busy)}
@@ -2014,7 +2151,7 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
                   setRegionMode("delete");
                 })();
               }}
-            ><Eraser size={15} /> {t("ui.deleteOcrRegion")}</button>
+            >{regionMode === "delete" ? <X size={15} /> : <Eraser size={15} />} {t(regionMode === "delete" ? "ui.finishDeleteOcrRegion" : "ui.deleteOcrRegion")}</button>
             <button
               className={"region-add-button region-merge-button" + (regionMode === "merge" ? " active" : "")}
               disabled={current?.status !== "review" || !doc || !canvasSize.width || Boolean(busy)}
@@ -2030,7 +2167,24 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
                   setRegionMode("merge");
                 })();
               }}
-            ><GitMerge size={15} /> {t("ui.mergeOcrRegions")}</button>
+            >{regionMode === "merge" ? <X size={15} /> : <GitMerge size={15} />} {t(regionMode === "merge" ? "ui.finishMergeOcrRegions" : "ui.mergeOcrRegions")}</button>
+            <button
+              className={"region-add-button region-order-button" + (regionMode === "order" ? " active" : "")}
+              disabled={current?.status !== "review" || !doc || !canvasSize.width || Boolean(busy)}
+              aria-pressed={regionMode === "order"}
+              onClick={() => {
+                if (regionMode === "order") { setRegionMode(null); return; }
+                void (async () => {
+                  const active = manifestRef.current.pages[indexRef.current];
+                  if (!active || !await clearCompletion([active.id])) return;
+                  if (manifestRef.current.pages[indexRef.current]?.id !== active.id) return;
+                  finishLineEditRef.current();
+                  setSelected(null);
+                  orderVisitedRef.current = []; setOrderVisited([]); setOrderPendingVisited([]); setOrderPreviewIds(null);
+                  setRegionMode("order");
+                })();
+              }}
+            ><ListOrdered size={15} /> {t(regionMode === "order" ? "ui.finishReadingOrder" : "ui.changeReadingOrder")}</button>
             {current?.status === "review" && <label className="page-complete-toggle" title={t("ui.pageCompleteHint")}>
               <input type="checkbox" checked={Boolean(current.completed)} disabled={Boolean(busy)} onChange={(event) => {
                 if (event.currentTarget.checked) finishLineEditRef.current();
@@ -2117,19 +2271,20 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
                 <span>{t("ui.recognitionLayout")}</span>
                 {regionMode === null || regionMode === "add" ? <span className="pane-hint">{t("ui.clickLine")}</span> : null}
               </div>
-              {(regionMode === "delete" || regionMode === "merge") && <div ref={regionHintRef} className={"region-instruction" + (regionHintHidden ? " hidden" : "")} role="status">
-                {t(regionMode === "merge" ? "ui.regionMergeHint" : "ui.regionDeleteHint")}
+              {(regionMode === "delete" || regionMode === "merge" || regionMode === "order") && <div ref={regionHintRef} className={"region-instruction" + (regionHintHidden ? " hidden" : "")} role="status">
+                {t(regionMode === "order" ? (orderChosenIds.size ? "ui.readingOrderNextHint" : "ui.readingOrderFirstHint") : regionMode === "merge" ? "ui.regionMergeHint" : "ui.regionDeleteHint")}
               </div>}
               <div ref={ocrStageRef} className="ocr-stage" onScroll={() => onProofingScroll("ocr")}>
                 {doc && canvasSize.width ? (
                   <div
                     ref={layoutCardRef}
-                    className={"layout-card" + (regionMode === "delete" || regionMode === "merge" ? " selecting" : "")}
+                    className={"layout-card" + (regionMode === "delete" || regionMode === "merge" || regionMode === "order" ? " selecting" : "")}
                     style={{ width: w, height: h, minHeight: h }}
-                    onPointerDown={onRegionPointerDown}
-                    onPointerMove={onRegionPointerMove}
-                    onPointerUp={onRegionPointerUp}
-                    onPointerCancel={(event) => {
+                    onPointerDown={regionMode === "order" ? onOrderPointerDown : onRegionPointerDown}
+                    onPointerMove={regionMode === "order" ? onOrderPointerMove : onRegionPointerMove}
+                    onPointerLeave={() => { if (!orderDrag.current) setOrderHoverId(null); }}
+                    onPointerUp={regionMode === "order" ? onOrderPointerUp : onRegionPointerUp}
+                    onPointerCancel={regionMode === "order" ? onOrderPointerCancel : (event) => {
                       if (regionDrag.current?.pointerId !== event.pointerId) return;
                       regionDrag.current = null;
                       stopRegionScroll();
@@ -2146,7 +2301,11 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
                       {lines.map((line) => (
                         <g key={line.id}>
                           <rect
-                            className={selected === line.id ? "selected" : ""}
+                            className={regionMode === "order" && line.id === activeOrderId
+                              ? "reading-order-active"
+                              : regionMode === "order" && orderChosenIds.has(line.id)
+                                ? "reading-order-chosen"
+                                : selected === line.id ? "selected" : ""}
                             x={line.bbox.left}
                             y={line.bbox.top}
                             width={Math.max(
@@ -2180,6 +2339,29 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
                         </g>
                       ))}
                     </svg>
+                    {regionMode === "order" && <svg className="reading-order-overlay" viewBox={`0 0 ${canvasSize.width} ${canvasSize.height}`} aria-label={t("ui.readingOrderOverlay")}>
+                      <defs><marker id="reading-order-arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth={8 / zoom} markerHeight={8 / zoom} markerUnits="userSpaceOnUse" orient="auto"><path d="M 0 0 L 10 5 L 0 10 z" fill="#275e6a" /></marker></defs>
+                      {orderedLines.slice(0, -1).map((line, number) => {
+                        const next = orderedLines[number + 1];
+                        const x1 = (line.bbox.left + line.bbox.right) / 2, y1 = (line.bbox.top + line.bbox.bottom) / 2;
+                        const x2 = (next.bbox.left + next.bbox.right) / 2, y2 = (next.bbox.top + next.bbox.bottom) / 2;
+                        const dx = x2 - x1, dy = y2 - y1, length = Math.hypot(dx, dy);
+                        if (length < 1) return null;
+                        const radius = 13 / zoom;
+                        return <line key={line.id + "-arrow"} x1={x1 + dx * radius / length} y1={y1 + dy * radius / length}
+                          x2={x2 - dx * radius / length} y2={y2 - dy * radius / length}
+                          stroke="#275e6a" strokeWidth={2.4 / zoom} opacity=".9" markerEnd="url(#reading-order-arrow)" />;
+                      })}
+                      {orderedLines.map((line, number) => {
+                        const x = (line.bbox.left + line.bbox.right) / 2, y = (line.bbox.top + line.bbox.bottom) / 2;
+                        const active = line.id === activeOrderId;
+                        const chosen = orderChosenIds.has(line.id);
+                        return <g key={line.id} className={active ? "reading-order-active" : chosen ? "reading-order-chosen" : line.id === orderHoverId ? "reading-order-hover" : ""}>
+                          <circle cx={x} cy={y} r={13 / zoom} />
+                          <text x={x} y={y} textAnchor="middle" dominantBaseline="central" fontSize={11 / zoom} fontWeight="700">{number + 1}</text>
+                        </g>;
+                      })}
+                    </svg>}
                     {(regionMode === "delete" || regionMode === "merge") && regionSelection && <div className={"region-selection " + (regionMode === "merge" ? "merging" : "deleting")} style={{
                       left: regionSelection.left * zoom, top: regionSelection.top * zoom,
                       width: (regionSelection.right - regionSelection.left) * zoom,
