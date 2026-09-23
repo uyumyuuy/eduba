@@ -95,21 +95,25 @@ function ReplacementEditor({ value, formatting, onChange, onFormattingChange }: 
   };
   const format = (kind: TextFormatKind) => { if (selection.start < selection.end) onFormattingChange(toggleFormatting(formatting, selection.start, selection.end, kind)); };
   return <div className="bulk-replace-editor">
-    {formatting.length > 0 && <FormattedEditMirror mirrorRef={mirrorRef} className="bulk-edit-mirror" value={value} formatting={formatting} />}
-    <input ref={inputRef} className={formatting.length ? "has-formatting" : undefined} value={value} onChange={event => changeText(event.currentTarget.value)} onSelect={capture} onScroll={event => { if (mirrorRef.current) mirrorRef.current.scrollLeft = event.currentTarget.scrollLeft; }} onKeyDown={event => {
+    <div className="bulk-toolbar-slot">
+      {selected && <div className="bulk-selection-toolbar" onMouseDown={event => event.preventDefault()} role="toolbar" aria-label="Selected text tools">
+        <EditToolbarButton label={t("toolbar.bold")} shortcut="B" showShortcut={ctrl} onClick={() => format("bold")}>{t("toolbar.bold")}</EditToolbarButton>
+        <EditToolbarButton label={t("toolbar.italic")} shortcut="I" showShortcut={ctrl} onClick={() => format("italic")}>{t("toolbar.italic")}</EditToolbarButton>
+        <EditToolbarButton label={t("toolbar.superscript")} shortcut="↑" showShortcut={ctrl} onClick={() => format("superscript")}>{t("toolbar.superscript")}</EditToolbarButton>
+        <EditToolbarButton label={t("toolbar.subscript")} shortcut="↓" showShortcut={ctrl} onClick={() => format("subscript")}>{t("toolbar.subscript")}</EditToolbarButton>
+        {candidates.map((candidate, index) => <EditToolbarButton className="text-candidate" key={candidate} label={candidate} shortcut={index < 9 ? String(index + 1) : undefined} showShortcut={ctrl} onClick={() => replace(candidate)}>{candidate}</EditToolbarButton>)}
+      </div>}
+    </div>
+    <div className="bulk-replace-input-wrap">
+      {formatting.length > 0 && <FormattedEditMirror mirrorRef={mirrorRef} className="bulk-edit-mirror" value={value} formatting={formatting} />}
+      <input ref={inputRef} className={formatting.length ? "has-formatting" : undefined} value={value} onChange={event => changeText(event.currentTarget.value)} onSelect={capture} onScroll={event => { if (mirrorRef.current) mirrorRef.current.scrollLeft = event.currentTarget.scrollLeft; }} onKeyDown={event => {
       setCtrl(event.ctrlKey); const key = event.key.toLowerCase();
       if (!event.ctrlKey || event.nativeEvent.isComposing || selection.start >= selection.end) return;
       const kind = key === "b" ? "bold" : key === "i" ? "italic" : event.key === "ArrowUp" ? "superscript" : event.key === "ArrowDown" ? "subscript" : null;
       if (kind) { event.preventDefault(); format(kind); }
       else if (/^[1-9]$/.test(key) && candidates[Number(key) - 1]) { event.preventDefault(); replace(candidates[Number(key) - 1]); }
     }} onKeyUp={event => setCtrl(event.ctrlKey)} onBlur={() => setCtrl(false)} />
-    {selected && <div className="bulk-selection-toolbar" onMouseDown={event => event.preventDefault()} role="toolbar" aria-label="Selected text tools">
-      <EditToolbarButton label={t("toolbar.bold")} shortcut="B" showShortcut={ctrl} onClick={() => format("bold")}>{t("toolbar.bold")}</EditToolbarButton>
-      <EditToolbarButton label={t("toolbar.italic")} shortcut="I" showShortcut={ctrl} onClick={() => format("italic")}>{t("toolbar.italic")}</EditToolbarButton>
-      <EditToolbarButton label={t("toolbar.superscript")} shortcut="↑" showShortcut={ctrl} onClick={() => format("superscript")}>{t("toolbar.superscript")}</EditToolbarButton>
-      <EditToolbarButton label={t("toolbar.subscript")} shortcut="↓" showShortcut={ctrl} onClick={() => format("subscript")}>{t("toolbar.subscript")}</EditToolbarButton>
-      {candidates.map((candidate, index) => <EditToolbarButton className="text-candidate" key={candidate} label={candidate} shortcut={index < 9 ? String(index + 1) : undefined} showShortcut={ctrl} onClick={() => replace(candidate)}>{candidate}</EditToolbarButton>)}
-    </div>}
+    </div>
   </div>;
 }
 

@@ -28,7 +28,7 @@ export function EditToolbarButton({
       aria-label={label}
       disabled={disabled}
     >
-      {showShortcut && shortcut && <span className="edit-toolbar-shortcut" aria-hidden="true">{shortcut}</span>}
+      {shortcut && <span className={`edit-toolbar-shortcut${showShortcut ? " is-visible" : ""}`} aria-hidden="true">{shortcut}</span>}
       <span className="edit-toolbar-label">{children}</span>
     </button>
   );
