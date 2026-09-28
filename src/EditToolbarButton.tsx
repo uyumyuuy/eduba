@@ -28,7 +28,7 @@ export function EditToolbarButton({
       aria-label={label}
       disabled={disabled}
     >
-      {shortcut && <span className={`edit-toolbar-shortcut${showShortcut ? " is-visible" : ""}`} aria-hidden="true">{shortcut}</span>}
+      {(shortcut || className.split(/\s+/).includes("text-candidate")) && <span className={`edit-toolbar-shortcut${showShortcut && shortcut ? " is-visible" : ""}`} aria-hidden="true">{shortcut ?? "\u00a0"}</span>}
       <span className="edit-toolbar-label">{children}</span>
     </button>
   );

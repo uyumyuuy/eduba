@@ -29,11 +29,18 @@ export function FormattedEditMirror({ value, formatting, className, style, mirro
       const decoration: CSSProperties = {
         fontWeight: kinds.has("bold") ? 700 : undefined,
         fontStyle: kinds.has("italic") ? "italic" : undefined,
+        // Align the overlay baseline with the regular advance text. Its line
+        // box extends below the alphabetic baseline, so bottom: 0 would lower
+        // italic glyphs; offset it by the font's measured descender space.
+        top: "auto",
+        bottom: "0.14em",
       };
       if (kinds.has("superscript") || kinds.has("subscript")) {
         decoration.fontSize = "0.7em";
         if (kinds.has("superscript")) {
-          decoration.transform = "translateY(0.1em)";
+          // Keep superscript positioning independent from the baseline anchor.
+          decoration.top = "0.1em";
+          decoration.bottom = "auto";
         } else {
           // Anchor the smaller glyph to the line box bottom so it follows the
           // baseline instead of starting at top: 0 like a superscript.
