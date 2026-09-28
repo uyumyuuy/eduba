@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   escapeXml,
+  effectiveFormatting,
   exportHocr,
   exportSvg,
   exportText,
@@ -16,7 +17,7 @@ const fixture = `<?xml version="1.0"?><html xmlns="http://www.w3.org/1999/xhtml"
   <div class="ocr_page" id="page_1" title="bbox 0 0 200 100; ppageno 0">
     <div class="ocr_carea" id="block_1" title="bbox 10 10 190 80"><p class="ocr_par" id="par_1" title="bbox 10 10 190 80">
       <span class="ocr_line" id="line_1" title="bbox 10 20 190 35; baseline 0 32; x_size 15; x_descenders 3; x_ascenders 4">
-        <span class="ocrx_word" id="word_1" title="bbox 10 20 55 35; x_wconf 91">
+        <span class="ocrx_word" id="page_1--page_1--word_1" title="bbox 10 20 55 35; x_wconf 91">
           <span class="ocrx_cinfo" title="x_bboxes 10 20 18 35; x_conf 98">A</span>
           <span class="ocrx_cinfo" title="x_bboxes 19 20 27 35; x_conf 95">🙂</span>
         </span>
@@ -106,6 +107,30 @@ describe("hOCR domain model", () => {
     expect(hocr).not.toContain("x_bboxes 10 20 18 35");
   });
 
+  it("keeps word and character geometry while exporting inferred italic and bold formatting", () => {
+    const [page] = parseHocr(fixture);
+    const line = page.blocks[0].paragraphs[0].lines[0];
+    line.autoFormatting = [
+      { start: 0, end: 1, kind: "italic" },
+      { start: 4, end: 8, kind: "bold" },
+    ];
+    const hocr = exportHocr([page]);
+    expect(hocr).toMatch(/class="ocrx_word" id="[^"]*word_1" title="bbox 10 20 55 35; x_wconf 91"/);
+    expect(hocr).toContain('class="ocrx_cinfo" title="x_bboxes 10 20 18 35; x_conf 98"><em>A</em></span>');
+    expect(hocr).toContain('class="ocrx_word" id="page_1--word_2" title="bbox 60 20 100 35; x_wconf 80"><span class="ocrx_cinfo"><strong>b</strong></span>');
+    expect(parseHocr(hocr)[0].blocks[0].paragraphs[0].lines[0].words.map(word => word.bbox)).toEqual(line.words.map(word => word.bbox));
+  });
+
+  it("lets either manual script choice replace automatic superscript or subscript", () => {
+    const [page] = parseHocr(fixture);
+    const line = page.blocks[0].paragraphs[0].lines[0];
+    line.autoFormatting = [{ start: 1, end: 3, kind: "superscript" }];
+    line.formatting = [{ start: 2, end: 4, kind: "subscript" }];
+    expect(effectiveFormatting(line)).toEqual([
+      { start: 1, end: 2, kind: "superscript" },
+      { start: 2, end: 4, kind: "subscript" },
+    ]);
+  });
   it("exports the complete edited line, including inserted words", () => {
     const [page] = parseHocr(fixture);
     const line = page.blocks[0].paragraphs[0].lines[0];

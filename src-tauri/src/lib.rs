@@ -14,6 +14,8 @@ use std::{
 use tauri::{menu::MenuBuilder, AppHandle, Emitter, Manager, State};
 use thiserror::Error;
 mod preferences;
+#[path = "style_classifier_runtime/lib.rs"]
+pub mod style_classifier_runtime;
 use preferences::{LastOpenedProject, LocalePreference, SupportedLocale, UserPreferences};
 
 const SCHEMA_VERSION: &str = "1";
@@ -185,6 +187,24 @@ pub struct OcrArgs {
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
+struct StyleBBox {
+    left: f64,
+    top: f64,
+    right: f64,
+    bottom: f64,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct StyleSample {
+    bbox: StyleBBox,
+    #[serde(default)]
+    line_bbox: Option<StyleBBox>,
+    text: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ExportArgs {
     pub path: String,
     pub content_base64: String,
@@ -193,6 +213,7 @@ pub struct ExportArgs {
 pub struct AppState {
     ocr_child: Arc<Mutex<Option<Child>>>,
     preferences_lock: Arc<Mutex<()>>,
+    style_classifier: Arc<Mutex<Option<style_classifier_runtime::Classifier>>>,
 }
 
 impl Default for AppState {
@@ -200,6 +221,7 @@ impl Default for AppState {
         Self {
             ocr_child: Arc::new(Mutex::new(None)),
             preferences_lock: Arc::new(Mutex::new(())),
+            style_classifier: Arc::new(Mutex::new(None)),
         }
     }
 }
@@ -981,6 +1003,181 @@ fn hide_console(command: &mut Command) {
 fn hide_console(_command: &mut Command) {}
 
 #[tauri::command]
+async fn classify_word_styles(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    image_base64: String,
+    samples: Vec<StyleSample>,
+) -> Result<Vec<style_classifier_runtime::Prediction>, String> {
+    let classifier = state.style_classifier.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        classify_word_styles_blocking(&app, classifier, image_base64, samples)
+    })
+    .await
+    .map_err(|e| format!("style classification worker failed: {e}"))?
+    .map_err(|e| e.to_string())
+}
+
+fn style_model_path(app: &AppHandle) -> PathBuf {
+    let resource = app
+        .path()
+        .resource_dir()
+        .unwrap_or_else(|_| PathBuf::from("resources"));
+    let name = "style_word_cnn.onnx";
+    [
+        Some(resource.join("models").join(name)),
+        Some(resource.join("resources/models").join(name)),
+        Some(
+            PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                .join("resources/models")
+                .join(name),
+        ),
+    ]
+    .into_iter()
+    .flatten()
+    .find(|p| p.is_file())
+    .unwrap_or_else(|| resource.join("models").join(name))
+}
+
+fn pixel_bbox(bbox: &StyleBBox, width: u32, height: u32) -> BackendResult<(u32, u32, u32, u32)> {
+    let values = [bbox.left, bbox.top, bbox.right, bbox.bottom];
+    if values.iter().any(|v| !v.is_finite())
+        || bbox.left < 0.0
+        || bbox.top < 0.0
+        || bbox.right <= bbox.left
+        || bbox.bottom <= bbox.top
+    {
+        return Err(BackendError::msg(
+            "style sample bbox must be finite, non-empty, and non-negative",
+        ));
+    }
+    let left = bbox.left.floor() as u32;
+    let top = bbox.top.floor() as u32;
+    let right = bbox.right.ceil() as u32;
+    let bottom = bbox.bottom.ceil() as u32;
+    if right > width || bottom > height || left >= right || top >= bottom {
+        return Err(BackendError::msg("style sample bbox is outside the image"));
+    }
+    Ok((left, top, right, bottom))
+}
+
+fn classify_word_styles_blocking(
+    app: &AppHandle,
+    classifier: Arc<Mutex<Option<style_classifier_runtime::Classifier>>>,
+    image_base64: String,
+    samples: Vec<StyleSample>,
+) -> BackendResult<Vec<style_classifier_runtime::Prediction>> {
+    use style_classifier_runtime::{crop_words_with_padding, GrayImage, Thresholds, WordBBox};
+
+    if samples.len() > 1000 {
+        return Err(BackendError::msg(
+            "style classification accepts at most 1000 samples per batch",
+        ));
+    }
+    if samples.is_empty() {
+        return Ok(Vec::new());
+    }
+    let encoded = image_base64
+        .trim()
+        .split_once(',')
+        .map(|(_, data)| data)
+        .unwrap_or(image_base64.trim());
+    let bytes = BASE64.decode(encoded)?;
+    if bytes.is_empty() || bytes.len() > MAX_OCR_IMAGE {
+        return Err(BackendError::msg("style image is empty or exceeds 64 MiB"));
+    }
+    let mut reader = image::ImageReader::new(std::io::Cursor::new(&bytes))
+        .with_guessed_format()
+        .map_err(|e| BackendError::msg(format!("could not identify style image: {e}")))?;
+    let mut limits = image::Limits::default();
+    limits.max_image_width = Some(20000);
+    limits.max_image_height = Some(20000);
+    limits.max_alloc = Some(256 * 1024 * 1024);
+    reader.limits(limits);
+    let page = reader
+        .decode()
+        .map_err(|e| BackendError::msg(format!("could not decode style image: {e}")))?
+        .to_luma8();
+    if page.width() == 0 || page.height() == 0 || page.width() > 20000 || page.height() > 20000 {
+        return Err(BackendError::msg(
+            "style image dimensions are invalid or exceed 20000 pixels",
+        ));
+    }
+    let mut words: Vec<GrayImage> = Vec::with_capacity(samples.len());
+    let mut texts = Vec::with_capacity(samples.len());
+    for sample in samples {
+        let (left, top, right, bottom) = pixel_bbox(&sample.bbox, page.width(), page.height())?;
+        if let Some(line_bbox) = sample.line_bbox {
+            let (line_left, line_top, line_right, line_bottom) =
+                pixel_bbox(&line_bbox, page.width(), page.height())?;
+            if left < line_left || top < line_top || right > line_right || bottom > line_bottom {
+                return Err(BackendError::msg("word bbox must be contained by lineBbox"));
+            }
+            let line = image::imageops::crop_imm(
+                &page,
+                line_left,
+                line_top,
+                line_right - line_left,
+                line_bottom - line_top,
+            )
+            .to_image();
+            let crops = crop_words_with_padding(
+                &line,
+                &[WordBBox {
+                    x: left - line_left,
+                    y: top - line_top,
+                    width: right - left,
+                    height: bottom - top,
+                }],
+            )
+            .map_err(|e| BackendError::msg(format!("could not crop style word: {e}")))?;
+            words.push(crops.into_iter().next().expect("one crop requested"));
+        } else {
+            let crops = crop_words_with_padding(
+                &page,
+                &[WordBBox {
+                    x: left,
+                    y: top,
+                    width: right - left,
+                    height: bottom - top,
+                }],
+            )
+            .map_err(|e| BackendError::msg(format!("could not crop style word: {e}")))?;
+            words.push(crops.into_iter().next().expect("one crop requested"));
+        }
+        texts.push(sample.text);
+    }
+    let mut model = classifier
+        .lock()
+        .map_err(|_| BackendError::msg("style classifier lock was poisoned"))?;
+    if model.is_none() {
+        let path = style_model_path(app);
+        if !path.is_file() {
+            return Err(BackendError::msg(format!(
+                "style ONNX model not found: {}",
+                path.display()
+            )));
+        }
+        *model = Some(
+            style_classifier_runtime::Classifier::load(
+                &path,
+                Thresholds {
+                    italic: style_classifier_runtime::DEFAULT_ITALIC_THRESHOLD,
+                    bold: style_classifier_runtime::BOLD_THRESHOLD,
+                },
+                4,
+            )
+            .map_err(|e| BackendError::msg(format!("could not load style model: {e}")))?,
+        );
+    }
+    model
+        .as_mut()
+        .expect("initialized above")
+        .predict_with_texts(&words, &texts)
+        .map_err(|e| BackendError::msg(format!("style inference failed: {e}")))
+}
+
+#[tauri::command]
 async fn run_ocr(
     app: AppHandle,
     state: State<'_, AppState>,
@@ -1293,6 +1490,7 @@ pub fn run() {
             search_corrections,
             apply_bulk_corrections,
             run_ocr,
+            classify_word_styles,
             cancel_ocr,
             export_file
         ])

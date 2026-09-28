@@ -30,6 +30,18 @@ export type BulkPageChange = {
   afterData: string;
 };
 
+export type WordStyleSample = {
+  bbox: { left: number; top: number; right: number; bottom: number };
+  lineBbox: { left: number; top: number; right: number; bottom: number };
+  text: string;
+};
+
+export type WordStylePrediction = {
+  italic_probability: number;
+  bold_probability: number;
+  italic: boolean;
+  bold: boolean;
+};
 export type BackendCommands = {
   get_user_preferences: { args: undefined; result: { version: 1; language: string; osLocale: string | null; lastProject: { path: string; pageId: string } | null } };
   save_user_preferences: { args: { language: string }; result: void };
@@ -45,6 +57,7 @@ export type BackendCommands = {
   load_page: { args: { projectPath: string; pageId: string }; result: string | null };
   save_page: { args: { projectPath: string; pageId: string; data: string }; result: void };
   run_ocr: { args: { imageBase64: string; modelPath: string; psm: number; dpi?: number }; result: string };
+  classify_word_styles: { args: { imageBase64: string; samples: WordStyleSample[] }; result: WordStylePrediction[] };
   cancel_ocr: { args: undefined; result: void };
   export_file: { args: { path: string; contentBase64: string }; result: void };
   search_corrections: { args: { projectPath: string; search: string; page: number; pageSize: number }; result: { results: Array<{ pageId: string; pageLabel: string; lineId: string; lineText: string; bbox?: { left: number; top: number; right: number; bottom: number }; matchBBox?: { left: number; top: number; right: number; bottom: number }; matchOrdinal: number }>; total: number; page: number; pageSize: number } };

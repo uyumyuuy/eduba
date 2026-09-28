@@ -1,0 +1,5 @@
+{
+  "italic": 0.9593396782875061,
+  "bold": 0.9438879489898682,
+  "note": "Fixed v1 thresholds. predict_with_texts applies italic 0.85 only to a single Unicode Letter scalar; all other text keeps italic 0.9593396782875061. Bold remains 0.9438879489898682."
+}

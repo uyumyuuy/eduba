@@ -352,7 +352,15 @@ export function applyScriptDetection(
   for (const line of allLines(copy)) {
     if (!eligibleLine(line)) continue;
     const ranges = detectScriptRanges(line, settings, references.get(line.id), resolved);
-    line.autoFormatting = ranges.length ? ranges : undefined;
+    const styles = (line.autoFormatting ?? []).filter(range => range.kind === "italic" || range.kind === "bold").flatMap(style => {
+      let pieces = [style];
+      for (const script of ranges) pieces = pieces.flatMap(piece => piece.end <= script.start || piece.start >= script.end ? [piece] : [
+        ...(piece.start < script.start ? [{ ...piece, end: script.start }] : []),
+        ...(piece.end > script.end ? [{ ...piece, start: script.end }] : []),
+      ]);
+      return pieces;
+    });
+    line.autoFormatting = [...ranges, ...styles].length ? [...ranges, ...styles] : undefined;
   }
   return copy;
 }

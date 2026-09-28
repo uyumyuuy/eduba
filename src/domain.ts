@@ -59,8 +59,7 @@ export interface OcrLine {
   correctedText: string;
   /** UTF-16 offsets matching textarea selection positions. */
   formatting?: TextFormatRange[];
-  /** Script formatting inferred from OCR geometry. It is replaceable when the
-   * recognition thresholds are retuned; `formatting` remains user-authored. */
+  /** Script and word styles inferred from OCR. This is replaceable when recognition settings change. */
   autoFormatting?: TextFormatRange[];
   /** Text and script-format edits exclude this line from automatic detection. */
   scriptDetectionManuallyEdited?: boolean;
@@ -72,16 +71,16 @@ export interface OcrLine {
   readingOrderOrigin?: { blockId: string; paragraphId: string };
 }
 
-/** Formatting for render/export. Manual script choices override automatic ones. */
+/** Manual script ranges override either inferred script kind; other manual ranges override the same kind. */
 export function effectiveFormatting(line: OcrLine): TextFormatRange[] {
   const manual = line.formatting ?? [];
-  const manualScript = manual.filter(
-    (range) => range.kind === "superscript" || range.kind === "subscript",
-  );
   const automatic = (line.autoFormatting ?? []).flatMap((range) => {
-    if (range.kind !== "superscript" && range.kind !== "subscript") return [];
     let pieces = [range];
-    for (const override of manualScript) {
+    // A manual range replaces the inferred value for the same kind.
+    const overrides = range.kind === "superscript" || range.kind === "subscript"
+      ? manual.filter(item => item.kind === "superscript" || item.kind === "subscript")
+      : manual.filter(item => item.kind === range.kind);
+    for (const override of overrides) {
       pieces = pieces.flatMap((piece) => {
         if (piece.end <= override.start || piece.start >= override.end) return [piece];
         return [
@@ -733,6 +732,20 @@ export function formattedSegments(line: OcrLine, svg = false): string {
   const points = [...new Set([0, line.correctedText.length, ...ranges.flatMap(range => [range.start, range.end])])].sort((a,b)=>a-b);
   return points.slice(0,-1).map((start,index) => { const end=points[index+1]; const active=ranges.filter(range=>range.start<=start&&range.end>=end).map(range=>range.kind); let text=escapeXml(line.correctedText.slice(start,end)); if(svg){const style=[active.includes("bold")?"font-weight=\"bold\"":"",active.includes("italic")?"font-style=\"italic\"":"",active.includes("superscript")?"baseline-shift=\"0.54em\" font-size=\"70%\"":"",active.includes("subscript")?"baseline-shift=\"-0.15em\" font-size=\"70%\"":""].filter(Boolean).join(" ");return style?`<tspan ${style}>${text}</tspan>`:text;} if(active.includes("bold"))text=`<strong>${text}</strong>`;if(active.includes("italic"))text=`<em>${text}</em>`;if(active.includes("superscript"))text=`<sup>${text}</sup>`;if(active.includes("subscript"))text=`<sub>${text}</sub>`;return text; }).join("");
 }
+function formatHocrRange(line: OcrLine, start: number, end: number): string {
+  const ranges = effectiveFormatting(line).filter(range => range.start < end && range.end > start);
+  const points = [...new Set([start, end, ...ranges.flatMap(range => [Math.max(start, range.start), Math.min(end, range.end)])])].sort((a,b) => a-b);
+  return points.slice(0, -1).map((from, index) => {
+    const to = points[index + 1];
+    const active = ranges.filter(range => range.start <= from && range.end >= to).map(range => range.kind);
+    let text = escapeXml(line.correctedText.slice(from, to));
+    if (active.includes("bold")) text = `<strong>${text}</strong>`;
+    if (active.includes("italic")) text = `<em>${text}</em>`;
+    if (active.includes("superscript")) text = `<sup>${text}</sup>`;
+    if (active.includes("subscript")) text = `<sub>${text}</sub>`;
+    return text;
+  }).join("");
+}
 export function exportHocr(pages: DocumentPage[]): string {
   const body = pages
     .map((page) => {
@@ -743,17 +756,21 @@ export function exportHocr(pages: DocumentPage[]): string {
               const lines = paragraph.lines
                 .map((line) => {
                   const words = line.words
-                    .map((word) => {
+                    .map((word, wordIndex) => {
+                      const wordStart = line.words.slice(0, wordIndex).reduce((sum, prior) => sum + prior.correctedText.length, wordIndex);
+                      let charOffset = wordStart;
                       const chars = word.chars
                         .filter((char) => char.source === "ocr" || char.bbox)
                         .map((char) => {
                           const title = char.bbox
                             ? `x_bboxes ${char.bbox.left} ${char.bbox.top} ${char.bbox.right} ${char.bbox.bottom}${char.confidence == null ? "" : `; x_conf ${char.confidence}`}`
                             : "";
-                          return `<span class="ocrx_cinfo"${title ? ` title="${escapeXml(title)}"` : ""}>${escapeXml(char.correctedText)}</span>`;
+                          const start = charOffset;
+                          charOffset += char.correctedText.length;
+                          return `<span class="ocrx_cinfo"${title ? ` title="${escapeXml(title)}"` : ""}>${formatHocrRange(line, start, charOffset)}</span>`;
                         })
                         .join("");
-                      const text = chars || escapeXml(word.correctedText);
+                      const text = chars || formatHocrRange(line, wordStart, wordStart + word.correctedText.length);
                       const confidenceTitle =
                         word.confidence == null
                           ? ""
@@ -765,7 +782,7 @@ export function exportHocr(pages: DocumentPage[]): string {
                   // the corrected string. Emit one unboxed word so hOCR remains useful
                   // without inventing character geometry.
                   const lineContent =
-                    line.correctedText !== line.originalText || Boolean(effectiveFormatting(line).length)
+                    line.correctedText !== line.originalText
                       ? `<span class="ocrx_word" title="${escapeXml(titleBbox(line.bbox))}">${formattedSegments(line)}</span>`
                       : words || escapeXml(line.correctedText);
                   const details = [

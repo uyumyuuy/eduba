@@ -32,6 +32,7 @@ import { canvasToBase64, openProjectPdf, openSourcePdf } from "./pdf";
 import { LogicalPageThumbnailCache } from "./pdfThumbnail";
 import { invokeCommand, isTauri, type ProjectInfo } from "./tauri";
 import { SaveQueue } from "./persistence";
+import { inferWordStyles, clearAutoWordStyles } from "./styleDetection";
 import {
   allLines,
   effectiveFormatting,
@@ -925,7 +926,12 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
         pageId: entry.id,
       })[0];
       if (!parsed) throw new Error(globalT("appErrors.hocrMissingPage"));
-      const detected = applyScriptDetection(parsed, manifestRef.current.settings, manifestRef.current.settings.scriptHeightProfile);
+      let detected = applyScriptDetection(parsed, manifestRef.current.settings, manifestRef.current.settings.scriptHeightProfile);
+      try {
+        detected = await inferWordStyles(detected, canvasToBase64(worker), worker.width, worker.height,
+          (imageBase64, samples) => invokeCommand("classify_word_styles", { imageBase64, samples }));      } catch (error) {
+        console.warn("Word style classification was skipped.", error);
+      }
       return {
         ...detected,
         id: entry.id,
@@ -1086,8 +1092,14 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
       });
       if (cancelled.current) throw new Error(globalT("appErrors.ocrCancelled"));
       const regionId = entry.id + "--manual-" + crypto.randomUUID();
-      const recognized = parseHocr(hocr, { sourcePage: entry.sourcePage, pageId: regionId })[0];
+      let recognized = parseHocr(hocr, { sourcePage: entry.sourcePage, pageId: regionId })[0];
       if (!recognized) throw new Error(globalT("appErrors.hocrMissingPage"));
+      recognized = applyScriptDetection(recognized, manifestRef.current.settings, manifestRef.current.settings.scriptHeightProfile);
+      try {
+        recognized = await inferWordStyles(recognized, canvasToBase64(input), input.width, input.height,
+          (imageBase64, samples) => invokeCommand("classify_word_styles", { imageBase64, samples }));      } catch (error) {
+        console.warn("Word style classification was skipped for the added OCR region.", error);
+      }
       const result = addOcrRegion(beforePage, recognized, selection, padding, regionId);
       if (!result.addedWords) {
         setNotice("notices.regionEmpty");
@@ -1818,7 +1830,14 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
         for (const entry of eligible.slice(start, start + 20)) {
           const saved = await invokeCommand("load_page", { projectPath: projectInfo.path, pageId: entry.id });
           if (!saved) continue;
-          const updated = applyScriptDetection(JSON.parse(saved) as DocumentPage, settings, profile);
+          const parsedPage = JSON.parse(saved) as DocumentPage;
+          const withoutOldStyles = clearAutoWordStyles(parsedPage);
+          let updated = applyScriptDetection(withoutOldStyles, settings, profile);
+          const styleCanvas = document.createElement("canvas");
+          const rendered = await renderEntry(entry, loading.current, pdf, styleCanvas, false);
+          if (!rendered) throw new Error(globalT("appErrors.processedPage"));
+          updated = await inferWordStyles(updated, canvasToBase64(styleCanvas), styleCanvas.width, styleCanvas.height,
+            (imageBase64, samples) => invokeCommand("classify_word_styles", { imageBase64, samples }));
           const data = JSON.stringify(updated);
           if (data !== saved) updates.push({ pageId: entry.id, expectedData: saved, data });
         }
@@ -1864,7 +1883,7 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
       setBusy(null);
       setScriptCalibrationProgress(null);
     }
-  }, [flush, putDoc, putManifest, setNotice]);
+  }, [flush, putDoc, putManifest, setNotice, renderEntry, pdf]);
   const applyBulkReplace = useCallback(async ({ search, replacement, replacementFormatting, selections }: BulkReplaceRequest) => {
     if (!project || !selections.length) return;
     await flush();
