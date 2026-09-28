@@ -203,3 +203,9 @@ button:disabled { cursor: not-allowed; opacity: .42; }
 .reading-order-overlay .reading-order-active circle { fill: #d9953f; stroke: #fff; }
 .reading-order-overlay .reading-order-active text { fill: #fff; }
 .reading-order-overlay .reading-order-hover circle { fill: #fff3d7; stroke: #ae712f; }
+
+.proofing-text-magnifier { position: absolute; z-index: 10; box-sizing: border-box; display: flex; align-items: center; width: min(250px, calc(100vw - 16px)); height: 60px; overflow-x: auto; overflow-y: hidden; padding: 6px 10px; border: 2px solid rgba(26, 99, 96, .8); border-radius: 7px; background: #fffefa; box-shadow: 0 5px 17px rgba(23, 49, 46, .28); pointer-events: none; scrollbar-width: none; }
+.proofing-text-magnifier::-webkit-scrollbar { display: none; }
+.proofing-text-flow { display: inline-block; flex: 0 0 auto; width: max-content; min-width: max-content; color: #273b38; font-family: var(--ocr-font); white-space: pre; }
+.proofing-text-selection { border-radius: 2px; background: rgba(61, 143, 140, .3); }
+.proofing-text-caret { display: inline-block; width: 0; height: 1.15em; margin: 0; border-left: 1.5px solid #1a6360; vertical-align: middle; }

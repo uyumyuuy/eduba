@@ -42,6 +42,10 @@ pub struct UserPreferences {
     pub os_locale: Option<String>,
     #[serde(rename = "lastProject")]
     pub last_project: Option<LastOpenedProject>,
+    #[serde(rename = "imageMagnifierEnabled")]
+    pub image_magnifier_enabled: bool,
+    #[serde(rename = "textMagnifierEnabled")]
+    pub text_magnifier_enabled: bool,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
@@ -58,6 +62,8 @@ impl UserPreferences {
             language: LocalePreference::Auto,
             os_locale,
             last_project: None,
+            image_magnifier_enabled: true,
+            text_magnifier_enabled: true,
         }
     }
 }
@@ -72,6 +78,14 @@ struct StoredPreferences {
         deserialize_with = "deserialize_last_opened_project"
     )]
     last_project: Option<LastOpenedProject>,
+    #[serde(default = "default_true", rename = "imageMagnifierEnabled")]
+    image_magnifier_enabled: bool,
+    #[serde(default = "default_true", rename = "textMagnifierEnabled")]
+    text_magnifier_enabled: bool,
+}
+
+fn default_true() -> bool {
+    true
 }
 
 fn deserialize_last_opened_project<'de, D>(
@@ -104,6 +118,8 @@ pub fn read_preferences(config_dir: &Path, os_locale: Option<String>) -> UserPre
         language: stored.language.unwrap_or_default(),
         os_locale,
         last_project: stored.last_project,
+        image_magnifier_enabled: stored.image_magnifier_enabled,
+        text_magnifier_enabled: stored.text_magnifier_enabled,
     }
 }
 
@@ -117,6 +133,8 @@ pub fn write_preferences(config_dir: &Path, preferences: &UserPreferences) -> Re
         "version": 1,
         "language": preferences.language,
         "lastProject": preferences.last_project,
+        "imageMagnifierEnabled": preferences.image_magnifier_enabled,
+        "textMagnifierEnabled": preferences.text_magnifier_enabled,
     });
     temp.write_all(
         serde_json::to_string_pretty(&body)
@@ -209,16 +227,18 @@ mod tests {
                 path: "C:/books/reading.eduba".into(),
                 page_id: "page-2".into(),
             }),
+            image_magnifier_enabled: false,
+            text_magnifier_enabled: true,
         };
         write_preferences(dir.path(), &preferences).unwrap();
         assert_eq!(
             read_preferences(dir.path(), Some("ja-JP".into())).language,
             LocalePreference::ZhHant
         );
-        assert_eq!(
-            read_preferences(dir.path(), None).last_project,
-            preferences.last_project,
-        );
+        let restored = read_preferences(dir.path(), None);
+        assert_eq!(restored.last_project, preferences.last_project);
+        assert!(!restored.image_magnifier_enabled);
+        assert!(restored.text_magnifier_enabled);
         fs::write(preferences_path(dir.path()), b"{not-json").unwrap();
         let recovered = read_preferences(dir.path(), Some("ja-JP".into()));
         assert_eq!(recovered.language, LocalePreference::Auto);
@@ -229,6 +249,8 @@ mod tests {
         let dir = tempdir().unwrap();
         let missing = read_preferences(dir.path(), Some("en-US".into()));
         assert_eq!(missing.language, LocalePreference::Auto);
+        assert!(missing.image_magnifier_enabled);
+        assert!(missing.text_magnifier_enabled);
         fs::write(
             preferences_path(dir.path()),
             r#"{"version":1,"language":"pirate"}"#,
@@ -238,6 +260,21 @@ mod tests {
             read_preferences(dir.path(), None).language,
             LocalePreference::Auto
         );
+    }
+
+    #[test]
+    fn legacy_preferences_default_magnifiers_to_enabled() {
+        let dir = tempdir().unwrap();
+        fs::write(
+            preferences_path(dir.path()),
+            r#"{"version":1,"language":"ja","lastProject":{"path":"book.eduba","pageId":"p1"}}"#,
+        )
+        .unwrap();
+        let migrated = read_preferences(dir.path(), None);
+        assert!(migrated.image_magnifier_enabled);
+        assert!(migrated.text_magnifier_enabled);
+        assert_eq!(migrated.language, LocalePreference::Ja);
+        assert!(migrated.last_project.is_some());
     }
 
     #[test]

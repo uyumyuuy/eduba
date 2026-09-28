@@ -319,6 +319,10 @@ describe("saved project loading", () => {
     await act(async () => container.querySelector<SVGRectElement>(".layout-svg rect")!.dispatchEvent(new MouseEvent("click", { bubbles: true })));
     const editor = container.querySelector<HTMLTextAreaElement>("textarea.line-overlay")!;
     expect(editor).toBeTruthy();
+    const proofingMagnifier = document.querySelector<HTMLElement>(".proofing-text-magnifier")!;
+    expect(proofingMagnifier.textContent).toBe("ABCD");
+    expect(document.activeElement).toBe(editor);
+    expect(proofingMagnifier.parentElement).toBe(container.querySelector(".ocr-stage"));
     expect(container.querySelector(".edit-image-focus-line")?.getAttribute("x")).toBe("10");
     const magnifier = container.querySelector<HTMLCanvasElement>(".edit-image-magnifier")!;
     expect(magnifier).not.toBeNull();
@@ -334,9 +338,20 @@ describe("saved project loading", () => {
     expect([magnifier.style.width, magnifier.style.height, magnifier.width, magnifier.height]).toEqual(initialSize);
     expect([nextDraw[3], nextDraw[4], nextDraw[7], nextDraw[8]]).toEqual([firstDraw[3], firstDraw[4], firstDraw[7], firstDraw[8]]);
     expect(nextDraw[1]).not.toBe(firstDraw[1]);
+    await act(async () => { editor.setSelectionRange(1, 3); editor.dispatchEvent(new Event("select", { bubbles: true })); document.dispatchEvent(new Event("selectionchange")); });
+    await waitFor(() => expect(document.querySelector(".proofing-text-selection")?.textContent).toBe("BC"));
+    const proofingFlow = document.querySelector(".proofing-text-flow")!;
+    const caretMark = document.querySelector(".proofing-text-caret")!;
+    expect(proofingFlow.textContent).toBe("ABCD");
+    expect(caretMark.parentElement).toBe(proofingFlow);
+    expect(document.querySelector(".proofing-text-selection")?.parentElement).toBe(proofingFlow);
+    expect(caretMark.previousElementSibling).toBe(document.querySelector(".proofing-text-selection"));
+    await act(async () => { editor.setSelectionRange(1, 3, "backward"); editor.dispatchEvent(new Event("select", { bubbles: true })); document.dispatchEvent(new Event("selectionchange")); });
+    await waitFor(() => expect(document.querySelector(".proofing-text-caret")?.nextElementSibling).toBe(document.querySelector(".proofing-text-selection")));
     await act(async () => editor.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true })));
     expect(container.querySelector(".edit-image-focus")).toBeNull();
     expect(container.querySelector(".edit-image-magnifier")).toBeNull();
+    expect(document.querySelector(".proofing-text-magnifier")).toBeNull();
   });
 
   it("keeps a completed page protected when its edit confirmation is declined", async () => {
@@ -378,6 +393,63 @@ describe("saved project loading", () => {
     await act(async () => undo.click());
     await waitFor(() => expect(container.textContent).toContain("saved page one"));
     expect(container.querySelector<HTMLInputElement>(".page-complete-toggle input")!.checked).toBe(false);
+  });
+  it("defaults magnifiers on and independently persists and applies visibility choices", async () => {
+    await openSavedProject();
+    await act(async () => container.querySelector<HTMLButtonElement>('button[title="Settings"]')!.click());
+    const toggles = container.querySelectorAll<HTMLInputElement>(".settings-checkbox input[type=checkbox]");
+    expect(toggles).toHaveLength(2);
+    expect(toggles[0].checked).toBe(true);
+    expect(toggles[1].checked).toBe(true);
+    await act(async () => toggles[0].click());
+    await waitFor(() => expect(mocks.invoke).toHaveBeenCalledWith("save_magnifier_preferences", {
+      imageMagnifierEnabled: false, textMagnifierEnabled: true,
+    }));
+    expect(toggles[0].checked).toBe(false);
+    await act(async () => toggles[1].click());
+    await waitFor(() => expect(mocks.invoke).toHaveBeenCalledWith("save_magnifier_preferences", {
+      imageMagnifierEnabled: false, textMagnifierEnabled: false,
+    }));
+    expect(toggles[1].checked).toBe(false);
+    await act(async () => container.querySelector<HTMLButtonElement>(".settings-modal .primary")!.click());
+    await act(async () => container.querySelector<SVGRectElement>(".layout-svg rect")!.dispatchEvent(new MouseEvent("click", { bubbles: true })));
+    expect(container.querySelector(".edit-image-focus-line")).not.toBeNull();
+    expect(container.querySelector(".edit-image-magnifier")).toBeNull();
+    expect(document.querySelector(".proofing-text-magnifier")).toBeNull();
+
+    await act(async () => container.querySelector<HTMLButtonElement>('button[title="Settings"]')!.click());
+    const imageToggle = container.querySelectorAll<HTMLInputElement>(".settings-checkbox input[type=checkbox]")[0];
+    await act(async () => imageToggle.click());
+    await waitFor(() => expect(container.querySelector(".edit-image-magnifier")).not.toBeNull());
+    const imageMagnifier = container.querySelector<HTMLCanvasElement>(".edit-image-magnifier")!;
+    const source = container.querySelector<HTMLCanvasElement>(".rendered-page")!;
+    expect(vi.mocked(imageMagnifier.getContext("2d")!.drawImage).mock.calls.some(args => args[0] === source)).toBe(true);
+    expect(document.querySelector(".proofing-text-magnifier")).toBeNull();
+    await act(async () => container.querySelector<HTMLButtonElement>(".settings-modal .primary")!.click());
+    await act(async () => container.querySelector<HTMLButtonElement>('button[title="Settings"]')!.click());
+    const textToggle = container.querySelectorAll<HTMLInputElement>(".settings-checkbox input[type=checkbox]")[1];
+    await act(async () => textToggle.click());
+    await waitFor(() => expect(document.querySelector(".proofing-text-magnifier")).not.toBeNull());
+    expect(container.querySelector(".edit-image-magnifier")).not.toBeNull();
+  });
+
+  it("restores stored magnifier choices when no project is reopened", async () => {
+    const base = mocks.invoke.getMockImplementation()!;
+    mocks.invoke.mockImplementation(async (command: string, args?: unknown) => {
+      if (command === "get_user_preferences") return {
+        version: 1, language: "auto", osLocale: "en-US", lastProject: null,
+        imageMagnifierEnabled: false, textMagnifierEnabled: true,
+      };
+      return base(command, args as never);
+    });
+    await act(async () => root.render(<App />));
+    await waitFor(() => expect(Array.from(container.querySelectorAll("button")).some(button => button.textContent?.includes("Open"))).toBe(true));
+    await act(async () => container.querySelector<HTMLButtonElement>('button[title="Settings"]')!.click());
+    await waitFor(() => {
+      const toggles = container.querySelectorAll<HTMLInputElement>(".settings-checkbox input[type=checkbox]");
+      expect(toggles[0]?.checked).toBe(false);
+      expect(toggles[1]?.checked).toBe(true);
+    });
   });
   it("persists a language choice without writing the open project", async () => {
     await openSavedProject();

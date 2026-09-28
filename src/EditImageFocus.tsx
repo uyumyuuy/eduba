@@ -76,8 +76,8 @@ export function caretImagePosition(line: OcrLine, offset: number): { x: number; 
   return { x: clamp(x, line.bbox.left, line.bbox.right), bbox: glyph.bbox };
 }
 
-export function EditImageFocus({ line, caret, zoom, pageWidth, sourceRef }: {
-  line: OcrLine; caret: number; zoom: number; pageWidth: number; sourceRef: RefObject<HTMLCanvasElement | null>;
+export function EditImageFocus({ line, caret, zoom, pageWidth, sourceRef, showMagnifier = true }: {
+  line: OcrLine; caret: number; zoom: number; pageWidth: number; sourceRef: RefObject<HTMLCanvasElement | null>; showMagnifier?: boolean;
 }) {
   const magnifierRef = useRef<HTMLCanvasElement>(null);
   const focus = useMemo(() => caretImagePosition(line, caret), [line, caret]);
@@ -111,7 +111,7 @@ export function EditImageFocus({ line, caret, zoom, pageWidth, sourceRef }: {
     const drawnHeight = visibleHeight / cropHeight * target.height;
     context.drawImage(source, cropLeft, cropTop, visibleWidth, visibleHeight,
       (target.width - drawnWidth) / 2, (target.height - drawnHeight) / 2, drawnWidth, drawnHeight);
-  }, [cropHeight, cropLeft, cropTop, cropWidth, displayHeight, displayWidth, sourceRef, visibleHeight, visibleWidth]);
+  }, [cropHeight, cropLeft, cropTop, cropWidth, displayHeight, displayWidth, sourceRef, showMagnifier, visibleHeight, visibleWidth]);
   return <>
     <svg className="edit-image-focus" viewBox={`0 0 ${image?.width ?? pageWidth} ${image?.height ?? 1}`} aria-hidden="true">
       <rect className="edit-image-focus-line" x={line.bbox.left} y={line.bbox.top}
@@ -119,7 +119,7 @@ export function EditImageFocus({ line, caret, zoom, pageWidth, sourceRef }: {
       <line className="edit-image-focus-underline" x1={focus.bbox.left} x2={focus.bbox.right}
         y1={line.bbox.bottom} y2={line.bbox.bottom} />
     </svg>
-    <canvas ref={magnifierRef} className="edit-image-magnifier" aria-hidden="true"
-      style={{ left, top, width: displayWidth, height: displayHeight }} />
+    {showMagnifier && <canvas ref={magnifierRef} className="edit-image-magnifier" aria-hidden="true"
+      style={{ left, top, width: displayWidth, height: displayHeight }} />}
   </>;
 }

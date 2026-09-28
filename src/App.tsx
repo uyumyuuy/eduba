@@ -3,6 +3,8 @@ import { useTranslation } from "react-i18next";
 import { EditToolbarButton } from "./EditToolbarButton";
 import { FormattedEditMirror } from "./FormattedEditMirror";
 import { EditImageFocus } from "./EditImageFocus";
+import { ProofingTextMagnifier } from "./ProofingTextMagnifier";
+import { createPortal } from "react-dom";
 import { applyLanguage, t as globalT, type LocalePreference } from "./i18n";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
@@ -277,31 +279,36 @@ function PageThumbnail({ cache, page }: { cache: LogicalPageThumbnailCache | nul
 
   return <span ref={frameRef} className="thumb" aria-hidden="true"><canvas ref={canvasRef} /></span>;
 }
-type LineOverlayProps = { value:string; formatting:TextFormatRange[]; left:number; top:number; width:number; height:number; fontSize:number; onChange:(value:string)=>void; onCaretChange:(offset:number)=>void; onFinish:()=>void; onUndo:()=>void; onRedo:()=>void; onFormat:(start:number,end:number,kind:TextFormatKind)=>void; onOpenBulk:(selection:string,start:number,end:number)=>void; onSplit:(caret:number)=>void; };
-function LineOverlay({value,formatting,left,top,width,height,fontSize:naturalFontSize,onChange,onCaretChange,onFinish,onUndo,onRedo,onFormat,onOpenBulk,onSplit}:LineOverlayProps) {
- const { t } = useTranslation(); const inputRef=useRef<HTMLTextAreaElement>(null); const mirrorRef=useRef<HTMLDivElement>(null); const [selection,setSelection]=useState({start:0,end:0}); const [ctrl,setCtrl]=useState(false);
+type LineOverlayProps = { portalTarget:HTMLElement|null; value:string; formatting:TextFormatRange[]; left:number; top:number; width:number; height:number; fontSize:number; onChange:(value:string)=>void; onCaretChange:(offset:number)=>void; onFinish:()=>void; onUndo:()=>void; onRedo:()=>void; onFormat:(start:number,end:number,kind:TextFormatKind)=>void; onOpenBulk:(selection:string,start:number,end:number)=>void; onSplit:(caret:number)=>void; textMagnifierEnabled:boolean; };
+function LineOverlay({portalTarget,value,formatting,left,top,width,height,fontSize:naturalFontSize,onChange,onCaretChange,onFinish,onUndo,onRedo,onFormat,onOpenBulk,onSplit,textMagnifierEnabled}:LineOverlayProps) {
+ const { t } = useTranslation(); const inputRef=useRef<HTMLTextAreaElement>(null); const mirrorRef=useRef<HTMLDivElement>(null); const toolbarRef=useRef<HTMLDivElement>(null); const magnifierRef=useRef<HTMLDivElement>(null); const [magnifierPosition,setMagnifierPosition]=useState<{left:number;top:number}|null>(null); const [magnifierFontSize,setMagnifierFontSize]=useState(naturalFontSize*2); const [selection,setSelection]=useState({start:0,end:0,caret:0}); const [ctrl,setCtrl]=useState(false);
  const selected=value.slice(selection.start,selection.end); const candidates=selected?candidatesForSelection(selected):[];
  // Keep the normal text baseline fixed while giving raised glyphs room above it.
  const extraTop=Math.min(top,Math.max(4,naturalFontSize*.45));
  const editTop=top-extraTop;
  const editHeight=height+extraTop;
  const editStyle={left,top:editTop,width,height:editHeight,paddingTop:extraTop,fontSize:naturalFontSize};
- useLayoutEffect(()=>{const input=inputRef.current;if(!input)return;input.style.fontSize=`${naturalFontSize}px`;const ratio=Math.min(1,Math.max(1,input.clientWidth-4)/Math.max(1,input.scrollWidth-4),Math.max(1,input.clientHeight-2)/Math.max(1,input.scrollHeight-2));input.style.fontSize=`${Math.max(1,naturalFontSize*(ratio<1?ratio*.98:1))}px`;if(mirrorRef.current){mirrorRef.current.style.fontSize=input.style.fontSize;mirrorRef.current.scrollLeft=input.scrollLeft;mirrorRef.current.scrollTop=input.scrollTop;}},[height,naturalFontSize,value,width,formatting]);
+ useLayoutEffect(()=>{const input=inputRef.current;if(!input)return;input.style.fontSize=`${naturalFontSize}px`;const ratio=Math.min(1,Math.max(1,input.clientWidth-4)/Math.max(1,input.scrollWidth-4),Math.max(1,input.clientHeight-2)/Math.max(1,input.scrollHeight-2));input.style.fontSize=`${Math.max(1,naturalFontSize*(ratio<1?ratio*.98:1))}px`;setMagnifierFontSize(Math.min(36,(Number.parseFloat(input.style.fontSize)||naturalFontSize)*2));if(mirrorRef.current){mirrorRef.current.style.fontSize=input.style.fontSize;mirrorRef.current.scrollLeft=input.scrollLeft;mirrorRef.current.scrollTop=input.scrollTop;}},[height,naturalFontSize,value,width,formatting]);
  useEffect(()=>{const up=(event:KeyboardEvent)=>{if(event.key==='Control'||!event.ctrlKey)setCtrl(false)};const blur=()=>setCtrl(false);document.addEventListener('keyup',up);window.addEventListener('blur',blur);return()=>{document.removeEventListener('keyup',up);window.removeEventListener('blur',blur)}},[]);
- const capture=()=>{const input=inputRef.current;if(input){setSelection({start:input.selectionStart,end:input.selectionEnd});onCaretChange(input.selectionDirection==="backward"?input.selectionStart:input.selectionEnd)}};
+ const capture=()=>{const input=inputRef.current;if(input){const caret=input.selectionDirection==="backward"?input.selectionStart:input.selectionEnd;setSelection({start:input.selectionStart,end:input.selectionEnd,caret});onCaretChange(caret)}};
+ useEffect(()=>{const input=inputRef.current;if(!input)return;const syncSelection=()=>capture();input.addEventListener("select",syncSelection);document.addEventListener("selectionchange",syncSelection);return()=>{input.removeEventListener("select",syncSelection);document.removeEventListener("selectionchange",syncSelection)}},[]);
  useEffect(()=>{const timer=window.setTimeout(()=>{if(inputRef.current===document.activeElement)capture()},0);return()=>window.clearTimeout(timer)},[]);
+ useLayoutEffect(()=>{const place=()=>{const toolbar=toolbarRef.current,stage=portalTarget;if(!toolbar||!stage)return;const rect=toolbar.getBoundingClientRect(),stageRect=stage.getBoundingClientRect();const panelWidth=Math.min(250,Math.max(120,stage.clientWidth-16));const minLeft=stageRect.left+8,maxLeft=Math.max(minLeft,stageRect.left+stage.clientWidth-panelWidth-8);const viewportLeft=Math.max(minLeft,Math.min(maxLeft,rect.left));
+// Keep the 60px panel above the toolbar; near the scroll viewport top, place it below the toolbar.
+const viewportTop=rect.top-stageRect.top>=70?rect.top-68:rect.bottom+8;setMagnifierPosition({left:viewportLeft-stageRect.left+stage.scrollLeft,top:viewportTop-stageRect.top+stage.scrollTop});};place();window.addEventListener("resize",place);document.addEventListener("scroll",place,true);return()=>{window.removeEventListener("resize",place);document.removeEventListener("scroll",place,true)}},[portalTarget,left,top,selection.start,selection.end,value]);
+
  const format=(kind:TextFormatKind)=>{if(selection.start<selection.end)onFormat(selection.start,selection.end,kind)};
- const replace=(text:string)=>{onChange(value.slice(0,selection.start)+text+value.slice(selection.end));setSelection({start:selection.start,end:selection.start+text.length});onCaretChange(selection.start+text.length)};
+ const replace=(text:string)=>{onChange(value.slice(0,selection.start)+text+value.slice(selection.end));setSelection({start:selection.start,end:selection.start+text.length,caret:selection.start+text.length});onCaretChange(selection.start+text.length)};
  return <>{formatting.length>0&&<FormattedEditMirror mirrorRef={mirrorRef} value={value} formatting={formatting} className="line-edit-mirror" style={editStyle} />}<textarea ref={inputRef} autoFocus wrap="off" className={`line-overlay ${formatting.length?"has-formatting":""}`} value={value} onChange={event=>{onChange(event.currentTarget.value);onCaretChange(event.currentTarget.selectionStart)}} onSelect={capture} onScroll={event=>{if(mirrorRef.current){mirrorRef.current.scrollLeft=event.currentTarget.scrollLeft;mirrorRef.current.scrollTop=event.currentTarget.scrollTop}}} onKeyDown={event=>{setCtrl(event.ctrlKey);const key=event.key.toLowerCase();if(event.ctrlKey&&!event.nativeEvent.isComposing&&(key==='z'||key==='y')){event.preventDefault();if(key==='y'||event.shiftKey)onRedo();else onUndo();return}if(event.key==='Escape'||(event.key==='Enter'&&!event.nativeEvent.isComposing&&event.keyCode!==229)){event.preventDefault();onFinish();return}if(event.ctrlKey&&selection.start<selection.end){const kind=key==='b'?'bold':key==='i'?'italic':event.key==='ArrowUp'?'superscript':event.key==='ArrowDown'?'subscript':null;if(kind){event.preventDefault();format(kind)}else if(/^[1-9]$/.test(key)&&candidates[Number(key)-1]){event.preventDefault();replace(candidates[Number(key)-1])}else if(key==='g'){event.preventDefault();onOpenBulk(selected,selection.start,selection.end)}}}} onKeyUp={event=>{setCtrl(event.ctrlKey);capture()}} onBlur={onFinish} style={editStyle} />
- {!selected&&<div className="selection-toolbar" style={{left,top:Math.max(0,editTop-48)}} onMouseDown={event=>event.preventDefault()} role="toolbar" aria-label="Line tools"><EditToolbarButton label={t("toolbar.splitLine")} onClick={()=>onSplit(selection.start)} disabled={selection.start===0||selection.start===value.length}>{t("toolbar.splitLine")}</EditToolbarButton></div>}
- {selected&&<div className="selection-toolbar" style={{left,top:Math.max(0,editTop-48)}} onMouseDown={event=>event.preventDefault()} role="toolbar" aria-label="Selected text tools">
+ {!selected&&<div ref={toolbarRef} className="selection-toolbar" style={{left,top:Math.max(0,editTop-48)}} onMouseDown={event=>event.preventDefault()} role="toolbar" aria-label="Line tools"><EditToolbarButton label={t("toolbar.splitLine")} onClick={()=>onSplit(selection.start)} disabled={selection.start===0||selection.start===value.length}>{t("toolbar.splitLine")}</EditToolbarButton></div>}
+ {selected&&<div ref={toolbarRef} className="selection-toolbar" style={{left,top:Math.max(0,editTop-48)}} onMouseDown={event=>event.preventDefault()} role="toolbar" aria-label="Selected text tools">
   <EditToolbarButton label={t("toolbar.bold")} shortcut="B" showShortcut={ctrl} onClick={()=>format("bold")}>{t("toolbar.bold")}</EditToolbarButton>
   <EditToolbarButton label={t("toolbar.italic")} shortcut="I" showShortcut={ctrl} onClick={()=>format("italic")}>{t("toolbar.italic")}</EditToolbarButton>
   <EditToolbarButton label={t("toolbar.superscript")} shortcut="↑" showShortcut={ctrl} onClick={()=>format("superscript")}>{t("toolbar.superscript")}</EditToolbarButton>
   <EditToolbarButton label={t("toolbar.subscript")} shortcut="↓" showShortcut={ctrl} onClick={()=>format("subscript")}>{t("toolbar.subscript")}</EditToolbarButton>
   <EditToolbarButton label={t("toolbar.bulkReplace")} shortcut="G" showShortcut={ctrl} onClick={()=>onOpenBulk(selected,selection.start,selection.end)}>{t("toolbar.bulkReplace")}</EditToolbarButton>
   {candidates.map((candidate,index)=><EditToolbarButton className="text-candidate" key={candidate} label={candidate} shortcut={index<9?String(index+1):undefined} showShortcut={ctrl} onClick={()=>replace(candidate)}>{candidate}</EditToolbarButton>)}
-</div>}</>;
+</div>}{textMagnifierEnabled&&magnifierPosition&&portalTarget&&createPortal(<ProofingTextMagnifier ref={magnifierRef} value={value} formatting={formatting} selectionStart={selection.start} selectionEnd={selection.end} caret={selection.caret} fontSize={magnifierFontSize} style={{left:magnifierPosition.left,top:magnifierPosition.top}} />,portalTarget)}</>;
 }
 export default function App({ initialLanguage = "auto", initialOsLocale = null }: { initialLanguage?: LocalePreference; initialOsLocale?: string | null } = {}) {
   const { t } = useTranslation();
@@ -351,7 +358,35 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
   const [notice, updateNotice] = useState<{ key: string; values?: Record<string, string | number> }>({ key: "notice.welcome" });
   const [startupWarning, setStartupWarning] = useState<{ key: string; values: { error: string } } | null>(null);
   const setNotice = useCallback((key: string, values?: Record<string, string | number>) => updateNotice({ key, values }), []);
+  const setMagnifierPreference = useCallback((key: "imageMagnifierEnabled" | "textMagnifierEnabled", enabled: boolean) => {
+    magnifierPreferencesTouched.current = true;
+    const before = magnifierPreferencesRef.current;
+    const next = { ...before, [key]: enabled };
+    magnifierPreferencesRef.current = next;
+    setMagnifierPreferences(next);
+    const sequence = ++magnifierSaveSequence.current;
+    magnifierSaveQueue.current = magnifierSaveQueue.current.catch(() => undefined).then(async () => {
+      try {
+        await invokeCommand("save_magnifier_preferences", next);
+        persistedMagnifierPreferences.current = next;
+      } catch (error) {
+        if (sequence === magnifierSaveSequence.current) {
+          const rollback = persistedMagnifierPreferences.current;
+          magnifierPreferencesRef.current = rollback;
+          setMagnifierPreferences(rollback);
+          setNotice("notices.magnifierSaveFailed", { error: errorText(error) });
+        }
+      }
+    });
+  }, [setNotice]);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [magnifierPreferences, setMagnifierPreferences] = useState({ imageMagnifierEnabled: true, textMagnifierEnabled: true });
+  const magnifierPreferencesRef = useRef(magnifierPreferences);
+  const persistedMagnifierPreferences = useRef(magnifierPreferences);
+  const magnifierSaveQueue = useRef<Promise<void>>(Promise.resolve());
+  const magnifierSaveSequence = useRef(0);
+  const magnifierPreferencesTouched = useRef(false);
+
   const [bulkReplace, setBulkReplace] = useState<{ search: string } | null>(null);
   const [scriptCalibrationOpen, setScriptCalibrationOpen] = useState(false);
   const [scriptCalibrationCandidates, setScriptCalibrationCandidates] = useState<ScriptCalibrationCandidate[]>([]);
@@ -657,6 +692,12 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
     const generation = restorationGeneration.current;
     void invokeCommand("get_user_preferences")
       .then(async (preferences) => {
+        if (!magnifierPreferencesTouched.current) {
+          const loaded = { imageMagnifierEnabled: preferences.imageMagnifierEnabled ?? true, textMagnifierEnabled: preferences.textMagnifierEnabled ?? true };
+          magnifierPreferencesRef.current = loaded;
+          persistedMagnifierPreferences.current = loaded;
+          setMagnifierPreferences(loaded);
+        }
         const lastProject = preferences.lastProject;
         if (!lastProject?.path || !lastProject.pageId || working.current || generation !== restorationGeneration.current) return;
         try {
@@ -2280,7 +2321,7 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
                     {editing && doc && (() => {
                       const line = allLines(doc).find(candidate => candidate.id === editing);
                       return line ? <EditImageFocus line={line} caret={editCaret?.lineId === line.id ? editCaret.offset : 0}
-                        zoom={zoom} pageWidth={canvasSize.width} sourceRef={canvasRef} /> : null;
+                        zoom={zoom} pageWidth={canvasSize.width} sourceRef={canvasRef} showMagnifier={magnifierPreferences.imageMagnifierEnabled} /> : null;
                     })()}
                     {regionMode === "add" && regionSelection && <div className="region-selection" style={{
                       left: regionSelection.left * zoom, top: regionSelection.top * zoom,
@@ -2400,6 +2441,7 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
                         return line ? (
                           <LineOverlay
                             key={line.id}
+                            portalTarget={ocrStageRef.current}
                             value={line.correctedText}
                             formatting={effectiveFormatting(line)}
                             onChange={(value) => editLine(line.id, value)}
@@ -2415,6 +2457,7 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
                             width={Math.max(20, (line.bbox.right - line.bbox.left) * zoom)}
                             height={Math.max(22, (line.bbox.bottom - line.bbox.top) * zoom + 8)}
                             fontSize={Math.max(1, (line.fontSize || line.bbox.bottom - line.bbox.top) * zoom)}
+                            textMagnifierEnabled={magnifierPreferences.textMagnifierEnabled}
                           />
                         ) : null;
                       })()}
@@ -2489,6 +2532,8 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
           language={language}
           changeLanguage={changeLanguage}
           languageSaving={languageSaving}
+          magnifierPreferences={magnifierPreferences}
+          setMagnifierPreference={setMagnifierPreference}
           close={() => setSettingsOpen(false)}
         />
       )}{" "}
@@ -2546,6 +2591,8 @@ function SettingsModal({
   language,
   changeLanguage,
   languageSaving,
+  magnifierPreferences,
+  setMagnifierPreference,
 }: {
   manifest: Manifest;
   putManifest: (v: Manifest) => void;
@@ -2554,6 +2601,8 @@ function SettingsModal({
   language: LocalePreference;
   changeLanguage: (language: LocalePreference) => Promise<void>;
   languageSaving: boolean;
+  magnifierPreferences: { imageMagnifierEnabled: boolean; textMagnifierEnabled: boolean };
+  setMagnifierPreference: (key: "imageMagnifierEnabled" | "textMagnifierEnabled", enabled: boolean) => void;
 }) {
   const { t } = useTranslation();
   return (
@@ -2565,6 +2614,8 @@ function SettingsModal({
             <option value="auto">{t("language.auto")}</option><option value="en">{t("language.en")}</option><option value="ja">{t("language.ja")}</option><option value="zh-Hans">{t("language.zh-Hans")}</option><option value="zh-Hant">{t("language.zh-Hant")}</option>
           </select>
         </label>
+        <label className="settings-checkbox"><input type="checkbox" checked={magnifierPreferences.imageMagnifierEnabled} onChange={(event) => setMagnifierPreference("imageMagnifierEnabled", event.currentTarget.checked)} />{t("ui.imageMagnifier")}</label>
+        <label className="settings-checkbox"><input type="checkbox" checked={magnifierPreferences.textMagnifierEnabled} onChange={(event) => setMagnifierPreference("textMagnifierEnabled", event.currentTarget.checked)} />{t("ui.textMagnifier")}</label>
         <label>{t("ui.model")}
           <button className="file-select" onClick={async () => {
             const path = await dialogOpen({ multiple: false, filters: [{ name: t("ui.model"), extensions: ["traineddata"] }] });

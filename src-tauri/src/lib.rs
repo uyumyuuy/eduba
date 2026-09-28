@@ -1386,6 +1386,27 @@ fn save_user_preferences(
 }
 
 #[tauri::command]
+fn save_magnifier_preferences(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    image_magnifier_enabled: bool,
+    text_magnifier_enabled: bool,
+) -> Result<(), String> {
+    let _lock = state
+        .preferences_lock
+        .lock()
+        .map_err(|_| "preferences lock is unavailable".to_string())?;
+    let config_dir = app
+        .path()
+        .app_config_dir()
+        .map_err(|e| format!("could not locate app config directory: {e}"))?;
+    let mut preferences = preferences::read_preferences(&config_dir, current_os_locale());
+    preferences.image_magnifier_enabled = image_magnifier_enabled;
+    preferences.text_magnifier_enabled = text_magnifier_enabled;
+    preferences::write_preferences(&config_dir, &preferences)
+}
+
+#[tauri::command]
 fn save_last_opened_project(
     app: AppHandle,
     state: State<'_, AppState>,
@@ -1477,6 +1498,7 @@ pub fn run() {
             get_environment,
             get_user_preferences,
             save_user_preferences,
+            save_magnifier_preferences,
             save_last_opened_project,
             set_ui_language,
             create_project,
