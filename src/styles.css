@@ -104,6 +104,8 @@ button:disabled { cursor: not-allowed; opacity: .42; }
 .settings-modal { width: 480px; }
 .settings-modal h2 { margin-top: 7px; }
 .settings-modal label { display: flex; flex-direction: column; gap: 7px; margin-top: 19px; color: #63716d; font-size: 10px; font-weight: 600; }
+.settings-modal .settings-checkbox { flex-direction: row; align-items: center; justify-content: flex-start; gap: 8px; margin-top: 12px; cursor: pointer; }
+.settings-modal .settings-checkbox input[type="checkbox"] { flex: 0 0 auto; margin: 0; }
 .settings-modal select, .settings-modal input[type=number], .file-select { height: 34px; padding: 0 9px; border: 1px solid #d6d8d0; border-radius: 5px; outline: 0; background: #fffefa; color: #3d4e4a; font-size: 11px; }
 .file-select { display: flex; justify-content: space-between; align-items: center; width: 100%; overflow: hidden; color: #8a938b; text-align: left; font-weight: 400; }
 .file-select svg { flex: 0 0 auto; }
