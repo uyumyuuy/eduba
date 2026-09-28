@@ -135,6 +135,8 @@ pub struct CorrectionMatch {
     pub page_label: String,
     pub line_id: String,
     pub line_text: String,
+    pub formatting: Option<serde_json::Value>,
+    pub auto_formatting: Option<serde_json::Value>,
     pub bbox: Option<serde_json::Value>,
     /// Bounding box of this occurrence (or a bounded line-box approximation).
     #[serde(rename = "matchBBox")]
@@ -853,6 +855,8 @@ fn search_corrections_impl(args: &SearchCorrectionsArgs) -> BackendResult<Correc
                                 page_label: page_label.clone(),
                                 line_id: line_id.to_owned(),
                                 line_text: line_text.to_owned(),
+                                formatting: line.get("formatting").cloned(),
+                                auto_formatting: line.get("autoFormatting").cloned(),
                                 bbox: line.get("bbox").cloned(),
                                 match_bbox: correction_match_bbox(line, line_text, byte_start, byte_start + matched.len()),
                                 match_ordinal,
@@ -1766,7 +1770,7 @@ mod tests {
             project_path: project.to_string_lossy().into_owned(),
             manifest: Some(r#"{"version":1,"pages":[{"id":"second","label":"2"},{"id":"first","label":"1"}]}"#.into()),
         }).unwrap();
-        let first = r#"{"blocks":[{"paragraphs":[{"lines":[{"id":"line-a","correctedText":"old old","originalText":"ignored","bbox":{"left":1,"top":2,"right":3,"bottom":4}}]}]}]}"#;
+        let first = r#"{"blocks":[{"paragraphs":[{"lines":[{"id":"line-a","correctedText":"old old","originalText":"ignored","bbox":{"left":1,"top":2,"right":3,"bottom":4},"formatting":[{"start":0,"end":3,"kind":"italic"}],"autoFormatting":[{"start":4,"end":7,"kind":"superscript"}]}]}]}]}"#;
         let second = r#"{"blocks":[{"paragraphs":[{"lines":[{"id":"line-b","correctedText":"old","originalText":"different"}]}]}]}"#;
         save_page_impl(&SavePageArgs { project_path: project.to_string_lossy().into_owned(), page_id: "first".into(), data: first.into() }).unwrap();
         save_page_impl(&SavePageArgs { project_path: project.to_string_lossy().into_owned(), page_id: "second".into(), data: second.into() }).unwrap();
@@ -1784,6 +1788,8 @@ mod tests {
         let serialized = serde_json::to_value(&found.results[1]).unwrap();
         assert!(serialized.get("matchBBox").is_some());
         assert!(serialized.get("matchBbox").is_none());
+        assert_eq!(serialized["formatting"][0]["kind"], "italic");
+        assert_eq!(serialized["autoFormatting"][0]["kind"], "superscript");
         let last = search_corrections_impl(&SearchCorrectionsArgs {
             project_path: project.to_string_lossy().into_owned(),
             search: "old".into(), page: 1, page_size: 2,

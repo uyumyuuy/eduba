@@ -1,4 +1,4 @@
-import { allLines, clearLineFormatting, setLineFormatting, updateLineText, type DocumentPage, type TextFormatRange } from "./domain";
+import { allLines, clearLineFormatting, effectiveFormatting, setLineFormatting, updateLineText, type DocumentPage, type TextFormatRange } from "./domain";
 import type { BulkMatch } from "./BulkReplaceDialog";
 
 export type BulkPageUpdate = {
@@ -12,6 +12,7 @@ export type PrepareBulkUpdatesArgs = {
   search: string;
   replacement: string;
   replacementFormatting?: TextFormatRange[];
+  preserveFormatting?: boolean;
   loadPage: (pageId: string) => Promise<string>;
 };
 
@@ -39,6 +40,7 @@ export async function prepareBulkUpdates({
   search,
   replacement,
   replacementFormatting = [],
+  preserveFormatting = false,
   loadPage,
 }: PrepareBulkUpdatesArgs): Promise<BulkPageUpdate[]> {
   if (!search) throw new Error("Bulk replacement search text is required.");
@@ -93,14 +95,26 @@ export async function prepareBulkUpdates({
         if (!current || current.correctedText.slice(span.start, span.end) !== search) {
           throw new Error(`The selected match in line ${lineId} changed before replacement.`);
         }
+        const oldFormatting = preserveFormatting ? effectiveFormatting(current) : [];
         const nextText = current.correctedText.slice(0, span.start)
           + replacement
           + current.correctedText.slice(span.end);
         page = updateLineText(page, lineId, nextText);
-        // updateLineText preserves surviving source ranges. A bulk replacement
-        // instead takes the formatting chosen in the replacement editor.
+        // updateLineText preserves ranges outside the replaced text. Rebuild
+        // only the inserted interval from either the source match or editor.
         page = clearLineFormatting(page, lineId, span.start, span.start + replacement.length);
-        for (const range of replacementFormatting) {
+        const formats = preserveFormatting
+          ? oldFormatting.flatMap(range => {
+              const from = Math.max(range.start, span.start);
+              const to = Math.min(range.end, span.end);
+              if (from >= to || replacement.length === 0) return [];
+              const sourceLength = span.end - span.start;
+              const start = Math.floor((from - span.start) * replacement.length / sourceLength);
+              const end = Math.max(start + 1, Math.ceil((to - span.start) * replacement.length / sourceLength));
+              return [{ ...range, start, end }];
+            })
+          : replacementFormatting;
+        for (const range of formats) {
           const start = Math.max(0, Math.min(replacement.length, range.start));
           const end = Math.max(start, Math.min(replacement.length, range.end));
           page = setLineFormatting(page, lineId, span.start + start, span.start + end, range.kind, true);

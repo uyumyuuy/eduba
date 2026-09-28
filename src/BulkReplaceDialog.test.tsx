@@ -89,6 +89,24 @@ describe("BulkReplaceDialog", () => {
     }
   });
 
+  it("renders OCR formatting around the highlighted match and submits both format choices", async () => {
+    invoke.mockResolvedValueOnce({ results: [{ pageId: "p", pageLabel: "1", lineId: "l", lineText: "old word", matchOrdinal: 0, formatting: [{ start: 0, end: 3, kind: "italic" }, { start: 4, end: 8, kind: "superscript" }] }], total: 1, page: 0, pageSize: 20 });
+    const onApply = vi.fn();
+    await act(async () => root.render(<BulkReplaceDialog open projectPath="project" initialSearch="old" onApply={onApply} onClose={vi.fn()} />));
+    await vi.waitFor(() => expect(container.querySelector(".bulk-replace-match")?.getAttribute("style")).toContain("italic"));
+    expect(container.querySelector(".bulk-replace-match")?.textContent).toBe("old");
+    expect([...container.querySelectorAll<HTMLElement>(".bulk-replace-result-copy > span > span")].some(node => node.getAttribute("style")?.includes("vertical-align: super"))).toBe(true);
+    const checkbox = container.querySelector<HTMLInputElement>(".bulk-replace-result input[type=checkbox]")!;
+    await act(async () => { checkbox.click(); });
+    const buttons = [...container.querySelectorAll<HTMLButtonElement>(".modal-actions button")];
+    const replaceWithFormatting = buttons.find(button => button.textContent?.includes("with formatting"))!;
+    await act(async () => replaceWithFormatting.click());
+    await vi.waitFor(() => expect(onApply).toHaveBeenCalledWith(expect.objectContaining({ preserveFormatting: false })));
+    const keepFormatting = [...container.querySelectorAll<HTMLButtonElement>(".modal-actions button")].find(button => button.textContent?.includes("keep formatting"))!;
+    await act(async () => keepFormatting.click());
+    await vi.waitFor(() => expect(onApply).toHaveBeenLastCalledWith(expect.objectContaining({ preserveFormatting: true })));
+  });
+
   it("highlights the exact non-overlapping occurrence in every one-line result", async () => {
     await act(async () => root.render(<BulkReplaceDialog open projectPath="project" initialSearch="old" onApply={vi.fn()} onClose={vi.fn()} />));
     await vi.waitFor(() => expect(container.querySelectorAll(".bulk-replace-match")).toHaveLength(2));

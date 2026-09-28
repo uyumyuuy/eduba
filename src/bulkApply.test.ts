@@ -61,6 +61,24 @@ describe("prepareBulkUpdates", () => {
       { start: 0, end: 3, kind: "bold" }, { start: 4, end: 7, kind: "bold" },
     ]));
   });
+  it("preserves each replaced match's own formatting when replacement length changes", async () => {
+    const page = pageData("cat cat");
+    const line = allLines(page)[0];
+    const formatted = updateLineFormatting(page, line.id, 0, 1, "italic");
+    const both = updateLineFormatting(formatted, line.id, 4, 7, "bold");
+    const [update] = await prepareBulkUpdates({
+      selections: [selection(page.id, line.id, line.correctedText, 0), selection(page.id, line.id, line.correctedText, 1)],
+      search: "cat", replacement: "doggy", preserveFormatting: true,
+      loadPage: async () => JSON.stringify(both),
+    });
+    const updated = allLines(JSON.parse(update.data))[0];
+    expect(updated.correctedText).toBe("doggy doggy");
+    expect(updated.formatting).toEqual(expect.arrayContaining([
+      { start: 0, end: 2, kind: "italic" },
+      { start: 6, end: 11, kind: "bold" },
+    ]));
+  });
+
   it("rejects a stale selected match without producing updates", async () => {
     const page = pageData("cat cat");
     const line = allLines(page)[0];

@@ -1925,10 +1925,10 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
       setScriptCalibrationProgress(null);
     }
   }, [flush, putDoc, putManifest, setNotice, renderEntry, pdf]);
-  const applyBulkReplace = useCallback(async ({ search, replacement, replacementFormatting, selections }: BulkReplaceRequest) => {
+  const applyBulkReplace = useCallback(async ({ search, replacement, replacementFormatting, preserveFormatting, selections }: BulkReplaceRequest) => {
     if (!project || !selections.length) return;
     await flush();
-    const updates = await prepareBulkUpdates({ selections, search, replacement, replacementFormatting, loadPage: async (pageId) => {
+    const updates = await prepareBulkUpdates({ selections, search, replacement, replacementFormatting, preserveFormatting, loadPage: async (pageId) => {
       const saved = await invokeCommand("load_page", { projectPath: project.path, pageId });
       if (!saved) throw new Error("Page data is unavailable.");
       return saved;

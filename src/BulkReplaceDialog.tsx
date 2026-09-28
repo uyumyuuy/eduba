@@ -13,6 +13,8 @@ export type BulkMatch = {
   pageLabel: string;
   lineId: string;
   lineText: string;
+  formatting?: TextFormatRange[];
+  autoFormatting?: TextFormatRange[];
   bbox?: { left: number; top: number; right: number; bottom: number };
   matchBBox?: { left: number; top: number; right: number; bottom: number };
   matchOrdinal: number;
@@ -24,6 +26,7 @@ export type BulkReplaceRequest = {
   search: string;
   replacement: string;
   replacementFormatting: TextFormatRange[];
+  preserveFormatting: boolean;
   selections: BulkMatch[];
 };
 
@@ -117,7 +120,29 @@ function ReplacementEditor({ value, formatting, onChange, onFormattingChange }: 
   </div>;
 }
 
-function HighlightedMatch({ text, search, ordinal }: { text: string; search: string; ordinal: number }) {
+function effectiveMatchFormatting(match: BulkMatch): TextFormatRange[] {
+  const manual = match.formatting ?? [];
+  const automatic = (match.autoFormatting ?? []).flatMap(range => {
+    const overrides = range.kind === "superscript" || range.kind === "subscript"
+      ? manual.filter(item => item.kind === "superscript" || item.kind === "subscript")
+      : manual.filter(item => item.kind === range.kind);
+    let pieces = [range];
+    for (const override of overrides) {
+      pieces = pieces.flatMap(piece => {
+        if (piece.end <= override.start || piece.start >= override.end) return [piece];
+        return [
+          ...(piece.start < override.start ? [{ ...piece, end: override.start }] : []),
+          ...(piece.end > override.end ? [{ ...piece, start: override.end }] : []),
+        ];
+      });
+    }
+    return pieces;
+  });
+  return [...automatic, ...manual];
+}
+
+function HighlightedMatch({ match, search }: { match: BulkMatch; search: string }) {
+  const { lineText: text, matchOrdinal: ordinal } = match;
   let start = -1;
   let cursor = 0;
   for (let occurrence = 0; occurrence <= ordinal; occurrence++) {
@@ -125,7 +150,23 @@ function HighlightedMatch({ text, search, ordinal }: { text: string; search: str
     if (start < 0) return <>{text}</>;
     cursor = start + search.length;
   }
-  return <>{text.slice(0, start)}<mark className="bulk-replace-match">{text.slice(start, start + search.length)}</mark>{text.slice(start + search.length)}</>;
+  const end = start + search.length;
+  const formatting = effectiveMatchFormatting(match);
+  const boundaries = [...new Set([0, text.length, start, end, ...formatting.flatMap(range => [Math.max(0, Math.min(text.length, range.start)), Math.max(0, Math.min(text.length, range.end))])])].sort((a, b) => a - b);
+  return <>{boundaries.slice(0, -1).map((from, index) => {
+    const to = boundaries[index + 1];
+    if (from === to) return null;
+    const active = new Set(formatting.filter(range => range.start < to && range.end > from).map(range => range.kind));
+    const style: React.CSSProperties = {};
+    if (active.has("bold")) style.fontWeight = 700;
+    if (active.has("italic")) style.fontStyle = "italic";
+    if (active.has("superscript")) { style.verticalAlign = "super"; style.fontSize = "0.75em"; }
+    if (active.has("subscript")) { style.verticalAlign = "sub"; style.fontSize = "0.75em"; }
+    const content = text.slice(from, to);
+    return from < end && to > start
+      ? <mark key={from} className="bulk-replace-match" style={style}>{content}</mark>
+      : <span key={from} style={style}>{content}</span>;
+  })}</>;
 }
 
 function MatchRow({ match, search, checked, getSnippet, onToggle }: {
@@ -148,7 +189,7 @@ function MatchRow({ match, search, checked, getSnippet, onToggle }: {
   return <label className="bulk-replace-result">
     <input type="checkbox" checked={checked} onChange={onToggle} />
     <span className="bulk-replace-snippet">{snippet ? <img src={snippet} alt="" /> : <span>OCR</span>}</span>
-    <span className="bulk-replace-result-copy"><strong>{match.pageLabel} · {match.lineId} · #{match.matchOrdinal + 1}</strong><span ref={textRef} title={match.lineText}><HighlightedMatch text={match.lineText} search={search} ordinal={match.matchOrdinal} /></span></span>
+    <span className="bulk-replace-result-copy"><strong>{match.pageLabel} · {match.lineId} · #{match.matchOrdinal + 1}</strong><span ref={textRef} title={match.lineText}><HighlightedMatch match={match} search={search} /></span></span>
   </label>;
 }
 
@@ -191,10 +232,10 @@ export function BulkReplaceDialog({ open, projectPath, initialSearch, getSnippet
   if (!open) return null;
   const toggle = (result: BulkMatch) => setSelected(previous => { const next = new Map(previous); const key = keyOf(result); if (next.has(key)) next.delete(key); else next.set(key, result); return next; });
   const togglePage = () => setSelected(previous => { const next = new Map(previous); for (const result of data.results) { const key = keyOf(result); if (allPageSelected) next.delete(key); else next.set(key, result); } return next; });
-  const submit = async () => {
+  const submit = async (preserveFormatting: boolean) => {
     if (!selectedCount || working) return;
     setWorking(true); setError(null);
-    try { await onApply({ search, replacement, replacementFormatting, selections: selection }); onClose(); }
+    try { await onApply({ search, replacement, replacementFormatting, preserveFormatting, selections: selection }); onClose(); }
     catch (reason) { setError(reason instanceof Error ? reason.message : String(reason)); }
     finally { setWorking(false); }
   };
@@ -205,7 +246,7 @@ export function BulkReplaceDialog({ open, projectPath, initialSearch, getSnippet
       <div className="bulk-replace-fields"><label>{t("bulkReplace.source")}<input value={search} readOnly /></label><label>{t("bulkReplace.replacement")}<ReplacementEditor value={replacement} formatting={replacementFormatting} onChange={setReplacement} onFormattingChange={setReplacementFormatting} /></label></div>
       <div className="bulk-replace-results-head"><strong>{t("bulkReplace.results", { count: data.total })}</strong><button type="button" className="text-button" onClick={togglePage} disabled={!data.results.length}>{allPageSelected ? t("bulkReplace.clearPage") : t("bulkReplace.selectPage")}</button></div>
       <div className="bulk-replace-results" aria-live="polite">{data.results.map(result => <MatchRow key={keyOf(result)} match={result} search={search} checked={selected.has(keyOf(result))} getSnippet={getSnippet} onToggle={() => toggle(result)} />)}{!data.results.length && <p className="bulk-replace-empty"><Search size={15} />{t("bulkReplace.noResults")}</p>}</div>
-      <footer className="bulk-replace-footer"><div className="bulk-replace-pagination"><button type="button" className="icon-button" aria-label={t("bulkReplace.previous")} disabled={resultPage === 0} onClick={() => setResultPage(page => page - 1)}><ChevronLeft size={16} /></button><span>{resultPage + 1} / {pageCount}</span><button type="button" className="icon-button" aria-label={t("bulkReplace.next")} disabled={resultPage + 1 >= pageCount} onClick={() => setResultPage(page => page + 1)}><ChevronRight size={16} /></button></div><div className="modal-actions"><button className="secondary" type="button" disabled={working} onClick={onClose}>{t("bulkReplace.cancel")}</button><button className="primary" type="button" disabled={working || !selectedCount} onClick={() => void submit()}>{working ? t("bulkReplace.applying") : t("bulkReplace.apply", { count: selectedCount })}</button></div></footer>
+      <footer className="bulk-replace-footer"><div className="bulk-replace-pagination"><button type="button" className="icon-button" aria-label={t("bulkReplace.previous")} disabled={resultPage === 0} onClick={() => setResultPage(page => page - 1)}><ChevronLeft size={16} /></button><span>{resultPage + 1} / {pageCount}</span><button type="button" className="icon-button" aria-label={t("bulkReplace.next")} disabled={resultPage + 1 >= pageCount} onClick={() => setResultPage(page => page + 1)}><ChevronRight size={16} /></button></div><div className="modal-actions"><button className="secondary" type="button" disabled={working} onClick={onClose}>{t("bulkReplace.cancel")}</button><button className="secondary" type="button" disabled={working || !selectedCount} onClick={() => void submit(false)}>{working ? t("bulkReplace.applying") : t("bulkReplace.applyFormatting", { count: selectedCount })}</button><button className="primary" type="button" disabled={working || !selectedCount} onClick={() => void submit(true)}>{working ? t("bulkReplace.applying") : t("bulkReplace.preserveFormatting", { count: selectedCount })}</button></div></footer>
       {error && <p className="form-error">{error}</p>}
     </section>
   </div>;
