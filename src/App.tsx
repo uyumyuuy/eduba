@@ -19,7 +19,6 @@ import {
   FileDown,
   FilePlus2,
   FolderOpen,
-  Save,
   Settings2,
   Square,
   Undo2,
@@ -2117,14 +2116,6 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
           <FolderOpen size={15} /> {t("ui.open")}
         </button>
         <span className="toolbar-divider" />
-        <button
-          onClick={() => void save()}
-          title="Ctrl+S"
-          aria-keyshortcuts="Control+S"
-          disabled={!project || Boolean(busy)}
-        >
-          <Save size={15} /> {t("ui.save")}
-        </button>
         <button onClick={undo} disabled={!undoStack.length || Boolean(busy)} title="Ctrl+Z" aria-keyshortcuts="Control+Z">
           <Undo2 size={15} /> {t("ui.undo")}
         </button>
