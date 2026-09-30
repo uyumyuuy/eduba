@@ -34,6 +34,8 @@ import { canvasToBase64, openProjectPdf, openSourcePdf } from "./pdf";
 import { LogicalPageThumbnailCache } from "./pdfThumbnail";
 import { invokeCommand, isTauri, type ProjectInfo } from "./tauri";
 import { SaveQueue } from "./persistence";
+import { createReadableHtml } from "./readableHtml";
+import { loadReadableFontFaces, notoSerifLicense } from "./readableHtmlFonts";
 import { inferWordStyles, clearAutoWordStyles } from "./styleDetection";
 import {
   allLines,
@@ -1433,7 +1435,7 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
     setOrderPreviewIds(null);
   }, [stopRegionScroll]);
   const exportFile = useCallback(
-    async (type: "txt" | "hocr" | "svg", scope: "current" | "all" = "all") => {
+    async (type: "txt" | "hocr" | "html" | "svg", scope: "current" | "all" = "all") => {
       if (!projectRef.current || working.current || importActive.current)
         return;
       try {
@@ -1441,6 +1443,7 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
         setBusy("save");
         await flush();
         const pages: DocumentPage[] = [];
+        const labeledPages: { page: DocumentPage; label: string }[] = [];
         const entries =
           scope === "current"
             ? [manifestRef.current.pages[indexRef.current]]
@@ -1450,15 +1453,20 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
             projectPath: projectRef.current.path,
             pageId: entry.id,
           });
-          if (saved) pages.push(JSON.parse(saved) as DocumentPage);
+          if (saved) {
+            const page = JSON.parse(saved) as DocumentPage;
+            pages.push(page);
+            labeledPages.push({ page, label: entry.label });
+          }
         }
         if (!pages.length)
           throw new Error(globalT("appErrors.noExport"));
         let content = "",
-          suffix = type === "txt" ? "txt" : type === "hocr" ? "html" : "svg",
+          suffix = type === "txt" ? "txt" : type === "hocr" ? "html" : type === "html" ? "readable.html" : "svg",
           readyBase64 = false;
         if (type === "txt") content = exportText(pages);
         else if (type === "hocr") content = exportHocr(pages);
+        else if (type === "html") content = createReadableHtml(projectRef.current.name.replace(/\.eduba$/i, ""), labeledPages, await loadReadableFontFaces(), notoSerifLicense);
         else if (pages.length === 1) content = exportSvg(pages[0]);
         else {
           const zip = new JSZip();
@@ -1471,7 +1479,7 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
         }
         const path = await dialogSave({
           defaultPath: `${projectRef.current.name.replace(/\.eduba$/i, "")}.${suffix}`,
-          filters: [{ name: suffix.toUpperCase(), extensions: [suffix] }],
+          filters: [{ name: suffix.toUpperCase(), extensions: [suffix.endsWith(".html") ? "html" : suffix] }],
         });
         if (typeof path === "string")
           await invokeCommand("export_file", {
@@ -2127,6 +2135,12 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
           disabled={!project || Boolean(busy)}
         >
           hOCR
+        </button>
+        <button
+          onClick={() => exportFile("html", exportScope)}
+          disabled={!project || Boolean(busy)}
+        >
+          HTML
         </button>
         <button
           onClick={() => exportFile("svg", exportScope)}

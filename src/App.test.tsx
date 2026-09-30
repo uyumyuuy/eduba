@@ -7,6 +7,7 @@ import i18n from "./i18n";
 
 const mocks = vi.hoisted(() => ({
   dialogOpen: vi.fn(),
+  dialogSave: vi.fn(),
   invoke: vi.fn(),
   openProjectPdf: vi.fn(),
   loadPageImage: vi.fn(),
@@ -16,7 +17,7 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock("@tauri-apps/plugin-dialog", () => ({
   open: mocks.dialogOpen,
-  save: vi.fn(),
+  save: mocks.dialogSave,
 }));
 
 vi.mock("@tauri-apps/api/event", () => ({
@@ -133,6 +134,7 @@ describe("saved project loading", () => {
     const canvasContext = { drawImage: vi.fn(), fillRect: vi.fn() } as unknown as CanvasRenderingContext2D;
     vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue(canvasContext);
     mocks.dialogOpen.mockResolvedValue("D:/projects/reading.eduba");
+    mocks.dialogSave.mockResolvedValue("D:/exports/reading.readable.html");
     mocks.closeRequested.mockResolvedValue(() => undefined);
     mocks.openProjectPdf.mockResolvedValue({
       numPages: 2,
@@ -962,5 +964,39 @@ describe("saved project loading", () => {
     const redo = Array.from(container.querySelectorAll<HTMLButtonElement>("button")).find(button => button.textContent?.includes("Redo"))!;
     await act(async () => redo.click());
     await waitFor(() => expect(container.querySelectorAll("svg text")).toHaveLength(2));
+  });
+
+  it("exports readable HTML through its own button with all page labels", async () => {
+    await openSavedProject();
+    vi.spyOn(globalThis, "fetch").mockImplementation(async () => ({ ok: true, status: 200, arrayBuffer: async () => Uint8Array.of(0, 1).buffer } as Response));
+    const htmlButton = Array.from(container.querySelectorAll<HTMLButtonElement>("button")).find(button => button.textContent?.trim() === "HTML")!;
+    await act(async () => htmlButton.click());
+    await waitFor(() => expect(mocks.invoke).toHaveBeenCalledWith("export_file", expect.objectContaining({ path: "D:/exports/reading.readable.html" })));
+    expect(mocks.dialogSave).toHaveBeenCalledWith(expect.objectContaining({
+      defaultPath: "reading.readable.html", filters: [{ name: "READABLE.HTML", extensions: ["html"] }],
+    }));
+    const call = mocks.invoke.mock.calls.find(([command]) => command === "export_file")!;
+    const html = atob((call[1] as { contentBase64: string }).contentBase64);
+    expect(html).toContain("saved page one");
+    expect(html).toContain("saved page two");
+    expect(html).toContain('class="page-label">1</header>');
+    expect(html).toContain('class="page-label">2</header>');
+  });
+
+  it("exports only the selected page in current-page scope without renumbering its label", async () => {
+    await openSavedProject();
+    vi.spyOn(globalThis, "fetch").mockImplementation(async () => ({ ok: true, status: 200, arrayBuffer: async () => Uint8Array.of(0, 1).buffer } as Response));
+    await act(async () => container.querySelectorAll<HTMLButtonElement>(".page-item")[1].click());
+    const scope = Array.from(container.querySelectorAll<HTMLSelectElement>("select")).find(select => Array.from(select.options).some(option => option.value === "current"))!;
+    await act(async () => {
+      scope.value = "current";
+      scope.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    await act(async () => Array.from(container.querySelectorAll<HTMLButtonElement>("button")).find(button => button.textContent?.trim() === "HTML")!.click());
+    await waitFor(() => expect(mocks.invoke).toHaveBeenCalledWith("export_file", expect.objectContaining({ path: "D:/exports/reading.readable.html" })));
+    const call = mocks.invoke.mock.calls.find(([command]) => command === "export_file")!;
+    const html = atob((call[1] as { contentBase64: string }).contentBase64);
+    expect(html).toContain('class="page-label">2</header>');
+    expect(html).not.toContain('class="page-label">1</header>');
   });
 });
