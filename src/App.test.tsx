@@ -88,6 +88,31 @@ async function waitFor(assertion: () => void): Promise<void> {
   await vi.waitFor(assertion, { timeout: 1_000 });
 }
 
+const emptyRegionHocr = '<html><body><div class="ocr_page" title="bbox 0 0 80 60"></div></body></html>';
+const numberRegionHocr = '<html><body><div class="ocr_page" title="bbox 0 0 80 60"><div class="ocr_carea"><p class="ocr_par"><span class="ocr_line" title="bbox 25 25 35 35"><span class="ocrx_word" title="bbox 25 25 35 35">2</span></span></p></div></div></body></html>';
+
+async function dragOcrRegion(container: HTMLElement) {
+  const canvas = container.querySelector<HTMLCanvasElement>(".rendered-page")!;
+  vi.spyOn(canvas, "getBoundingClientRect").mockReturnValue({ left: 0, top: 0, right: 100, bottom: 80, width: 100, height: 80 } as DOMRect);
+  const surface = container.querySelector<HTMLDivElement>(".pdf-page")!;
+  Object.defineProperties(surface, {
+    setPointerCapture: { configurable: true, value: vi.fn() },
+    hasPointerCapture: { configurable: true, value: vi.fn(() => true) },
+    releasePointerCapture: { configurable: true, value: vi.fn() },
+  });
+  await act(async () => Array.from(container.querySelectorAll<HTMLButtonElement>("button")).find(button => button.textContent?.includes("Add OCR region"))!.click());
+  const pointer = (type: string, x: number, y: number) => {
+    const event = new MouseEvent(type, { bubbles: true, button: 0, clientX: x, clientY: y });
+    Object.defineProperty(event, "pointerId", { value: 1 });
+    return event;
+  };
+  await act(async () => {
+    surface.dispatchEvent(pointer("pointerdown", 10, 20));
+    surface.dispatchEvent(pointer("pointermove", 50, 40));
+    surface.dispatchEvent(pointer("pointerup", 50, 40));
+  });
+}
+
 describe("proofing pane scroll synchronization", () => {
   it("maps the page coordinate at the viewport centre across different scales and viewport sizes", () => {
     const element = (dimensions: { left?: number; top?: number; width: number; height: number }) => {
@@ -620,11 +645,70 @@ describe("saved project loading", () => {
     await waitFor(() => expect(JSON.parse(persistedPages.get("page-1")!).manualOcrRegions).toHaveLength(1));
     const saved = JSON.parse(persistedPages.get("page-1")!);
     expect(saved.manualOcrRegions[0].bbox).toEqual({ left: 10, top: 20, right: 50, bottom: 40 });
+    expect(mocks.invoke.mock.calls.filter(([command]) => command === "run_ocr")).toHaveLength(1);
+    expect(saved.manualOcrRegions[0].psm).toBe(11);
     expect(container.textContent).toContain("15");
     const undoButton = Array.from(container.querySelectorAll<HTMLButtonElement>("button")).find(item => item.textContent?.includes("Undo"))!;
     await act(async () => undoButton.click());
     await waitFor(() => expect(JSON.parse(persistedPages.get("page-1")!).manualOcrRegions).toBeUndefined());
   });
+  it("falls back from empty PSM 11 to PSM 6 with the same image and saves one undoable addition", async () => {
+    const base = mocks.invoke.getMockImplementation()!;
+    mocks.invoke.mockImplementation(async (command: string, args?: { psm?: number }) =>
+      command === "run_ocr" ? (args?.psm === 11 ? emptyRegionHocr : numberRegionHocr) : base(command, args as never));
+    await openSavedProject();
+    await dragOcrRegion(container);
+    await waitFor(() => expect(JSON.parse(persistedPages.get("page-1")!).manualOcrRegions?.[0].psm).toBe(6));
+    const calls = mocks.invoke.mock.calls.filter(([command]) => command === "run_ocr");
+    expect(calls.map(([, args]) => args.psm)).toEqual([11, 6]);
+    expect(calls[1][1]).toEqual({ ...calls[0][1], psm: 6 });
+    expect(mocks.invoke.mock.calls.filter(([command]) => command === "apply_bulk_corrections")).toHaveLength(1);
+    expect(container.textContent).toContain("saved page one");
+    await act(async () => Array.from(container.querySelectorAll<HTMLButtonElement>("button")).find(button => button.textContent?.includes("Undo"))!.click());
+    await waitFor(() => expect(JSON.parse(persistedPages.get("page-1")!).manualOcrRegions).toBeUndefined());
+  });
+
+  it("leaves the page unchanged when both region OCR attempts are empty", async () => {
+    const base = mocks.invoke.getMockImplementation()!;
+    mocks.invoke.mockImplementation(async (command: string, args?: unknown) =>
+      command === "run_ocr" ? emptyRegionHocr : base(command, args as never));
+    await openSavedProject();
+    const before = persistedPages.get("page-1");
+    await dragOcrRegion(container);
+    await waitFor(() => expect(container.textContent).toContain("No new text was found"));
+    expect(mocks.invoke.mock.calls.filter(([command]) => command === "run_ocr").map(([, args]) => args.psm)).toEqual([11, 6]);
+    expect(persistedPages.get("page-1")).toBe(before);
+    expect(mocks.invoke.mock.calls.some(([command]) => command === "apply_bulk_corrections")).toBe(false);
+  });
+
+  it("does not retry region OCR after cancellation", async () => {
+    const base = mocks.invoke.getMockImplementation()!;
+    let finish!: (value: string) => void;
+    const pending = new Promise<string>(resolve => { finish = resolve; });
+    mocks.invoke.mockImplementation(async (command: string, args?: unknown) =>
+      command === "run_ocr" ? pending : base(command, args as never));
+    await openSavedProject();
+    await dragOcrRegion(container);
+    await waitFor(() => expect(mocks.invoke).toHaveBeenCalledWith("run_ocr", expect.objectContaining({ psm: 11 })));
+    await act(async () => Array.from(container.querySelectorAll<HTMLButtonElement>("button")).find(button => button.textContent?.trim() === "Cancel")!.click());
+    await act(async () => finish(emptyRegionHocr));
+    await waitFor(() => expect(container.textContent).toContain("OCR was cancelled"));
+    expect(mocks.invoke.mock.calls.filter(([command]) => command === "run_ocr")).toHaveLength(1);
+    expect(mocks.invoke.mock.calls.some(([command]) => command === "apply_bulk_corrections")).toBe(false);
+  });
+
+  it("does not treat an OCR error as an empty result to retry", async () => {
+    const base = mocks.invoke.getMockImplementation()!;
+    mocks.invoke.mockImplementation(async (command: string, args?: unknown) => {
+      if (command === "run_ocr") throw new Error("OCR failed in test");
+      return base(command, args as never);
+    });
+    await openSavedProject();
+    await dragOcrRegion(container);
+    await waitFor(() => expect(container.textContent).toContain("OCR failed in test"));
+    expect(mocks.invoke.mock.calls.filter(([command]) => command === "run_ocr")).toHaveLength(1);
+  });
+
   it("deletes a clicked line from the OCR pane and can undo it", async () => {
     await openSavedProject();
     const button = Array.from(container.querySelectorAll<HTMLButtonElement>("button")).find(item => item.textContent?.includes("Delete OCR region"))!;

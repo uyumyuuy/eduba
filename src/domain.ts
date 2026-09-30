@@ -125,7 +125,7 @@ export interface DocumentPage extends LogicalPageProvenance {
   sourceDpiY?: number;
   blocks: PageBlock[];
   /** One-shot manually selected OCR regions. Full-page OCR replaces this list. */
-  manualOcrRegions?: { id: string; bbox: Rect; psm: 11; addedWordIds: string[]; addedLineIds: string[] }[];
+  manualOcrRegions?: { id: string; bbox: Rect; psm: 11 | 6; addedWordIds: string[]; addedLineIds: string[] }[];
   /** Removed OCR lines are retained only as a manual-change marker until full-page OCR. */
   deletedOcrLineIds?: string[];
   /** A user has changed the line reading order on this page. */

@@ -1127,23 +1127,35 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
       const dpiX = entry.sourceDpiX ?? entry.dpi ?? manifestRef.current.settings.dpi;
       const dpiY = entry.sourceDpiY ?? entry.dpi ?? manifestRef.current.settings.dpi;
       const dpi = Math.max(70, Math.min(2400, Math.round(Math.sqrt(dpiX * dpiY))));
-      const hocr = await invokeCommand("run_ocr", {
-        imageBase64: canvasToBase64(input),
+      const imageBase64 = canvasToBase64(input);
+      const ocrArgs = {
+        imageBase64,
         modelPath: manifestRef.current.settings.modelPath,
-        psm: 11,
         dpi,
-      });
-      if (cancelled.current) throw new Error(globalT("appErrors.ocrCancelled"));
+      };
       const regionId = entry.id + "--manual-" + crypto.randomUUID();
-      let recognized = parseHocr(hocr, { sourcePage: entry.sourcePage, pageId: regionId })[0];
-      if (!recognized) throw new Error(globalT("appErrors.hocrMissingPage"));
+      let psm: 11 | 6 = 11;
+      const recognize = async (mode: 11 | 6) => {
+        if (cancelled.current) throw new Error(globalT("appErrors.ocrCancelled"));
+        const hocr = await invokeCommand("run_ocr", { ...ocrArgs, psm: mode });
+        if (cancelled.current) throw new Error(globalT("appErrors.ocrCancelled"));
+        const page = parseHocr(hocr, { sourcePage: entry.sourcePage, pageId: regionId })[0];
+        if (!page) throw new Error(globalT("appErrors.hocrMissingPage"));
+        return page;
+      };
+      let recognized = await recognize(psm);
+      // Sparse-text segmentation can overlook isolated digits in a column.
+      if (!allLines(recognized).some(line => line.words.some(word => word.originalText.trim()))) {
+        psm = 6;
+        recognized = await recognize(psm);
+      }
       recognized = applyScriptDetection(recognized, manifestRef.current.settings, manifestRef.current.settings.scriptHeightProfile);
       try {
         recognized = await inferWordStyles(recognized, canvasToBase64(input), input.width, input.height,
           (imageBase64, samples) => invokeCommand("classify_word_styles", { imageBase64, samples }));      } catch (error) {
         console.warn("Word style classification was skipped for the added OCR region.", error);
       }
-      const result = addOcrRegion(beforePage, recognized, selection, padding, regionId);
+      const result = addOcrRegion(beforePage, recognized, selection, padding, regionId, psm);
       if (!result.addedWords) {
         setNotice("notices.regionEmpty");
         setRegionMode("add");
