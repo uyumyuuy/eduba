@@ -2344,6 +2344,19 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
                     }}
                   >
                     <canvas ref={canvasRef} className="rendered-page" />
+                    {regionMode === "add" && doc && <svg
+                      className="recognized-region-overlay"
+                      viewBox={`0 0 ${canvasSize.width} ${canvasSize.height}`}
+                      aria-hidden="true"
+                    >
+                      {allLines(doc).flatMap(line => line.words.map(word => <rect
+                        key={word.id}
+                        x={word.bbox.left}
+                        y={word.bbox.top}
+                        width={Math.max(0, word.bbox.right - word.bbox.left)}
+                        height={Math.max(0, word.bbox.bottom - word.bbox.top)}
+                      />))}
+                    </svg>}
                     {editing && doc && (() => {
                       const line = allLines(doc).find(candidate => candidate.id === editing);
                       return line ? <EditImageFocus line={line} caret={editCaret?.lineId === line.id ? editCaret.offset : 0}
