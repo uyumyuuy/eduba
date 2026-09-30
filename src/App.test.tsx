@@ -560,6 +560,44 @@ describe("saved project loading", () => {
     expect(Array.from(container.querySelectorAll<HTMLButtonElement>("button")).find((button) => button.textContent?.includes("Undo"))!.disabled).toBe(true);
   });
 
+  it("saves the active line with Ctrl+S without closing the editor", async () => {
+    await openSavedProject();
+    await act(async () => container.querySelector<SVGRectElement>("svg rect")!.dispatchEvent(new MouseEvent("click", { bubbles: true })));
+    const editor = container.querySelector<HTMLTextAreaElement>("textarea.line-overlay")!;
+    const setValue = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")!.set!;
+    await act(async () => { setValue.call(editor, "shortcut saved text"); editor.dispatchEvent(new Event("input", { bubbles: true })); });
+    mocks.invoke.mockClear();
+    const event = new KeyboardEvent("keydown", { key: "s", ctrlKey: true, bubbles: true, cancelable: true });
+    await act(async () => editor.dispatchEvent(event));
+    await waitFor(() => expect(mocks.invoke).toHaveBeenCalledWith("save_page", expect.objectContaining({ data: expect.stringContaining("shortcut saved text") })));
+    expect(event.defaultPrevented).toBe(true);
+    expect(container.querySelector("textarea.line-overlay")).toBe(editor);
+    expect(mocks.invoke).toHaveBeenCalledWith("save_manifest", expect.anything());
+  });
+
+  it("uses Ctrl+Z and Ctrl+Y for document history while preserving native input undo", async () => {
+    await openSavedProject();
+    await act(async () => container.querySelector<SVGRectElement>("svg rect")!.dispatchEvent(new MouseEvent("click", { bubbles: true })));
+    const editor = container.querySelector<HTMLTextAreaElement>("textarea.line-overlay")!;
+    const setValue = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")!.set!;
+    await act(async () => { setValue.call(editor, "shortcut correction"); editor.dispatchEvent(new Event("input", { bubbles: true })); });
+    await act(async () => editor.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true })));
+    const input = document.createElement("input");
+    container.append(input);
+    const nativeUndo = new KeyboardEvent("keydown", { key: "z", ctrlKey: true, bubbles: true, cancelable: true });
+    await act(async () => input.dispatchEvent(nativeUndo));
+    expect(nativeUndo.defaultPrevented).toBe(false);
+    expect(container.textContent).toContain("shortcut correction");
+    const undoEvent = new KeyboardEvent("keydown", { key: "z", ctrlKey: true, cancelable: true });
+    await act(async () => window.dispatchEvent(undoEvent));
+    await waitFor(() => expect(container.textContent).toContain("saved page one"));
+    expect(undoEvent.defaultPrevented).toBe(true);
+    const redoEvent = new KeyboardEvent("keydown", { key: "y", ctrlKey: true, cancelable: true });
+    await act(async () => window.dispatchEvent(redoEvent));
+    await waitFor(() => expect(container.textContent).toContain("shortcut correction"));
+    expect(redoEvent.defaultPrevented).toBe(true);
+  });
+
   it("groups more than one hundred line edits from the opening value", async () => {
     await openSavedProject();
     await act(async () => container.querySelector<SVGRectElement>("svg rect")!.dispatchEvent(new MouseEvent("click", { bubbles: true })));

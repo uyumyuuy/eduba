@@ -945,6 +945,39 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
     } catch (error) { setNotice("notices.saveFailed", { error: errorText(error) }); }
     finally { historyApplying.current = false; setBusy(null); }
   }, [applyHistory, clearCompletion, redoStack, setNotice]);
+  const save = useCallback(async () => {
+    if (!projectRef.current || busy || working.current || importActive.current || historyApplying.current) return;
+    setBusy("save");
+    try {
+      await flush();
+      setNotice("notices.saved");
+    } catch (error) {
+      setNotice("notices.saveFailed", { error: errorText(error) });
+    } finally {
+      setBusy(null);
+    }
+  }, [busy, flush, setNotice]);
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.defaultPrevented || !event.ctrlKey || event.altKey || event.metaKey || event.isComposing || event.keyCode === 229) return;
+      const key = event.key.toLowerCase();
+      if (key !== "s" && key !== "z" && key !== "y") return;
+      const target = event.target instanceof HTMLElement ? event.target : null;
+      // Other inputs keep their own text undo; the line editor already handles history.
+      if (key !== "s" && target?.closest("input, textarea, [contenteditable]:not([contenteditable='false'])")) return;
+      event.preventDefault();
+      if (event.repeat || busy || document.querySelector(".modal")) return;
+      if (key === "s") {
+        if (!event.shiftKey) void save();
+      } else if (key === "y" || event.shiftKey) {
+        void redo();
+      } else {
+        void undo();
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [busy, redo, save, undo]);
   const recognize = useCallback(
     async (entry: Entry, token: number) => {
       const worker = document.createElement("canvas");
@@ -2085,23 +2118,17 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
         </button>
         <span className="toolbar-divider" />
         <button
-          onClick={() => {
-            setBusy("save");
-            flush()
-              .then(
-                () => setNotice("notices.saved"),
-                (e) => setNotice("notices.saveFailed", { error: errorText(e) }),
-              )
-              .finally(() => setBusy(null));
-          }}
+          onClick={() => void save()}
+          title="Ctrl+S"
+          aria-keyshortcuts="Control+S"
           disabled={!project || Boolean(busy)}
         >
           <Save size={15} /> {t("ui.save")}
         </button>
-        <button onClick={undo} disabled={!undoStack.length || Boolean(busy)}>
+        <button onClick={undo} disabled={!undoStack.length || Boolean(busy)} title="Ctrl+Z" aria-keyshortcuts="Control+Z">
           <Undo2 size={15} /> {t("ui.undo")}
         </button>
-        <button onClick={redo} disabled={!redoStack.length || Boolean(busy)}>
+        <button onClick={redo} disabled={!redoStack.length || Boolean(busy)} title="Ctrl+Y" aria-keyshortcuts="Control+Y">
           <Redo2 size={15} /> {t("ui.redo")}
         </button>
         <span className="toolbar-spacer" />
