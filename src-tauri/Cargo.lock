@@ -765,6 +765,7 @@ dependencies = [
  "anyhow",
  "base64 0.22.1",
  "dunce",
+ "flate2",
  "image",
  "ort",
  "rusqlite",

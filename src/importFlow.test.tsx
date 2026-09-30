@@ -118,6 +118,8 @@ describe("PDF import configuration", () => {
         if (command === "get_user_preferences")
           return { version: 1, language: "auto", osLocale: "en-US" };
         if (command === "inspect_pdf") return { pdfSize: 1234 };
+        if (command === "load_edit_history") return { version: 1, order: [], cursor: 0, records: [] };
+        if (command === "save_project_state") return { order: [], cursor: 0 };
         if (command === "create_project")
           return {
             path: projectPath,
@@ -311,6 +313,8 @@ describe("PDF import configuration", () => {
             manifest,
           };
         if (command === "run_ocr") return hocr;
+        if (command === "load_edit_history") return { version: 1, order: [], cursor: 0, records: [] };
+        if (command === "save_project_state") return { order: [], cursor: 0 };
         return undefined;
       },
     );
@@ -322,15 +326,15 @@ describe("PDF import configuration", () => {
     await act(async () => button(container, "OCR current").click());
     await waitFor(() =>
       expect(
-        mocks.invoke.mock.calls.some(([command]) => command === "save_page"),
+        mocks.invoke.mock.calls.some(([command, args]) => command === "save_project_state" && args.updates.length > 0),
       ).toBe(true),
     );
     expect(ocrCanvas).not.toBe(original);
     expect(ocrCanvas).toMatchObject({ width: 100, height: 80 });
     const saved = mocks.invoke.mock.calls.find(
-      ([command]) => command === "save_page",
-    )![1] as { data: string };
-    const page = JSON.parse(saved.data);
+      ([command, args]) => command === "save_project_state" && args.updates.length > 0,
+    )![1] as { updates: { data: string }[] };
+    const page = JSON.parse(saved.updates[0].data);
     expect(page).toMatchObject({
       width: 100,
       height: 80,

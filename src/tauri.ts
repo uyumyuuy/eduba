@@ -1,5 +1,6 @@
 import { invoke as tauriInvoke } from "@tauri-apps/api/core";
 import { t } from "./i18n";
+import type { StoredHistory, ProjectPageUpdate } from "./editHistory";
 
 export type CorrectionMatch = {
   pageId: string;
@@ -45,6 +46,8 @@ export type WordStylePrediction = {
   bold: boolean;
 };
 export type BackendCommands = {
+  load_edit_history: { args: { projectPath: string }; result: StoredHistory };
+  save_project_state: { args: { projectPath: string; manifest: string; updates: ProjectPageUpdate[]; history: StoredHistory }; result: { order: string[]; cursor: number } };
   get_user_preferences: { args: undefined; result: { version: 1; language: string; osLocale: string | null; lastProject: { path: string; pageId: string } | null; imageMagnifierEnabled: boolean; textMagnifierEnabled: boolean } };
   save_user_preferences: { args: { language: string }; result: void };
   save_magnifier_preferences: { args: { imageMagnifierEnabled: boolean; textMagnifierEnabled: boolean }; result: void };

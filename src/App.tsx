@@ -33,6 +33,7 @@ import { canvasToBase64, openProjectPdf, openSourcePdf } from "./pdf";
 import { LogicalPageThumbnailCache } from "./pdfThumbnail";
 import { invokeCommand, isTauri, type ProjectInfo } from "./tauri";
 import { SaveQueue } from "./persistence";
+import { compactChange, historyPageUpdate, HistoryPersistence, type ProjectPageUpdate, type HistoryOperation as EditHistoryOperation } from "./editHistory";
 import { createReadableHtml } from "./readableHtml";
 import { loadReadableFontFaces, notoSerifLicense } from "./readableHtmlFonts";
 import { inferWordStyles, clearAutoWordStyles } from "./styleDetection";
@@ -93,7 +94,7 @@ type Manifest = { version: 1; pages: Entry[]; settings: Settings };
 type HistoryChange = { pageId: string; beforeData: string; afterData: string };
 type ScriptCalibrationSampleScope = { kind: "all-pages" } | { kind: "current-page"; pageId: string };
 type LineEditSession = { id: number; pageId: string; lineId: string; beforeData: string };
-type HistoryOperation = { changes: HistoryChange[]; targetPageId: string; lineEditSessionId?: number; beforeSettings?: Settings; afterSettings?: Settings };
+type HistoryOperation = EditHistoryOperation<Settings, Entry>;
 type RenderedEntry = { canvas: HTMLCanvasElement; modeUsed: ImportMode; dpiX: number; dpiY: number; reason?: string; sourceWidth?: number; sourceHeight?: number; };
 const defaultSettings: Settings = {
   modelPath: "",
@@ -348,8 +349,22 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
   const [orderPendingVisited, setOrderPendingVisited] = useState<string[]>([]);
   const [orderPreviewIds, setOrderPreviewIds] = useState<string[] | null>(null);
   const [orderHoverId, setOrderHoverId] = useState<string | null>(null);
-  const [undoStack, setUndoStack] = useState<HistoryOperation[]>([]);
-  const [redoStack, setRedoStack] = useState<HistoryOperation[]>([]);
+  const [undoStack, renderUndoStack] = useState<HistoryOperation[]>([]);
+  const [redoStack, renderRedoStack] = useState<HistoryOperation[]>([]);
+  const undoStackRef = useRef<HistoryOperation[]>([]);
+  const redoStackRef = useRef<HistoryOperation[]>([]);
+  const persistedHistory = useRef(new HistoryPersistence<Settings, Entry>());
+  const editingHistoryGroup = useRef<{ last: HistoryOperation; operation: HistoryOperation } | null>(null);
+  const setUndoStack = useCallback((update: HistoryOperation[] | ((old: HistoryOperation[]) => HistoryOperation[])) => {
+    const next = typeof update === "function" ? update(undoStackRef.current) : update;
+    undoStackRef.current = next;
+    renderUndoStack(next);
+  }, []);
+  const setRedoStack = useCallback((update: HistoryOperation[] | ((old: HistoryOperation[]) => HistoryOperation[])) => {
+    const next = typeof update === "function" ? update(redoStackRef.current) : update;
+    redoStackRef.current = next;
+    renderRedoStack(next);
+  }, []);
   const [zoom, setZoom] = useState(0.42);
   const [busy, setBusy] = useState<"open" | "save" | "ocr" | null>(null);
   const [progress, setProgress] = useState<{
@@ -507,6 +522,24 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
       return false;
     }
   }, [putManifest, setNotice, t]);
+  const persistState = useCallback(async (projectPath: string, savedManifest: string, updates: ProjectPageUpdate[], undo: HistoryOperation[], redo: HistoryOperation[]) => {
+    const store = persistedHistory.current;
+    const captured = store.capture(undo, redo);
+    let retained = { order: captured.order, cursor: captured.cursor };
+    await writeQueue.current.enqueue(async () => {
+      retained = await invokeCommand("save_project_state", { projectPath, manifest: savedManifest, updates, history: store.pending(captured) });
+      store.confirm(retained.order);
+    });
+    const byId = new Map(captured.order.map((id, index) => [id, captured.operations[index]]));
+    const operations = retained.order.map(id => byId.get(id)!);
+    return { undo: operations.slice(0, retained.cursor), redo: operations.slice(retained.cursor) };
+  }, []);
+  const commitHistoryOperation = useCallback(async (projectPath: string, updates: ProjectPageUpdate[], operation: HistoryOperation, nextManifest = manifestRef.current) => {
+    const undo = [...undoStackRef.current.slice(-99), operation];
+    const retained = await persistState(projectPath, JSON.stringify(copy(nextManifest)), updates, undo, []);
+    setUndoStack(retained.undo);
+    setRedoStack(retained.redo);
+  }, [persistState, setUndoStack, setRedoStack]);
   const flush = useCallback(async () => {
     if (timer.current) {
       clearTimeout(timer.current);
@@ -520,15 +553,32 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
       pageId = entry.id,
       data = page?.id === entry.id ? JSON.stringify(copy(page)) : null,
       savedManifest = JSON.stringify(copy(manifestRef.current));
-    const write = async () => {
-      if (data) await invokeCommand("save_page", { projectPath, pageId, data });
-      await invokeCommand("save_manifest", {
-        projectPath,
-        manifest: savedManifest,
-      });
-    };
-    return writeQueue.current.enqueue(write);
-  }, []);
+    const undo = undoStackRef.current, redo = redoStackRef.current;
+    const session = lineEditSession.current;
+    const last = undo.at(-1);
+    let savedUndo = undo;
+    let groupStart = undo.length;
+    // Autosaving must not fill the retained history with individual keystrokes.
+    // The live editor still keeps its incremental undo until the edit is finished.
+    if (session && data && redo.length === 0 && last?.lineEditSessionId === session.id) {
+      let start = undo.length;
+      while (start > 0 && undo[start - 1].lineEditSessionId === session.id) start--;
+      groupStart = start;
+      if (editingHistoryGroup.current?.last !== last) editingHistoryGroup.current = {
+        last, operation: { targetPageId: pageId, changes: [compactChange({ pageId, beforeData: session.beforeData, afterData: data })] },
+      };
+      savedUndo = [...undo.slice(0, start), editingHistoryGroup.current.operation];
+    }
+    const retained = await persistState(projectPath, savedManifest, data ? [{ pageId, data }] : [], savedUndo, redo);
+    const liveUndo = savedUndo === undo ? retained.undo : [
+      ...retained.undo.filter(operation => operation !== editingHistoryGroup.current?.operation), ...undo.slice(groupStart),
+    ];
+    if (undoStackRef.current === undo && redoStackRef.current === redo &&
+        (liveUndo.length !== undo.length || retained.redo.length !== redo.length)) {
+      setUndoStack(liveUndo);
+      setRedoStack(retained.redo);
+    }
+  }, [persistState, setUndoStack, setRedoStack]);
   const scheduleSave = useCallback(() => {
     if (timer.current) clearTimeout(timer.current);
     timer.current = window.setTimeout(() => {
@@ -654,15 +704,26 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
         existing.settings.modelPath = environmentModel.current;
       try {
         const opened = await openProjectPdf(info.path, info.pdfSize);
+        const historyStore = new HistoryPersistence<Settings, Entry>();
+        const restoredHistory = await (async () => {
+          try {
+            return historyStore.restore(await invokeCommand("load_edit_history", { projectPath: info.path }));
+          } catch (error) {
+            await opened.destroy();
+            throw error;
+          }
+        })();
         const oldPdf = pdf;
         setPdf(null);
         if (oldPdf) await oldPdf.destroy();
         putProject(info);
+        persistedHistory.current = historyStore;
+        editingHistoryGroup.current = null;
         bulkSnippetCanvases.current.clear();
         lineEditSession.current = null;
         setEditing(null);
-        setUndoStack([]);
-        setRedoStack([]);
+        setUndoStack(restoredHistory.undo);
+        setRedoStack(restoredHistory.redo);
         putManifest(existing);
         const savedIndex = existing.pages.findIndex((page) => page.id === savedPageId);
         putIndex(savedIndex >= 0 ? savedIndex : 0);
@@ -685,7 +746,7 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
         working.current = false;
       }
     },
-    [pdf, putDoc, putIndex, putManifest, putProject],
+    [pdf, putDoc, putIndex, putManifest, putProject, setUndoStack, setRedoStack],
   );
   useEffect(() => {
     if (!isTauri || restorationStarted.current) return;
@@ -812,6 +873,7 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
   const finishLineEdit = useCallback((lineId?: string) => {
     const session = lineEditSession.current;
     if (!session || (lineId && session.lineId !== lineId)) return;
+    const hadSessionHistory = [...undoStackRef.current, ...redoStackRef.current].some(operation => operation.lineEditSessionId === session.id);
     lineEditSession.current = null;
     setUndoStack((old) => {
       let start = old.length;
@@ -821,12 +883,13 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
       if (session.beforeData === afterData) return stable.slice(-100);
       return [...stable.slice(-99), {
         targetPageId: session.pageId,
-        changes: [{ pageId: session.pageId, beforeData: session.beforeData, afterData }],
+        changes: [compactChange({ pageId: session.pageId, beforeData: session.beforeData, afterData })],
       }];
     });
     setRedoStack((old) => old.filter((operation) => operation.lineEditSessionId !== session.id));
     setEditing((current) => current === session.lineId ? null : current);
-  }, []);
+    if (hadSessionHistory) scheduleSave();
+  }, [scheduleSave, setUndoStack, setRedoStack]);
   finishLineEditRef.current = finishLineEdit;
   const beginLineEdit = useCallback(async (lineId: string) => {
     finishLineEditRef.current();
@@ -852,7 +915,7 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
       const sessionEdits = old.slice(start).slice(-99);
       return [...stable, ...sessionEdits, {
         targetPageId: session.pageId,
-        changes: [{ pageId: session.pageId, beforeData: JSON.stringify(before), afterData: JSON.stringify(after) }],
+        changes: [compactChange({ pageId: session.pageId, beforeData: JSON.stringify(before), afterData: JSON.stringify(after) })],
         lineEditSessionId: session.id,
       }];
     });
@@ -887,25 +950,33 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
     const projectInfo = projectRef.current;
     if (!projectInfo) return;
     await flush();
-    const updates = operation.changes.map((change) => ({
-      pageId: change.pageId,
-      expectedData: reverse ? change.afterData : change.beforeData,
-      data: reverse ? change.beforeData : change.afterData,
-    }));
-    if (updates.length) await invokeCommand("apply_bulk_corrections", { projectPath: projectInfo.path, updates });
-    const operationSettings = reverse ? operation.beforeSettings : operation.afterSettings;
-    if (operationSettings) {
-      const next = { ...manifestRef.current, settings: copy(operationSettings) };
-      await invokeCommand("save_manifest", { projectPath: projectInfo.path, manifest: JSON.stringify(copy(next)) });
-      putManifest(next);
+    const updates: ProjectPageUpdate[] = [];
+    for (const change of operation.changes) {
+      const current = await invokeCommand("load_page", { projectPath: projectInfo.path, pageId: change.pageId });
+      updates.push(historyPageUpdate(change, current, reverse));
     }
+    const operationSettings = reverse ? operation.beforeSettings : operation.afterSettings;
+    const operationEntry = reverse ? operation.beforeEntry : operation.afterEntry;
+    const next = { ...manifestRef.current,
+      settings: operationSettings ? copy(operationSettings) : manifestRef.current.settings,
+      pages: operationEntry ? manifestRef.current.pages.map(entry => entry.id === operationEntry.id ? copy(operationEntry) : entry) : manifestRef.current.pages,
+    };
+    const undo = reverse ? undoStackRef.current.slice(0, -1) : [...undoStackRef.current, operation].slice(-100);
+    const redo = reverse ? [operation, ...redoStackRef.current].slice(0, 100) : redoStackRef.current.slice(1);
+    const retained = await persistState(projectInfo.path, JSON.stringify(copy(next)), updates, undo, redo);
+    setUndoStack(retained.undo);
+    setRedoStack(retained.redo);
+    if (operationSettings || operationEntry) putManifest(next);
     const target = manifestRef.current.pages.findIndex((page) => page.id === operation.targetPageId);
     if (target < 0) return;
-    const targetChange = operation.changes.find((change) => change.pageId === operation.targetPageId);
-    if (target === indexRef.current && targetChange) putDoc(JSON.parse(reverse ? targetChange.beforeData : targetChange.afterData) as DocumentPage);
+    const targetChange = updates.find((change) => change.pageId === operation.targetPageId);
+    if (target === indexRef.current && targetChange) {
+      documentLoading.current++;
+      putDoc(targetChange.data === null ? null : JSON.parse(targetChange.data) as DocumentPage);
+    }
     else putIndex(target);
     orderVisitedRef.current = []; setOrderVisited([]); setOrderPendingVisited([]); setOrderPreviewIds(null);
-  }, [flush, putDoc, putIndex, putManifest]);
+  }, [flush, persistState, putDoc, putIndex, putManifest, setUndoStack, setRedoStack]);
   const undo = useCallback(async () => {
     if (working.current || importActive.current || historyApplying.current) return;
     const operation = undoStack.at(-1);
@@ -920,8 +991,6 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
     setBusy("save");
     try {
       await applyHistory(operation, true);
-      setUndoStack((old) => old.slice(0, -1));
-      setRedoStack((old) => [operation, ...old].slice(0, 100));
     } catch (error) { setNotice("notices.saveFailed", { error: errorText(error) }); }
     finally { historyApplying.current = false; setBusy(null); }
   }, [applyHistory, clearCompletion, undoStack, setNotice]);
@@ -939,8 +1008,6 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
     setBusy("save");
     try {
       await applyHistory(operation, false);
-      setRedoStack((old) => old.slice(1));
-      setUndoStack((old) => [...old, operation].slice(-100));
     } catch (error) { setNotice("notices.saveFailed", { error: errorText(error) }); }
     finally { historyApplying.current = false; setBusy(null); }
   }, [applyHistory, clearCompletion, redoStack, setNotice]);
@@ -1077,20 +1144,12 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
             ),
           };
           const path = projectRef.current.path,
-            data = JSON.stringify(result),
-            savedManifest = JSON.stringify(next);
-          const write = async () => {
-            await invokeCommand("save_page", {
-              projectPath: path,
-              pageId: entry.id,
-              data,
-            });
-            await invokeCommand("save_manifest", {
-              projectPath: path,
-              manifest: savedManifest,
-            });
-          };
-          await writeQueue.current.enqueue(write);
+            data = JSON.stringify(result);
+          const beforeData = await invokeCommand("load_page", { projectPath: path, pageId: entry.id });
+          await commitHistoryOperation(path, [{ pageId: entry.id, ...(beforeData === null ? { expectedMissing: true } : { expectedData: beforeData }), data }], {
+            targetPageId: entry.id, changes: [{ pageId: entry.id, beforeData, afterData: data }],
+            beforeEntry: copy(entry), afterEntry: copy(next.pages.find(page => page.id === entry.id)!),
+          }, next);
           putManifest(next);
           if (entry.id === next.pages[indexRef.current]?.id) putDoc(result);
           setProgress({ done: i + 1, total: targets.length });
@@ -1111,7 +1170,7 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
         }
       }
     },
-    [putDoc, putManifest, recognize],
+    [commitHistoryOperation, flush, putDoc, putManifest, recognize, renderEntry, setNotice],
   );
   const askOcr = useCallback(
     async (scope: "current" | "all") => {
@@ -1195,14 +1254,10 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
       }
       const beforeData = JSON.stringify(copy(beforePage));
       const afterData = JSON.stringify(copy(result.page));
-      const changes = await invokeCommand("apply_bulk_corrections", {
-        projectPath: info.path,
-        updates: [{ pageId: entry.id, expectedData: beforeData, data: afterData }],
+      await commitHistoryOperation(info.path, [{ pageId: entry.id, expectedData: beforeData, data: afterData }], {
+        targetPageId: entry.id, changes: [{ pageId: entry.id, beforeData, afterData }],
       });
-      if (changes.length !== 1) throw new Error("The OCR region could not be saved.");
       putDoc(result.page);
-      setUndoStack(old => [...old, { targetPageId: entry.id, changes }].slice(-100));
-      setRedoStack([]);
       setNotice("notices.regionAdded", { count: result.addedLines });
     } catch (error) {
       setNotice(cancelled.current ? "notices.ocrCancelled" : "notices.ocrFailed", cancelled.current ? undefined : { error: errorText(error) });
@@ -1211,7 +1266,7 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
       working.current = false;
       setBusy(null);
     }
-  }, [flush, putDoc, setNotice]);
+  }, [commitHistoryOperation, flush, putDoc, setNotice]);
   const deleteSelectedRegion = useCallback(async (selection: Rect | { x: number; y: number }) => {
     const entry = manifestRef.current.pages[indexRef.current];
     const beforePage = docRef.current;
@@ -1225,14 +1280,10 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
       await flush();
       const beforeData = JSON.stringify(copy(beforePage));
       const afterData = JSON.stringify(copy(result.page));
-      const changes = await invokeCommand("apply_bulk_corrections", {
-        projectPath: info.path,
-        updates: [{ pageId: entry.id, expectedData: beforeData, data: afterData }],
+      await commitHistoryOperation(info.path, [{ pageId: entry.id, expectedData: beforeData, data: afterData }], {
+        targetPageId: entry.id, changes: [{ pageId: entry.id, beforeData, afterData }],
       });
-      if (changes.length !== 1) throw new Error("The OCR region could not be deleted.");
       putDoc(result.page);
-      setUndoStack(old => [...old, { targetPageId: entry.id, changes }].slice(-100));
-      setRedoStack([]);
       setNotice("notices.regionDeleted", { count: result.removedLines });
     } catch (error) {
       setNotice("notices.saveFailed", { error: errorText(error) });
@@ -1241,7 +1292,7 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
       working.current = false;
       setBusy(null);
     }
-  }, [flush, putDoc, setNotice]);
+  }, [commitHistoryOperation, flush, putDoc, setNotice]);
   const mergeSelectedRegion = useCallback(async (selection: Rect) => {
     const entry = manifestRef.current.pages[indexRef.current];
     const beforePage = docRef.current;
@@ -1259,14 +1310,10 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
       await flush();
       const beforeData = JSON.stringify(copy(beforePage));
       const afterData = JSON.stringify(copy(result.page));
-      const changes = await invokeCommand("apply_bulk_corrections", {
-        projectPath: info.path,
-        updates: [{ pageId: entry.id, expectedData: beforeData, data: afterData }],
+      await commitHistoryOperation(info.path, [{ pageId: entry.id, expectedData: beforeData, data: afterData }], {
+        targetPageId: entry.id, changes: [{ pageId: entry.id, beforeData, afterData }],
       });
-      if (changes.length !== 1) throw new Error("The OCR regions could not be merged.");
       putDoc(result.page);
-      setUndoStack(old => [...old, { targetPageId: entry.id, changes }].slice(-100));
-      setRedoStack([]);
       setNotice("notices.regionMerged", { count: result.mergedLines });
     } catch (error) {
       setNotice("notices.saveFailed", { error: errorText(error) });
@@ -1275,7 +1322,7 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
       working.current = false;
       setBusy(null);
     }
-  }, [flush, putDoc, setNotice]);
+  }, [commitHistoryOperation, flush, putDoc, setNotice]);
   const clientToRegionPage = useCallback((clientX: number, clientY: number) => {
     const target = regionMode === "add" ? canvasRef.current : layoutCardRef.current;
     if (!target || !canvasSize.width || !canvasSize.height) return null;
@@ -1451,14 +1498,11 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
       try {
         await flush();
         const next = reorderPageLines(drag.page, drag.ids);
-        const changes = await invokeCommand("apply_bulk_corrections", {
-          projectPath: info.path,
-          updates: [{ pageId: entry.id, expectedData: JSON.stringify(copy(drag.page)), data: JSON.stringify(copy(next)) }],
+        const beforeData = JSON.stringify(copy(drag.page)), afterData = JSON.stringify(copy(next));
+        await commitHistoryOperation(info.path, [{ pageId: entry.id, expectedData: beforeData, data: afterData }], {
+          targetPageId: entry.id, changes: [{ pageId: entry.id, beforeData, afterData }],
         });
-        if (changes.length !== 1) throw new Error("Reading order could not be saved.");
         putDoc(next);
-        setUndoStack(old => [...old, { targetPageId: entry.id, changes }].slice(-100));
-        setRedoStack([]);
         orderVisitedRef.current = visited; setOrderVisited(visited);
         setNotice("notices.readingOrderUpdated");
       } catch (error) {
@@ -1470,7 +1514,7 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
         setBusy(null);
       }
     })();
-  }, [clientToRegionPage, extendReadingOrder, flush, putDoc, setNotice, stopRegionScroll]);
+  }, [clientToRegionPage, commitHistoryOperation, extendReadingOrder, flush, putDoc, setNotice, stopRegionScroll]);
   const onOrderPointerCancel = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
     if (orderDrag.current?.pointerId !== event.pointerId) return;
     orderDrag.current = null;
@@ -1935,48 +1979,26 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
           if (data !== saved) updates.push({ pageId: entry.id, expectedData: saved, data });
         }
         if (updates.length) {
-          let batch: HistoryChange[] = [];
-          await writeQueue.current.enqueue(async () => {
-            batch = await invokeCommand("apply_bulk_corrections", { projectPath: projectInfo.path, updates });
-          });
-          changes.push(...batch);
+          changes.push(...updates.map(update => ({ pageId: update.pageId, beforeData: update.expectedData, afterData: update.data })));
         }
         setScriptCalibrationProgress({ completed: Math.min(start + 20, eligible.length), total: eligible.length });
       }
       const next = { ...manifestRef.current, settings: { ...manifestRef.current.settings, ...settings, scriptHeightProfile: profile, scriptHeightReferenceVersion: SCRIPT_HEIGHT_REFERENCE_VERSION } };
-      await writeQueue.current.enqueue(() => invokeCommand("save_manifest", { projectPath: projectInfo.path, manifest: JSON.stringify(copy(next)) }));
-      putManifest(next);
       const currentChange = changes.find(change => change.pageId === manifestRef.current.pages[indexRef.current]?.id);
-      if (currentChange) putDoc(JSON.parse(currentChange.afterData) as DocumentPage);
       if (changes.length || JSON.stringify(beforeSettings) !== JSON.stringify(next.settings)) {
-        setUndoStack(old => [...old.slice(-99), { targetPageId: currentChange?.pageId ?? manifestRef.current.pages[indexRef.current]?.id ?? "", changes, beforeSettings, afterSettings: copy(next.settings) }]);
-        setRedoStack([]);
+        await commitHistoryOperation(projectInfo.path, changes.map(change => ({ pageId: change.pageId, expectedData: change.beforeData, data: change.afterData })), {
+          targetPageId: currentChange?.pageId ?? manifestRef.current.pages[indexRef.current]?.id ?? "", changes, beforeSettings, afterSettings: copy(next.settings),
+        }, next);
       }
+      putManifest(next);
+      if (currentChange) putDoc(JSON.parse(currentChange.afterData) as DocumentPage);
       setNotice("notices.saved");
-    } catch (error) {
-      // Each chunk is atomic. Restore completed chunks if a later write fails.
-      let rollbackError: unknown;
-      for (let end = changes.length; end > 0; end -= 20) {
-        const updates = changes.slice(Math.max(0, end - 20), end).map(change => ({
-          pageId: change.pageId,
-          expectedData: change.afterData,
-          data: change.beforeData,
-        }));
-        try {
-          await writeQueue.current.enqueue(async () => { await invokeCommand("apply_bulk_corrections", { projectPath: projectInfo.path, updates }); });
-        } catch (failure) {
-          rollbackError = failure;
-          break;
-        }
-      }
-      if (rollbackError) throw new Error(`${errorText(error)}; rollback failed: ${errorText(rollbackError)}`);
-      throw error;
     } finally {
       working.current = false;
       setBusy(null);
       setScriptCalibrationProgress(null);
     }
-  }, [flush, putDoc, putManifest, setNotice, renderEntry, pdf]);
+  }, [commitHistoryOperation, flush, putDoc, putManifest, setNotice, renderEntry, pdf]);
   const applyBulkReplace = useCallback(async ({ search, replacement, replacementFormatting, preserveFormatting, selections }: BulkReplaceRequest) => {
     if (!project || !selections.length) return;
     await flush();
@@ -1985,19 +2007,18 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
       if (!saved) throw new Error("Page data is unavailable.");
       return saved;
     }});
-    const changes = await invokeCommand("apply_bulk_corrections", { projectPath: project.path, updates });
+    const changes = updates.map(update => ({ pageId: update.pageId, beforeData: update.expectedData, afterData: update.data }));
     const currentId = manifestRef.current.pages[indexRef.current]?.id;
     const targetPageId = changes.some((item) => item.pageId === currentId)
       ? currentId!
       : changes[0]?.pageId;
     if (targetPageId) {
-      setUndoStack((old) => [...old.slice(-99), { targetPageId, changes }]);
-      setRedoStack([]);
+      await commitHistoryOperation(project.path, updates, { targetPageId, changes: changes.map(compactChange) });
     }
     const change = changes.find((item) => item.pageId === currentId);
     if (change?.afterData && docRef.current) putDoc(JSON.parse(change.afterData) as DocumentPage);
     setBulkReplace(null);
-  }, [flush, project, putDoc]);
+  }, [commitHistoryOperation, flush, project, putDoc]);
   const lines = useMemo(() => (doc ? allLines(doc) : []), [doc]);
   const orderedLines = useMemo(() => {
     if (!orderPreviewIds) return lines;

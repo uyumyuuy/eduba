@@ -14,6 +14,8 @@ use std::{
 use tauri::{menu::MenuBuilder, AppHandle, Emitter, Manager, State};
 use thiserror::Error;
 mod preferences;
+mod edit_history;
+use edit_history::{load_edit_history, save_project_state};
 #[path = "style_classifier_runtime/lib.rs"]
 pub mod style_classifier_runtime;
 use preferences::{LastOpenedProject, LocalePreference, SupportedLocale, UserPreferences};
@@ -1513,6 +1515,8 @@ pub fn run() {
             save_manifest,
             load_page,
             save_page,
+            load_edit_history,
+            save_project_state,
             search_corrections,
             apply_bulk_corrections,
             run_ocr,

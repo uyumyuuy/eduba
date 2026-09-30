@@ -4,6 +4,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import App, { synchronizePageScroll } from "./App";
 import i18n from "./i18n";
+import type { StoredHistory } from "./editHistory";
 
 const mocks = vi.hoisted(() => ({
   dialogOpen: vi.fn(),
@@ -170,7 +171,7 @@ describe("saved project loading", () => {
     });
     mocks.loadPageImage.mockImplementation(async (_page: unknown, mode: string, dpi: number) => { const canvas = document.createElement("canvas"); canvas.width = 100; canvas.height = 80; return { canvas, modeUsed: mode, dpiX: dpi, dpiY: dpi }; });
 
-    const manifest = JSON.stringify({
+    let manifest = JSON.stringify({
       version: 1,
       settings: { modelPath: "", psm: 3, dpi: 300 },
       pages: [
@@ -178,11 +179,30 @@ describe("saved project loading", () => {
         { id: "page-2", label: "2", sourcePage: 2, split: "single", rotation: 0, angle: 0, status: "review" },
       ],
     });
-    mocks.invoke.mockImplementation(async (command: string, args?: { pageId?: string; data?: string; search?: string; page?: number; pageSize?: number; updates?: Array<{ pageId: string; expectedData: string; data: string }> }) => {
+    let history: StoredHistory = { version: 1, order: [], cursor: 0, records: [] };
+    const historyRecords = new Map<string, string>();
+    mocks.invoke.mockImplementation(async (command: string, args?: { pageId?: string; data?: string; search?: string; page?: number; pageSize?: number; manifest?: string; history?: StoredHistory; updates?: Array<{ pageId: string; expectedData?: string; expectedMissing?: boolean; data: string | null }> }) => {
       if (command === "get_environment") return { modelPath: "", tesseractPath: "" };
       if (command === "get_user_preferences") return { version: 1, language: "auto", osLocale: "en-US" };
       if (command === "open_project") return { path: "D:/projects/reading.eduba", name: "reading.eduba", pdfSize: 256, manifest };
       if (command === "save_page") { persistedPages.set(args?.pageId ?? "", args?.data ?? ""); return undefined; }
+      if (command === "save_manifest") { manifest = args!.manifest!; return undefined; }
+      if (command === "load_edit_history") return { ...history, records: history.order.map(id => ({ id, data: historyRecords.get(id)! })) };
+      if (command === "save_project_state") {
+        for (const update of args!.updates!) {
+          if (update.expectedData !== undefined) expect(persistedPages.get(update.pageId)).toBe(update.expectedData);
+          if (update.expectedMissing) expect(persistedPages.has(update.pageId)).toBe(false);
+        }
+        for (const update of args!.updates!) {
+          if (update.data === null) persistedPages.delete(update.pageId);
+          else persistedPages.set(update.pageId, update.data);
+        }
+        for (const record of args!.history!.records) historyRecords.set(record.id, record.data);
+        history = { ...args!.history!, records: [] };
+        for (const id of historyRecords.keys()) if (!history.order.includes(id)) historyRecords.delete(id);
+        manifest = args!.manifest!;
+        return { order: history.order, cursor: history.cursor };
+      }
       if (command === "load_page") return persistedPages.get(args?.pageId ?? "") ?? null;
       if (command === "search_corrections") {
         const results = [
@@ -195,7 +215,7 @@ describe("saved project loading", () => {
         const changes = (args?.updates ?? []).map((update) => {
           const beforeData = persistedPages.get(update.pageId);
           expect(beforeData).toBe(update.expectedData);
-          persistedPages.set(update.pageId, update.data);
+          persistedPages.set(update.pageId, update.data!);
           return { pageId: update.pageId, beforeData: beforeData!, afterData: update.data };
         });
         return changes;
@@ -490,7 +510,7 @@ describe("saved project loading", () => {
     });
     await waitFor(() => expect(mocks.invoke).toHaveBeenCalledWith("set_ui_language", { language: "ja" }));
     expect(mocks.invoke).toHaveBeenCalledWith("save_user_preferences", { language: "ja" });
-    expect(mocks.invoke.mock.calls.some(([command]) => command === "save_manifest" || command === "save_page")).toBe(false);
+    expect(mocks.invoke.mock.calls.some(([command]) => command === "save_manifest" || command === "save_page" || command === "save_project_state")).toBe(false);
     expect(language.value).toBe("ja");
     expect(container.textContent).toContain("saved page one");
     expect(container.textContent).toContain("reading.eduba");
@@ -569,10 +589,10 @@ describe("saved project loading", () => {
     mocks.invoke.mockClear();
     const event = new KeyboardEvent("keydown", { key: "s", ctrlKey: true, bubbles: true, cancelable: true });
     await act(async () => editor.dispatchEvent(event));
-    await waitFor(() => expect(mocks.invoke).toHaveBeenCalledWith("save_page", expect.objectContaining({ data: expect.stringContaining("shortcut saved text") })));
+    await waitFor(() => expect(mocks.invoke).toHaveBeenCalledWith("save_project_state", expect.objectContaining({ updates: expect.arrayContaining([expect.objectContaining({ data: expect.stringContaining("shortcut saved text") })]) })));
     expect(event.defaultPrevented).toBe(true);
     expect(container.querySelector("textarea.line-overlay")).toBe(editor);
-    expect(mocks.invoke).toHaveBeenCalledWith("save_manifest", expect.anything());
+    expect(mocks.invoke).toHaveBeenCalledWith("save_project_state", expect.objectContaining({ manifest: expect.any(String), history: expect.objectContaining({ cursor: 1 }) }));
   });
 
   it("uses Ctrl+Z and Ctrl+Y for document history while preserving native input undo", async () => {
@@ -596,6 +616,106 @@ describe("saved project loading", () => {
     await act(async () => window.dispatchEvent(redoEvent));
     await waitFor(() => expect(container.textContent).toContain("shortcut correction"));
     expect(redoEvent.defaultPrevented).toBe(true);
+  });
+
+  it("restores grouped line history after reopening and retains redo across another restart", async () => {
+    await openSavedProject();
+    await act(async () => container.querySelector<SVGRectElement>(".layout-svg rect")!.dispatchEvent(new MouseEvent("click", { bubbles: true })));
+    const editor = container.querySelector<HTMLTextAreaElement>("textarea.line-overlay")!;
+    const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")!.set!;
+    for (const text of ["first correction", "persisted correction"]) {
+      await act(async () => { setter.call(editor, text); editor.dispatchEvent(new Event("input", { bubbles: true })); });
+    }
+    await act(async () => editor.dispatchEvent(new KeyboardEvent("keydown", { key: "s", ctrlKey: true, bubbles: true, cancelable: true })));
+    const saved = mocks.invoke.mock.calls.filter(([command]) => command === "save_project_state").at(-1)![1];
+    expect(saved.history.cursor).toBe(1);
+    expect(JSON.parse(saved.history.records[0].data).operation.changes[0].kind).toBe("lines");
+    await act(async () => root.unmount());
+    root = createRoot(container);
+    await openSavedProject("persisted correction");
+    await act(async () => window.dispatchEvent(new KeyboardEvent("keydown", { key: "z", ctrlKey: true, cancelable: true })));
+    await waitFor(() => expect(container.textContent).toContain("saved page one"));
+    await act(async () => root.unmount());
+    root = createRoot(container);
+    await openSavedProject();
+    await act(async () => window.dispatchEvent(new KeyboardEvent("keydown", { key: "y", ctrlKey: true, cancelable: true })));
+    await waitFor(() => expect(container.textContent).toContain("persisted correction"));
+  });
+
+  it("restores the page before re-OCR so an earlier line delta remains undoable after reopening", async () => {
+    const base = mocks.invoke.getMockImplementation()!;
+    const hocr = numberRegionHocr.replace(">2</span>", ">Recognized again</span>");
+    mocks.invoke.mockImplementation(async (command: string, args?: unknown) => command === "run_ocr" ? hocr : base(command, args as never));
+    await openSavedProject();
+    await act(async () => container.querySelector<SVGRectElement>(".layout-svg rect")!.dispatchEvent(new MouseEvent("click", { bubbles: true })));
+    const editor = container.querySelector<HTMLTextAreaElement>("textarea.line-overlay")!;
+    const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")!.set!;
+    await act(async () => { setter.call(editor, "corrected before OCR"); editor.dispatchEvent(new Event("input", { bubbles: true })); editor.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true })); });
+    await act(async () => Array.from(container.querySelectorAll<HTMLButtonElement>("button")).find(button => button.textContent?.trim() === "OCR current")!.click());
+    await waitFor(() => expect(container.querySelector(".modal-actions .primary")).toBeTruthy());
+    await act(async () => container.querySelector<HTMLButtonElement>(".modal-actions .primary")!.click());
+    await waitFor(() => expect(container.textContent).toContain("Recognized again"));
+    await act(async () => root.unmount());
+    root = createRoot(container);
+    await openSavedProject("Recognized again");
+    await act(async () => window.dispatchEvent(new KeyboardEvent("keydown", { key: "z", ctrlKey: true, cancelable: true })));
+    await waitFor(() => expect(container.textContent).toContain("corrected before OCR"));
+    expect(JSON.parse(persistedPages.get("page-1")!).blocks[0].paragraphs[0].lines[0].id).toBe("page-1-line");
+    await act(async () => window.dispatchEvent(new KeyboardEvent("keydown", { key: "z", ctrlKey: true, cancelable: true })));
+    await waitFor(() => expect(container.textContent).toContain("saved page one"));
+    await act(async () => window.dispatchEvent(new KeyboardEvent("keydown", { key: "y", ctrlKey: true, cancelable: true })));
+    await waitFor(() => expect(container.textContent).toContain("corrected before OCR"));
+    await act(async () => window.dispatchEvent(new KeyboardEvent("keydown", { key: "y", ctrlKey: true, cancelable: true })));
+    await waitFor(() => expect(container.textContent).toContain("Recognized again"));
+  });
+
+  it("undoes initial OCR back to a pending page with no saved OCR data and can redo it", async () => {
+    persistedPages.delete("page-1");
+    const base = mocks.invoke.getMockImplementation()!;
+    let firstOpen = true;
+    mocks.invoke.mockImplementation(async (command: string, args?: unknown) => {
+      if (command === "run_ocr") return numberRegionHocr;
+      const result = await base(command, args as never);
+      if (command === "open_project" && firstOpen) {
+        firstOpen = false;
+        const info = result as { manifest: string };
+        const manifest = JSON.parse(info.manifest);
+        manifest.pages[0].status = "pending";
+        return { ...info, manifest: JSON.stringify(manifest) };
+      }
+      return result;
+    });
+    await openSavedProject("");
+    const ocr = Array.from(container.querySelectorAll<HTMLButtonElement>("button")).find(button => button.textContent?.trim() === "OCR current")!;
+    await waitFor(() => expect(ocr.disabled).toBe(false));
+    await act(async () => ocr.click());
+    await waitFor(() => expect(persistedPages.has("page-1")).toBe(true));
+    await act(async () => window.dispatchEvent(new KeyboardEvent("keydown", { key: "z", ctrlKey: true, cancelable: true })));
+    await waitFor(() => expect(persistedPages.has("page-1")).toBe(false));
+    expect(container.querySelector(".layout-svg")).toBeNull();
+    await act(async () => window.dispatchEvent(new KeyboardEvent("keydown", { key: "y", ctrlKey: true, cancelable: true })));
+    await waitFor(() => expect(persistedPages.has("page-1")).toBe(true));
+    expect(JSON.parse(persistedPages.get("page-1")!).blocks[0].paragraphs[0].lines[0].correctedText).toBe("2");
+  });
+
+  it("keeps the page and history cursor unchanged when saving an undo fails", async () => {
+    await openSavedProject();
+    await act(async () => container.querySelector<SVGRectElement>(".layout-svg rect")!.dispatchEvent(new MouseEvent("click", { bubbles: true })));
+    const editor = container.querySelector<HTMLTextAreaElement>("textarea.line-overlay")!;
+    const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")!.set!;
+    await act(async () => { setter.call(editor, "kept after failure"); editor.dispatchEvent(new Event("input", { bubbles: true })); editor.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true })); });
+    const base = mocks.invoke.getMockImplementation()!;
+    mocks.invoke.mockImplementation(async (command: string, args?: { updates?: { expectedData?: string }[] }) => {
+      if (command === "save_project_state" && args?.updates?.some(update => update.expectedData !== undefined)) throw new Error("Atomic save failed");
+      return base(command, args as never);
+    });
+    await act(async () => window.dispatchEvent(new KeyboardEvent("keydown", { key: "z", ctrlKey: true, cancelable: true })));
+    await waitFor(() => expect(container.textContent).toContain("Atomic save failed"));
+    expect(container.textContent).toContain("kept after failure");
+    expect(JSON.parse(persistedPages.get("page-1")!).blocks[0].paragraphs[0].lines[0].correctedText).toBe("kept after failure");
+    const history = await base("load_edit_history", { projectPath: "D:/projects/reading.eduba" } as never) as StoredHistory;
+    expect(history.cursor).toBe(1);
+    expect(Array.from(container.querySelectorAll<HTMLButtonElement>("button")).find(button => button.textContent?.includes("Undo"))!.disabled).toBe(false);
   });
 
   it("groups more than one hundred line edits from the opening value", async () => {
@@ -700,7 +820,7 @@ describe("saved project loading", () => {
     const calls = mocks.invoke.mock.calls.filter(([command]) => command === "run_ocr");
     expect(calls.map(([, args]) => args.psm)).toEqual([11, 6]);
     expect(calls[1][1]).toEqual({ ...calls[0][1], psm: 6 });
-    expect(mocks.invoke.mock.calls.filter(([command]) => command === "apply_bulk_corrections")).toHaveLength(1);
+    expect(mocks.invoke.mock.calls.filter(([command, args]) => command === "save_project_state" && args.updates.some((update: { expectedData?: string }) => update.expectedData !== undefined))).toHaveLength(1);
     expect(container.textContent).toContain("saved page one");
     await act(async () => Array.from(container.querySelectorAll<HTMLButtonElement>("button")).find(button => button.textContent?.includes("Undo"))!.click());
     await waitFor(() => expect(JSON.parse(persistedPages.get("page-1")!).manualOcrRegions).toBeUndefined());
@@ -716,7 +836,7 @@ describe("saved project loading", () => {
     await waitFor(() => expect(container.textContent).toContain("No new text was found"));
     expect(mocks.invoke.mock.calls.filter(([command]) => command === "run_ocr").map(([, args]) => args.psm)).toEqual([11, 6]);
     expect(persistedPages.get("page-1")).toBe(before);
-    expect(mocks.invoke.mock.calls.some(([command]) => command === "apply_bulk_corrections")).toBe(false);
+    expect(mocks.invoke.mock.calls.some(([command, args]) => command === "save_project_state" && args.updates.some((update: { expectedData?: string }) => update.expectedData !== undefined))).toBe(false);
   });
 
   it("does not retry region OCR after cancellation", async () => {
@@ -732,7 +852,7 @@ describe("saved project loading", () => {
     await act(async () => finish(emptyRegionHocr));
     await waitFor(() => expect(container.textContent).toContain("OCR was cancelled"));
     expect(mocks.invoke.mock.calls.filter(([command]) => command === "run_ocr")).toHaveLength(1);
-    expect(mocks.invoke.mock.calls.some(([command]) => command === "apply_bulk_corrections")).toBe(false);
+    expect(mocks.invoke.mock.calls.some(([command, args]) => command === "save_project_state" && args.updates.some((update: { expectedData?: string }) => update.expectedData !== undefined))).toBe(false);
   });
 
   it("does not treat an OCR error as an empty result to retry", async () => {
@@ -1051,6 +1171,13 @@ describe("saved project loading", () => {
     await waitFor(() => expect(container.querySelector('[role="dialog"]')).toBeNull());
     expect(JSON.parse(persistedPages.get("page-1")!).blocks[0].paragraphs[0].lines[0].correctedText).toBe("stored page one");
     expect(JSON.parse(persistedPages.get("page-2")!).blocks[0].paragraphs[0].lines[0].correctedText).toBe("stored page two");
+    const bulkSave = mocks.invoke.mock.calls.filter(([command, args]) => command === "save_project_state" && args.history.records.length).at(-1)![1];
+    const operation = JSON.parse(bulkSave.history.records[0].data).operation;
+    expect(operation.changes).toHaveLength(2);
+    expect(operation.changes.every((change: { kind: string }) => change.kind === "lines")).toBe(true);
+    await act(async () => root.unmount());
+    root = createRoot(container);
+    await openSavedProject("stored page one");
     await act(async () => container.querySelectorAll<HTMLButtonElement>(".page-item")[1].click());
     await waitFor(() => expect(container.textContent).toContain("stored page two"));
     await act(async () => Array.from(container.querySelectorAll<HTMLButtonElement>("button")).find((button) => button.textContent?.includes("Undo"))!.click());
