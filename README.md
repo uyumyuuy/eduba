@@ -8,7 +8,7 @@ EDUBA は、スキャンした英語の本・論文を Tauri 2 と React で OCR
 
 現在の初期スライスは、`.eduba` 単一ファイルの保存・再オープン、遅延 PDF 読み込み、回転/見開き分割、行単位の校正、選択範囲の候補置換と一括置換、bundled Tesseract 実行、TXT/hOCR/SVG 出力を実装しています。Undo/Redo はページをまたぐ履歴に対応し、復元対象のページへ自動で移動します。行を編集中は入力ごとに取り消せ、編集を終えるとその行の変更全体が一つの操作にまとまります。一括置換も一つの操作としてまとめて取り消せます。実機確認の結果は [docs/validation.md](docs/validation.md) にあります。
 
-Crop/deskew の操作 UI、OCR 領域の追加・削除・読順変更、候補選択 UI と候補データ、1,000 ページ規模の性能確認、非 Windows 対応は今後の作業です。要件の対応表は [docs/requirements-plan.md](docs/requirements-plan.md) にあります。
+手動 OCR 領域の追加・削除・同一行の統合、読順編集、および候補選択 UI は main に実装済みです。実装、テストの存在、テストの実行結果、実機確認は別の状態として [docs/validation.md](docs/validation.md) に記録しています。crop/deskew の操作 UI、1,000 ページ規模の性能確認、非 Windows 対応は今後の作業です。要件の対応表は [docs/requirements-plan.md](docs/requirements-plan.md) にあります。
 
 ## 開発
 

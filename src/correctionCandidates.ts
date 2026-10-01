@@ -1,7 +1,7 @@
 import candidateData from "./assets/scan-candidate-character-confusions.json";
 
 type CandidateEntry = {
-  gt_candidates: Array<{ gt_character: string }>;
+  gt_candidates: Array<{ gt_character: string; count: number }>;
 };
 
 type CandidateData = {
@@ -107,7 +107,11 @@ export function candidatesForSelection(selection: string): string[] {
   if (converted !== selection) candidates.push(converted);
   if (graphemes(selection).length !== 1) return candidates;
 
-  for (const { gt_character } of outputToGt[selection]?.gt_candidates ?? []) {
+  const rankedCandidates = (outputToGt[selection]?.gt_candidates ?? [])
+    .map((candidate, index) => ({ ...candidate, index }))
+    .sort((a, b) => b.count - a.count || a.index - b.index);
+
+  for (const { gt_character } of rankedCandidates) {
     if (gt_character !== selection && !candidates.includes(gt_character)) {
       candidates.push(gt_character);
     }
