@@ -15,7 +15,11 @@
 
 現在の UI は初期スライスとして、英語のスキャン本・論文を対象にする。bundled traineddata の選択、単一 `.eduba` プロジェクト、autosave、行クリック編集、現在ページと全ページの TXT/hOCR/SVG 出力を UI/Tauri 側で接続した。SVG の全ページ出力は ZIP にまとめる。
 
-crop/deskew の操作 UI、OCR 領域の追加・削除・読順変更、候補文字のモデル固有マッピングと選択 UI、リッチな段落書式、1,000 ページ規模の性能確認、配布用インストーラー、非 Windows 対応は次段階である。
+手動 OCR 領域の追加・削除・同一行の統合と読順編集は UI に接続されている。src/App.tsx から src/ocrRegion.ts と src/readingOrder.ts を呼び出し、App.test.tsx、ocrRegion.test.ts、readingOrder.test.ts に関連テストがある。2026-09-23 の main 履歴では、領域選択 62f952a、削除 6ab6917、統合 6faf233、読順編集 b0749a5 が追加された。
+
+候補選択 UI は src/App.tsx から correctionCandidates.ts の candidatesForSelection を使い、同梱の scan-candidate-character-confusions.json を候補データとして利用する。候補生成ロジックのテストは correctionCandidates.test.ts にある。これは個々のスキャン画像で候補品質を確認済みであることを意味しない。
+
+crop/deskew の操作 UI、リッチな段落書式、1,000 ページ規模の性能確認、Windows インストーラー・portable 版の実機確認、非 Windows 対応、および領域・読順編集と候補品質の実データ確認は次段階の作業・検証である。
 
 ## 代表データでの確認
 
