@@ -1,15 +1,17 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { OPS } from "pdfjs-dist";
+import { ImageKind, OPS } from "pdfjs-dist";
 import { loadPageImage } from "./pageImage";
 
 function page(
   ops: number[],
   args: unknown[][],
-  image?: { width: number; height: number },
+  image?: { width: number; height: number; kind?: number; data?: Uint8Array },
 ) {
   const context = {
     fillRect: vi.fn(),
+    createImageData: vi.fn((width: number, height: number) => ({ width, height, data: new Uint8ClampedArray(width * height * 4) })),
+    putImageData: vi.fn(),
     drawImage: vi.fn(),
     setTransform: vi.fn(),
     save: vi.fn(),
@@ -32,7 +34,7 @@ function page(
         if (!image) throw new Error("unresolved");
         const value = {
           ...image,
-          bitmap: image as unknown as CanvasImageSource,
+          bitmap: image.data ? undefined : image as unknown as CanvasImageSource,
         };
         callback?.(value);
         return value;
@@ -63,6 +65,81 @@ describe("native page-image extraction", () => {
     expect(result.canvas).toMatchObject({ width: 100, height: 100 });
     expect(fake.context.drawImage).toHaveBeenCalled();
     expect(fake.render).not.toHaveBeenCalled();
+  });
+
+  it("extracts an image wrapped in nested document structure tags", async () => {
+    const fake = page(
+      [OPS.beginMarkedContentProps, OPS.beginMarkedContent, OPS.save,
+        OPS.transform, OPS.dependency, OPS.paintImageXObject,
+        OPS.restore, OPS.endMarkedContent, OPS.endMarkedContent],
+      [["Part", 0], ["Figure"], [], [100, 0, 0, 100, 0, 0], ["img"], ["img"], [], [], []],
+      { width: 400, height: 400 },
+    );
+    const result = await loadPageImage(fake as never, "extract");
+    expect(result).toMatchObject({ modeUsed: "extract", sourceWidth: 400, sourceHeight: 400, dpiX: 288, dpiY: 288 });
+    expect(result.canvas).toMatchObject({ width: 400, height: 400 });
+    expect(result.reason).toBeUndefined();
+    expect(fake.render).not.toHaveBeenCalled();
+  });
+
+  it("preserves rendering fallback for optional-content groups that may hide images", async () => {
+    const fake = page(
+      [OPS.beginMarkedContentProps, OPS.transform, OPS.paintImageXObject, OPS.endMarkedContent],
+      [["OC", { id: "layer" }], [100, 0, 0, 100, 0, 0], ["img"], []],
+      { width: 400, height: 400 },
+    );
+    const result = await loadPageImage(fake as never, "extract");
+    expect(result.modeUsed).toBe("render");
+    expect(fake.render).toHaveBeenCalled();
+  });
+
+  it("still renders visible drawing instructions inside structure tags", async () => {
+    const fake = page(
+      [OPS.beginMarkedContentProps, OPS.transform, OPS.paintImageXObject, OPS.stroke, OPS.endMarkedContent],
+      [["Part", 0], [100, 0, 0, 100, 0, 0], ["img"], [], []],
+      { width: 400, height: 400 },
+    );
+    const result = await loadPageImage(fake as never, "extract");
+    expect(result.modeUsed).toBe("render");
+    expect(fake.render).toHaveBeenCalled();
+  });
+
+  it("restores packed monochrome pixels including row padding without inversion", async () => {
+    const fake = page(
+      [OPS.transform, OPS.paintImageXObject],
+      [[100, 0, 0, 100, 0, 0], ["img"]],
+      { width: 9, height: 2, kind: ImageKind.GRAYSCALE_1BPP, data: new Uint8Array([0xaa, 0x80, 0x55, 0]) },
+    );
+    const result = await loadPageImage(fake as never, "extract");
+    expect(result.modeUsed).toBe("extract");
+    expect(result.canvas).toMatchObject({ width: 9, height: 2 });
+    const uploaded = vi.mocked(fake.context.putImageData).mock.calls[0][0];
+    const pixels = Array.from(uploaded.data);
+    expect(pixels.filter((_, i) => i % 4 === 0)).toEqual([
+      255, 0, 255, 0, 255, 0, 255, 0, 255,
+      0, 255, 0, 255, 0, 255, 0, 255, 0,
+    ]);
+    expect(pixels.filter((_, i) => i % 4 === 3).every(alpha => alpha === 255)).toBe(true);
+    expect(fake.render).not.toHaveBeenCalled();
+  });
+
+  it("restores RGB pixels as opaque RGBA", async () => {
+    const fake = page(
+      [OPS.transform, OPS.paintImageXObject],
+      [[100, 0, 0, 100, 0, 0], ["img"]],
+      { width: 2, height: 1, kind: ImageKind.RGB_24BPP, data: new Uint8Array([255, 0, 0, 0, 128, 255]) },
+    );
+    expect((await loadPageImage(fake as never, "extract")).modeUsed).toBe("extract");
+    expect(Array.from(vi.mocked(fake.context.putImageData).mock.calls[0][0].data)).toEqual([255, 0, 0, 255, 0, 128, 255, 255]);
+  });
+
+  it("renders instead of decoding a truncated packed image", async () => {
+    const fake = page(
+      [OPS.transform, OPS.paintImageXObject],
+      [[100, 0, 0, 100, 0, 0], ["img"]],
+      { width: 9, height: 2, kind: ImageKind.GRAYSCALE_1BPP, data: new Uint8Array([0xaa, 0x80, 0x55]) },
+    );
+    expect((await loadPageImage(fake as never, "extract")).modeUsed).toBe("render");
   });
 
   it("falls back safely when no dominant embedded image exists", async () => {
