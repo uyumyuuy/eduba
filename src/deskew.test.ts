@@ -39,4 +39,43 @@ describe("skew angle estimation", () => {
     expect(Math.abs(estimateSkewAngle(textLines(3), 1))).toBeLessThanOrEqual(1);
     expect(estimateSkewAngle(textLines(3), 0)).toBe(0);
   });
+  it("does not rotate a page of long diagonal illustration strokes", () => {
+    const image = textLines(0);
+    image.data.fill(255);
+    for (let row = 50; row < image.height - 50; row += 25)
+      for (let x = 30; x < image.width - 30; x++)
+        for (let thickness = 0; thickness < 3; thickness++) {
+          const y = Math.round(row + x * Math.tan(3 * Math.PI / 180)) + thickness;
+          const offset = (y * image.width + x) * 4;
+          image.data.fill(0, offset, offset + 3);
+        }
+    expect(estimateSkewAngle(image)).toBe(0);
+  });
+
+  it("does not use just two caption lines as evidence for a whole illustration page", () => {
+    const image = textLines(2);
+    for (let y = 130; y < image.height; y++)
+      image.data.fill(255, y * image.width * 4, (y + 1) * image.width * 4);
+    expect(estimateSkewAngle(image)).toBe(0);
+  });
+
+  it("rejects equally sized text regions with conflicting slopes", () => {
+    const image = textLines(2);
+    const other = textLines(-2);
+    image.data.set(other.data.slice(image.width * 300 * 4), image.width * 300 * 4);
+    expect(estimateSkewAngle(image)).toBe(0);
+  });
+
+  it("retains text correction when large diagonal drawing strokes are present", () => {
+    const image = textLines(1.2);
+    for (let row = 450; row < 555; row += 15)
+      for (let x = 30; x < image.width - 30; x++)
+        for (let thickness = 0; thickness < 3; thickness++) {
+          const y = Math.round(row - x * Math.tan(3 * Math.PI / 180)) + thickness;
+          const offset = (y * image.width + x) * 4;
+          image.data.fill(0, offset, offset + 3);
+        }
+    expect(estimateSkewAngle(image)).toBeCloseTo(-1.2, 1);
+  });
+
 });
