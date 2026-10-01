@@ -104,6 +104,22 @@ describe("ImportModal validation", () => {
     expect(cards()[0].querySelector(".deskew-angle")?.textContent).toBe("Correction: 0.0°");
   });
 
+  it.each([
+    ["aligned", "No correction needed (0.0°)"],
+    ["insufficient-text", "Skipped: not enough reliable text lines"],
+    ["inconsistent-lines", "Skipped: text-line angles do not agree"],
+    ["low-improvement", "Skipped: correction offers little improvement"],
+    ["unavailable", "Skipped: image analysis is unavailable"],
+  ])("shows the actual %s reason rather than a zero correction angle", async (status, message) => {
+    mocks.processCanvas.mockReturnValue({
+      pages: [{ canvas: document.createElement("canvas"), provenance: { angle: 0 }, deskew: { angle: 0, status } }],
+    });
+    await act(async () => root.render(<ImportModal pdfPath="book.pdf" pdf={pdf()} onCancel={vi.fn()} onConfirm={vi.fn()}/>));
+    expect(container.querySelector(".deskew-angle")?.textContent).toBe(message);
+    await act(async () => input("Automatically correct skew").click());
+    expect(container.querySelector(".deskew-angle")?.textContent).toBe("Skew correction: Off");
+  });
+
   it("mirrors outer and inner exclusion overlays across split previews", async () => {
     mocks.processCanvas.mockReturnValue({ pages: canvases(2) });
     await act(async () => root.render(<ImportModal pdfPath="book.pdf" pdf={pdf()} onCancel={vi.fn()} onConfirm={vi.fn()}/>));

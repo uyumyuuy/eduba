@@ -1,3 +1,6 @@
+export type DeskewStatus = "corrected" | "aligned" | "insufficient-text" | "inconsistent-lines" | "low-improvement" | "unavailable" | "disabled";
+export type DeskewEstimate = { angle: number; status: DeskewStatus };
+
 type Glyph = { id: number; left: number; right: number; top: number; bottom: number; count: number };
 const median = (values: number[]) => {
   const sorted = [...values].sort((a, b) => a - b);
@@ -62,8 +65,8 @@ function textComponents(image: { width: number; height: number; data: Uint8Clamp
 }
 
 /** Require several long, spatially distributed lines supporting the same angle. */
-function consistentTextLines(glyphs: Glyph[], angle: number, width: number, height: number): boolean {
-  if (glyphs.length < 30) return false;
+function textLineStatus(glyphs: Glyph[], angle: number, width: number, height: number): DeskewStatus | undefined {
+  if (glyphs.length < 30) return "insufficient-text";
   const typicalHeight = median(glyphs.map(glyph => glyph.bottom - glyph.top + 1));
   const radians = angle * Math.PI / 180;
   const projected = glyphs.map(glyph => ({
@@ -98,13 +101,14 @@ function consistentTextLines(glyphs: Glyph[], angle: number, width: number, heig
     if (residual > typicalHeight * 0.45) return [];
     return [{ angle: -Math.atan(slope) * 180 / Math.PI, y: yMean, glyphs }];
   });
-  if (lines.length < 5) return false;
+  if (lines.length < 5) return "insufficient-text";
   const consensus = median(lines.map(line => line.angle));
   const agreeing = lines.filter(line => Math.abs(line.angle - consensus) <= 0.4 && Math.abs(line.angle - angle) <= 0.5);
   const supportedCount = agreeing.reduce((sum, line) => sum + line.glyphs.length, 0);
   const spread = Math.max(...agreeing.map(line => line.y)) - Math.min(...agreeing.map(line => line.y));
-  return agreeing.length >= 5 && agreeing.length >= lines.length * 0.75
-    && supportedCount >= glyphs.length * 0.6 && spread >= height * 0.15;
+  if (agreeing.length < 5 || agreeing.length < lines.length * 0.75) return "inconsistent-lines";
+  if (supportedCount < glyphs.length * 0.6 || spread < height * 0.15) return "insufficient-text";
+  return undefined;
 }
 
 /**
@@ -112,15 +116,16 @@ function consistentTextLines(glyphs: Glyph[], angle: number, width: number, heig
  * multiple text lines. Diagram-only or ambiguous pages are left unchanged.
  * Input is a white-backed analysis image, at most 1000 pixels per side.
  */
-export function estimateSkewAngle(
+export function estimateSkew(
   image: { width: number; height: number; data: Uint8ClampedArray },
   maxDegrees = 5,
-): number {
+): DeskewEstimate {
   const { width, height } = image;
   const limit = Math.max(0, Math.min(5, maxDegrees));
-  if (!limit || width < 20 || height < 20) return 0;
+  if (!limit) return { angle: 0, status: "disabled" };
+  if (width < 20 || height < 20) return { angle: 0, status: "insufficient-text" };
   const { glyphs, labels } = textComponents(image);
-  if (glyphs.length < 30) return 0;
+  if (glyphs.length < 30) return { angle: 0, status: "insufficient-text" };
   const selected = new Set(glyphs.map(glyph => glyph.id));
   const points: number[] = [];
   for (let index = 0; index < labels.length; index++) {
@@ -157,7 +162,19 @@ export function estimateSkewAngle(
   // Two strong, distinct peaks indicate conflicting text/diagram directions.
   const ambiguous = evaluated.some(candidate =>
     Math.abs(candidate.angle - bestAngle) >= 1 && candidate.score >= bestScore * 0.92);
-  return !ambiguous && consistentTextLines(glyphs, bestAngle, width, height)
-    && bestScore > baseline * 1.02 && Math.abs(bestAngle) >= 0.1
-    ? Math.round(bestAngle * 10) / 10 : 0;
+  const lineStatus = textLineStatus(glyphs, bestAngle, width, height);
+  if (lineStatus) return { angle: 0, status: lineStatus };
+  if (ambiguous) return { angle: 0, status: "inconsistent-lines" };
+  if (Math.abs(bestAngle) < 0.1) return { angle: 0, status: "aligned" };
+  if (bestScore <= baseline * 1.02) return { angle: 0, status: "low-improvement" };
+  return { angle: Math.round(bestAngle * 10) / 10, status: "corrected" };
+}
+
+
+/** Numeric API for callers that only need the applied correction. */
+export function estimateSkewAngle(
+  image: { width: number; height: number; data: Uint8ClampedArray },
+  maxDegrees = 5,
+): number {
+  return estimateSkew(image, maxDegrees).angle;
 }

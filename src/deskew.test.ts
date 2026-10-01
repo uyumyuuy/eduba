@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { estimateSkewAngle } from "./deskew";
+import { estimateSkew, estimateSkewAngle } from "./deskew";
 
 function textLines(angle: number, width = 500, height = 600) {
   const data = new Uint8ClampedArray(width * height * 4).fill(255);
@@ -76,6 +76,17 @@ describe("skew angle estimation", () => {
           image.data.fill(0, offset, offset + 3);
         }
     expect(estimateSkewAngle(image)).toBeCloseTo(-1.2, 1);
+  });
+
+  it("distinguishes reliable horizontal text from insufficient text and conflicting directions", () => {
+    expect(estimateSkew(textLines(0))).toEqual({ angle: 0, status: "aligned" });
+    const blank = textLines(0);
+    blank.data.fill(255);
+    expect(estimateSkew(blank)).toEqual({ angle: 0, status: "insufficient-text" });
+    const conflicting = textLines(2), other = textLines(-2);
+    conflicting.data.set(other.data.slice(conflicting.width * 300 * 4), conflicting.width * 300 * 4);
+    expect(estimateSkew(conflicting)).toEqual({ angle: 0, status: "inconsistent-lines" });
+    expect(estimateSkew(textLines(1.2))).toEqual({ angle: -1.2, status: "corrected" });
   });
 
 });

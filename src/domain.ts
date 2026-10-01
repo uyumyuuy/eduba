@@ -1,4 +1,4 @@
-import { estimateSkewAngle } from "./deskew";
+import { estimateSkew, type DeskewEstimate } from "./deskew";
 import type { OcrMargins } from "./ocrMargins";
 /**
  * The small, serialisable document model shared by the OCR viewer and its
@@ -940,6 +940,7 @@ export interface PreprocessOptions {
 }
 
 export interface ProcessedPage {
+  deskew?: DeskewEstimate;
   canvas: HTMLCanvasElement;
   provenance: LogicalPageProvenance;
 }
@@ -1009,17 +1010,17 @@ function cropCanvas(source: HTMLCanvasElement, crop: Rect): HTMLCanvasElement {
 }
 
 /** Estimate from a bounded analysis image; apply the result at source resolution. */
-function estimateDeskewAngle(source: HTMLCanvasElement, maxDegrees: number): number {
+function estimateDeskew(source: HTMLCanvasElement, maxDegrees: number): DeskewEstimate {
   const limit = Math.max(0, Math.min(5, maxDegrees));
-  if (!limit) return 0;
+  if (!limit) return { angle: 0, status: "disabled" };
   const scale = Math.min(1, 1000 / Math.max(source.width, source.height));
   const analysis = canvasFor(source.width * scale, source.height * scale);
   const context = analysis.getContext("2d");
-  if (!context) return 0;
+  if (!context) return { angle: 0, status: "unavailable" };
   context.fillStyle = "#fff";
   context.fillRect(0, 0, analysis.width, analysis.height);
   context.drawImage(source, 0, 0, analysis.width, analysis.height);
-  return estimateSkewAngle(context.getImageData(0, 0, analysis.width, analysis.height), limit);
+  return estimateSkew(context.getImageData(0, 0, analysis.width, analysis.height), limit);
 }
 
 /**
@@ -1039,18 +1040,22 @@ export function processCanvas(
   const rotation = options.rotation ?? 0;
   const order = options.preprocessOrder ?? "split-deskew";
   const correction = (canvas: HTMLCanvasElement) => {
-    const angle = options.deskewAngle ?? (options.deskew
-      ? estimateDeskewAngle(canvas, options.maxDeskewDegrees ?? 5) : 0);
+    const deskew: DeskewEstimate = options.deskewAngle !== undefined
+      ? { angle: options.deskewAngle, status: options.deskewAngle ? "corrected" : "aligned" }
+      : options.deskew ? estimateDeskew(canvas, options.maxDeskewDegrees ?? 5)
+      : { angle: 0, status: "disabled" };
+    const angle = deskew.angle;
     if (!Number.isFinite(angle) || Math.abs(angle) > 5)
       throw new Error("Invalid deskew angle.");
-    return { angle, canvas: angle
+    return { angle, deskew, canvas: angle
       ? rotateCanvas(canvas, canvas.width, canvas.height, angle, order === "split-deskew")
       : canvas };
   };
   let working = rotateCanvas(source, sourceWidth, sourceHeight, rotation);
   let legacyAngle = 0;
+  let legacyDeskew: DeskewEstimate = { angle: 0, status: "disabled" };
   if (order === "deskew-split")
-    ({ canvas: working, angle: legacyAngle } = correction(working));
+    ({ canvas: working, angle: legacyAngle, deskew: legacyDeskew } = correction(working));
   const split = options.split ?? "none";
   const sides: Array<LogicalPageProvenance["split"]> = split === "none"
     ? ["single"] : split === "both" ? ["left", "right"] : [split];
@@ -1061,9 +1066,10 @@ export function processCanvas(
       right: side === "left" ? half : working.width, bottom: working.height,
     });
     let angle = legacyAngle;
-    if (order === "split-deskew") ({ canvas, angle } = correction(canvas));
+    let deskew = legacyDeskew;
+    if (order === "split-deskew") ({ canvas, angle, deskew } = correction(canvas));
     if (options.crop) canvas = cropCanvas(canvas, options.crop);
-    return { canvas, provenance: {
+    return { canvas, deskew, provenance: {
       sourcePage: options.sourcePage ?? 0, split: side, crop: options.crop,
       rotation, angle, preprocessOrder: order,
     } };
