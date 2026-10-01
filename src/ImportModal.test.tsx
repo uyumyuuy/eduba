@@ -55,6 +55,18 @@ describe("ImportModal validation", () => {
     await vi.waitFor(() => expect(mocks.processCanvas.mock.calls.length).toBeGreaterThan(baseline));
   });
 
+  it("defaults deskew on, refreshes the preview when disabled, and submits the choice", async () => {
+    const confirm = vi.fn();
+    await act(async () => root.render(<ImportModal pdfPath="book.pdf" pdf={pdf()} onCancel={vi.fn()} onConfirm={confirm}/>));
+    const toggle = input("Automatically correct skew");
+    expect(toggle.checked).toBe(true);
+    expect(mocks.processCanvas).toHaveBeenLastCalledWith(expect.anything(), expect.objectContaining({ deskew: true }));
+    await act(async () => toggle.click());
+    expect(mocks.processCanvas).toHaveBeenLastCalledWith(expect.anything(), expect.objectContaining({ deskew: false }));
+    await act(async () => container.querySelector<HTMLButtonElement>(".modal-actions .primary")!.click());
+    expect(confirm).toHaveBeenCalledWith(expect.objectContaining({ deskew: false }));
+  });
+
   it("accepts a raw DPI while typing and blocks invalid DPI", async () => {
     await act(async () => root.render(<ImportModal pdfPath="book.pdf" pdf={pdf()} onCancel={vi.fn()} onConfirm={vi.fn()}/>));
     const mode = container.querySelector<HTMLSelectElement>('select[aria-label="Import method"]')!;
@@ -73,6 +85,41 @@ describe("ImportModal validation", () => {
     expect(container.textContent).toContain("Right");
     expect(container.querySelectorAll(".preview-canvases canvas")).toHaveLength(2);
   });
+  it("shows each side's applied angle with its sign and replaces angles when deskew is off", async () => {
+    mocks.processCanvas.mockImplementation((_source, options) => ({
+      pages: [-1.3, 0.4].map(angle => ({
+        canvas: document.createElement("canvas"),
+        provenance: { angle: options.deskew ? angle : 0 },
+      })),
+    }));
+    await act(async () => root.render(<ImportModal pdfPath="book.pdf" pdf={pdf()} onCancel={vi.fn()} onConfirm={vi.fn()}/>));
+    await act(async () => input("Split spread into left and right").click());
+    const cards = () => Array.from(container.querySelectorAll(".preview-canvases figure"));
+    expect(cards()[0].querySelector(".deskew-angle")?.textContent).toBe("Correction: -1.3°");
+    expect(cards()[1].querySelector(".deskew-angle")?.textContent).toBe("Correction: +0.4°");
+    await act(async () => input("Automatically correct skew").click());
+    expect(cards().map(card => card.querySelector(".deskew-angle")?.textContent)).toEqual(["Skew correction: Off", "Skew correction: Off"]);
+    mocks.processCanvas.mockReturnValue({ pages: [{ canvas: document.createElement("canvas"), provenance: { angle: 0 } }] });
+    await act(async () => input("Automatically correct skew").click());
+    expect(cards()[0].querySelector(".deskew-angle")?.textContent).toBe("Correction: 0.0°");
+  });
+
+  it.each([
+    ["aligned", "No correction needed (0.0°)"],
+    ["insufficient-text", "Skipped: not enough reliable text lines"],
+    ["inconsistent-lines", "Skipped: text-line angles do not agree"],
+    ["low-improvement", "Skipped: correction offers little improvement"],
+    ["unavailable", "Skipped: image analysis is unavailable"],
+  ])("shows the actual %s reason rather than a zero correction angle", async (status, message) => {
+    mocks.processCanvas.mockReturnValue({
+      pages: [{ canvas: document.createElement("canvas"), provenance: { angle: 0 }, deskew: { angle: 0, status } }],
+    });
+    await act(async () => root.render(<ImportModal pdfPath="book.pdf" pdf={pdf()} onCancel={vi.fn()} onConfirm={vi.fn()}/>));
+    expect(container.querySelector(".deskew-angle")?.textContent).toBe(message);
+    await act(async () => input("Automatically correct skew").click());
+    expect(container.querySelector(".deskew-angle")?.textContent).toBe("Skew correction: Off");
+  });
+
   it("mirrors outer and inner exclusion overlays across split previews", async () => {
     mocks.processCanvas.mockReturnValue({ pages: canvases(2) });
     await act(async () => root.render(<ImportModal pdfPath="book.pdf" pdf={pdf()} onCancel={vi.fn()} onConfirm={vi.fn()}/>));

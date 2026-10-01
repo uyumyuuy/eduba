@@ -109,6 +109,7 @@ export type LogicalThumbnail = {
   rotation: number;
   /** The deskew angle that was recorded while the page was imported. */
   angle: number;
+  preprocessOrder?: "split-deskew" | "deskew-split";
   split: "single" | "left" | "right";
   crop?: { left: number; top: number; right: number; bottom: number };
   /** Native source resolution, used to scale persisted crop coordinates. */
@@ -174,6 +175,7 @@ function logicalThumbnailKey(page: LogicalThumbnail): string {
     page.sourcePage,
     page.rotation,
     page.angle,
+    page.preprocessOrder ?? "deskew-split",
     page.split,
     crop?.left ?? "",
     crop?.top ?? "",
@@ -192,10 +194,14 @@ function canvas(width: number, height: number): HTMLCanvasElement {
   return output;
 }
 
-function rotate(source: HTMLCanvasElement, degrees: number): HTMLCanvasElement {
+function rotate(source: HTMLCanvasElement, degrees: number, expand = false): HTMLCanvasElement {
   const normalized = ((degrees % 360) + 360) % 360;
   const sideways = normalized === 90 || normalized === 270;
-  const output = canvas(sideways ? source.height : source.width, sideways ? source.width : source.height);
+  const radians = degrees * Math.PI / 180;
+  const output = canvas(
+    expand ? Math.ceil(Math.abs(source.width * Math.cos(radians)) + Math.abs(source.height * Math.sin(radians))) : sideways ? source.height : source.width,
+    expand ? Math.ceil(Math.abs(source.height * Math.cos(radians)) + Math.abs(source.width * Math.sin(radians))) : sideways ? source.width : source.height,
+  );
   const context = output.getContext("2d");
   if (!context) throw new Error("Could not create thumbnail canvas.");
   context.fillStyle = "#fff";
@@ -220,19 +226,20 @@ function crop(source: HTMLCanvasElement, left: number, top: number, right: numbe
 }
 
 function transformThumbnail(source: HTMLCanvasElement, page: LogicalThumbnail): HTMLCanvasElement {
-  // This follows processCanvas: rotate, deskew, split, then crop. The source
+  // Match the persisted preprocessing order, then crop. The source
   // thumbnail is rendered at PDF points (72 DPI), while saved crop rectangles
   // use the imported image's pixels, so scale the latter before applying it.
   let working = rotate(source, page.rotation);
-  if (page.angle) working = rotate(working, page.angle);
+  const perPage = page.preprocessOrder === "split-deskew";
+  if (page.angle && !perPage) working = rotate(working, page.angle);
   const normalized = ((page.rotation % 360) + 360) % 360;
   const sideways = normalized === 90 || normalized === 270;
   const fallbackDpi = page.dpi ?? 300;
   const dpiX = page.sourceDpiX ?? fallbackDpi;
   const dpiY = page.sourceDpiY ?? fallbackDpi;
   const thumbnailScale = sourceScales.get(source) ?? 1;
-  const scaleX = thumbnailScale * 72 / (sideways ? dpiY : dpiX);
-  const scaleY = thumbnailScale * 72 / (sideways ? dpiX : dpiY);
+  const scaleX = thumbnailScale * 72 / (sideways && !perPage ? dpiY : dpiX);
+  const scaleY = thumbnailScale * 72 / (sideways && !perPage ? dpiX : dpiY);
 
   if (page.split !== "single") {
     const half = Math.floor(working.width / 2);
@@ -240,6 +247,7 @@ function transformThumbnail(source: HTMLCanvasElement, page: LogicalThumbnail): 
       ? crop(working, 0, 0, half, working.height)
       : crop(working, half, 0, working.width, working.height);
   }
+  if (page.angle && perPage) working = rotate(working, page.angle, true);
   if (!page.crop) return working;
   return crop(
     working,

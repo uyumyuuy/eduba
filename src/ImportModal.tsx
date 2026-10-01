@@ -1,3 +1,4 @@
+import type { DeskewStatus } from "./deskew";
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { PDFDocumentProxy } from "pdfjs-dist";
@@ -15,7 +16,7 @@ type Props = {
   busy?: boolean;
 };
 
-type Preview = { label: string; width: number; height: number; canvas: HTMLCanvasElement; modeUsed: ImportMode; dpiX: number; dpiY: number; reason?: string; sourceWidth?: number; sourceHeight?: number };
+type Preview = { deskewStatus?: DeskewStatus; angle: number; deskewEnabled: boolean; label: string; width: number; height: number; canvas: HTMLCanvasElement; modeUsed: ImportMode; dpiX: number; dpiY: number; reason?: string; sourceWidth?: number; sourceHeight?: number };
 
 function dpiError(raw: string, translate: (key: string) => string): string | null {
   const dpi = Number(raw);
@@ -31,6 +32,7 @@ export function ImportModal({ pdfPath, pdf, onCancel, onConfirm, busy = false }:
   const [importMode, setImportMode] = useState<ImportMode>("extract");
   const [rotation, setRotation] = useState<0 | 90 | 180 | 270>(0);
   const [splitSpread, setSplitSpread] = useState(false);
+  const [deskew, setDeskew] = useState(true);
   const [ocrMargins, setOcrMargins] = useState<OcrMargins>({ ...defaultOcrMargins });
   const [page, setPage] = useState(1);
   const [preview, setPreview] = useState<Preview[]>([]);
@@ -57,26 +59,26 @@ export function ImportModal({ pdfPath, pdf, onCancel, onConfirm, busy = false }:
     void (async () => {
       const source = await pdf.getPage(page);
       const loaded = await loadPageImage(source, importMode, importMode === "extract" ? 300 : Number(dpiRaw));
-      const full = { width: loaded.canvas.width, height: loaded.canvas.height };
-      const previewScale = Math.min(1, 1200 / Math.max(full.width, full.height));
-      const raw = document.createElement("canvas");
-      raw.width = Math.max(1, Math.ceil(full.width * previewScale));
-      raw.height = Math.max(1, Math.ceil(full.height * previewScale));
-      raw.getContext("2d")!.drawImage(loaded.canvas, 0, 0, raw.width, raw.height);
-      const split = splitSpread ? "both" : "none";
-      const result = processCanvas(raw, { sourcePage: page, rotation, split });
+      const result = processCanvas(loaded.canvas, {
+        sourcePage: page, rotation, split: splitSpread ? "both" : "none", deskew,
+      });
       if (renderToken !== token.current) return;
-      const rotated = rotation === 90 || rotation === 270
-        ? { width: Math.ceil(full.height), height: Math.ceil(full.width) }
-        : { width: Math.ceil(full.width), height: Math.ceil(full.height) };
       const cards = result.pages.map((item, index) => {
-        const half = Math.floor(rotated.width / 2);
-        const width = splitSpread ? (index === 0 ? half : rotated.width - half) : rotated.width;
+        const width = item.canvas.width;
+        const height = item.canvas.height;
+        const scale = Math.min(1, 1200 / Math.max(width, height));
+        const display = document.createElement("canvas");
+        display.width = Math.max(1, Math.round(width * scale));
+        display.height = Math.max(1, Math.round(height * scale));
+        display.getContext("2d")!.drawImage(item.canvas, 0, 0, display.width, display.height);
         return {
           label: splitSpread ? (index === 0 ? t("importUi.leftSide") : t("importUi.rightSide")) : t("importUi.whole"),
           width,
-          height: rotated.height,
-          canvas: item.canvas,
+          height,
+          canvas: display,
+          angle: item.provenance?.angle ?? 0,
+          deskewStatus: item.deskew?.status,
+          deskewEnabled: deskew,
           modeUsed: loaded.modeUsed,
           dpiX: loaded.dpiX,
           dpiY: loaded.dpiY,
@@ -91,12 +93,12 @@ export function ImportModal({ pdfPath, pdf, onCancel, onConfirm, busy = false }:
       if (renderToken === token.current) setRendering(false);
     });
     return () => { token.current++; };
-  }, [pdf, page, dpiRaw, importMode, rotation, splitSpread, valid, i18n.language]);
+  }, [pdf, page, dpiRaw, importMode, rotation, splitSpread, deskew, valid, i18n.language]);
 
   const updateMargin = (key: keyof OcrMargins, value: string) => setOcrMargins(current => ({ ...current, [key]: Number(value) }));
   const submit = () => {
     if (!valid || previewError) return;
-    onConfirm({ begin, end, dpi: importMode === "extract" ? 300 : Number(dpiRaw), rotation, splitSpread, importMode, ocrMargins });
+    onConfirm({ begin, end, dpi: importMode === "extract" ? 300 : Number(dpiRaw), rotation, splitSpread, deskew, importMode, ocrMargins });
   };
 
   return <div className="modal-scrim">
@@ -117,7 +119,7 @@ export function ImportModal({ pdfPath, pdf, onCancel, onConfirm, busy = false }:
             <label>{t("importUi.dpi")}<input aria-label={t("importUi.dpi")} disabled={busy || importMode === "extract"} inputMode="numeric" value={importMode === "extract" ? t("importUi.sourceImage") : dpiRaw} onChange={event => setDpiRaw(event.target.value)}/></label>
             <label>{t("importUi.rotation")}<select aria-label={t("importUi.rotation")} disabled={busy} value={rotation} onChange={event => setRotation(Number(event.target.value) as 0 | 90 | 180 | 270)}><option value="0">0°</option><option value="90">{t("importUi.clockwise90")}</option><option value="180">180°</option><option value="270">270°</option></select></label>
           </div>
-          <label className="split-check"><input aria-label={t("importUi.splitSpread")} disabled={busy} type="checkbox" checked={splitSpread} onChange={event => setSplitSpread(event.target.checked)}/>{t("importUi.splitSpread")}</label><div className="margin-fields"><strong>{t("importUi.ocrMargins")}</strong><div className="form-row"><label>{t("importUi.top")}<input aria-label={t("importUi.top")} disabled={busy} type="number" value={ocrMargins.top} onChange={e=>updateMargin("top",e.target.value)}/></label><label>{t("importUi.bottom")}<input aria-label={t("importUi.bottom")} disabled={busy} type="number" value={ocrMargins.bottom} onChange={e=>updateMargin("bottom",e.target.value)}/></label></div><div className="form-row"><label>{splitSpread ? t("importUi.outer") : t("importUi.left")}<input aria-label={splitSpread ? t("importUi.outer") : t("importUi.left")} disabled={busy} type="number" value={splitSpread?ocrMargins.outer:ocrMargins.left} onChange={e=>updateMargin(splitSpread?"outer":"left",e.target.value)}/></label><label>{splitSpread ? t("importUi.inner") : t("importUi.right")}<input aria-label={splitSpread ? t("importUi.inner") : t("importUi.right")} disabled={busy} type="number" value={splitSpread?ocrMargins.inner:ocrMargins.right} onChange={e=>updateMargin(splitSpread?"inner":"right",e.target.value)}/></label></div></div>
+          <label className="split-check"><input aria-label={t("importUi.splitSpread")} disabled={busy} type="checkbox" checked={splitSpread} onChange={event => setSplitSpread(event.target.checked)}/>{t("importUi.splitSpread")}</label><label className="split-check"><input aria-label={t("importUi.deskew")} disabled={busy} type="checkbox" checked={deskew} onChange={event => setDeskew(event.target.checked)}/>{t("importUi.deskew")}</label><p className="settings-note">{t("importUi.deskewNote")}</p><div className="margin-fields"><strong>{t("importUi.ocrMargins")}</strong><div className="form-row"><label>{t("importUi.top")}<input aria-label={t("importUi.top")} disabled={busy} type="number" value={ocrMargins.top} onChange={e=>updateMargin("top",e.target.value)}/></label><label>{t("importUi.bottom")}<input aria-label={t("importUi.bottom")} disabled={busy} type="number" value={ocrMargins.bottom} onChange={e=>updateMargin("bottom",e.target.value)}/></label></div><div className="form-row"><label>{splitSpread ? t("importUi.outer") : t("importUi.left")}<input aria-label={splitSpread ? t("importUi.outer") : t("importUi.left")} disabled={busy} type="number" value={splitSpread?ocrMargins.outer:ocrMargins.left} onChange={e=>updateMargin(splitSpread?"outer":"left",e.target.value)}/></label><label>{splitSpread ? t("importUi.inner") : t("importUi.right")}<input aria-label={splitSpread ? t("importUi.inner") : t("importUi.right")} disabled={busy} type="number" value={splitSpread?ocrMargins.inner:ocrMargins.right} onChange={e=>updateMargin(splitSpread?"inner":"right",e.target.value)}/></label></div></div>
           <p className="settings-note">{t("importUi.settingsNote")}</p>
         </div>
         <div className="import-preview">
@@ -126,10 +128,10 @@ export function ImportModal({ pdfPath, pdf, onCancel, onConfirm, busy = false }:
             <span>{t("importUi.pageOf", { page, total: pdf.numPages })}</span>
             <button className="icon-btn" onClick={() => setPage(value => Math.min(end, value + 1))} disabled={busy || !valid || page >= end}><ChevronRight size={15}/></button>
           </div>
+          <small className="preview-status" role="status"><span aria-hidden={!rendering} style={{ visibility: rendering ? "visible" : "hidden" }}>{t("importUi.previewCreating")}</span></small>
           <div className={`preview-canvases ${splitSpread ? "both" : ""}`}>
-            {preview.map((item, index) => { const margins = marginError ? resolveOcrMargins(defaultOcrMargins, "single") : resolveOcrMargins(ocrMargins, splitSpread ? (index === 0 ? "left" : "right") : "single"); return <figure key={`${item.label}-${index}`}><figcaption>{item.label}</figcaption><div className="preview-canvas-wrap"><canvas ref={node => { canvases.current[index] = node; if (node) { node.width = item.canvas.width; node.height = item.canvas.height; node.getContext("2d")!.drawImage(item.canvas, 0, 0); } }}/><i className="margin-top" style={{height:`${margins.top}%`}}/><i className="margin-bottom" style={{height:`${margins.bottom}%`}}/><i className="margin-left" style={{width:`${margins.left}%`}}/><i className="margin-right" style={{width:`${margins.right}%`}}/></div><small>{item.width} × {item.height} px · {(rotation === 90 || rotation === 270 ? item.dpiY : item.dpiX).toFixed(1)} × {(rotation === 90 || rotation === 270 ? item.dpiX : item.dpiY).toFixed(1)} DPI{item.modeUsed === "render" && item.reason ? ` · ${t("importUi.imageFallback", { reason: item.reason })}` : ""}{item.sourceWidth && item.sourceHeight ? ` · ${t("importUi.originalImage", { width: item.sourceWidth, height: item.sourceHeight })}` : ""}</small></figure>; })}</div><p className="margin-legend">{t("importUi.marginLegend")}</p>
+            {preview.map((item, index) => { const margins = marginError ? resolveOcrMargins(defaultOcrMargins, "single") : resolveOcrMargins(ocrMargins, splitSpread ? (index === 0 ? "left" : "right") : "single"); return <figure key={`${item.label}-${index}`}><figcaption>{item.label}</figcaption><small className="deskew-angle" title={item.deskewEnabled && (!item.deskewStatus || item.deskewStatus === "corrected") ? t("importUi.deskewAngleNote") : undefined}>{item.deskewEnabled ? item.deskewStatus && item.deskewStatus !== "corrected" ? t(`importUi.deskewStatus.${item.deskewStatus}`) : t("importUi.deskewAngle", { angle: `${item.angle > 0 ? "+" : ""}${item.angle.toFixed(1)}` }) : t("importUi.deskewOff")}</small><div className="preview-canvas-wrap"><canvas ref={node => { canvases.current[index] = node; if (node) { node.width = item.canvas.width; node.height = item.canvas.height; node.getContext("2d")!.drawImage(item.canvas, 0, 0); } }}/><i className="margin-top" style={{height:`${margins.top}%`}}/><i className="margin-bottom" style={{height:`${margins.bottom}%`}}/><i className="margin-left" style={{width:`${margins.left}%`}}/><i className="margin-right" style={{width:`${margins.right}%`}}/></div><small>{item.width} × {item.height} px · {(rotation === 90 || rotation === 270 ? item.dpiY : item.dpiX).toFixed(1)} × {(rotation === 90 || rotation === 270 ? item.dpiX : item.dpiY).toFixed(1)} DPI{item.modeUsed === "render" && item.reason ? ` · ${t("importUi.imageFallback", { reason: item.reason })}` : ""}{item.sourceWidth && item.sourceHeight ? ` · ${t("importUi.originalImage", { width: item.sourceWidth, height: item.sourceHeight })}` : ""}</small></figure>; })}</div><p className="margin-legend">{t("importUi.marginLegend")}</p>
           </div>
-          {rendering && <small>{t("importUi.previewCreating")}</small>}
         </div>
       {(rangeError || currentDpiError || marginError || previewError) && <p className="form-error">{rangeError || currentDpiError || marginError || previewError}</p>}
       <div className="modal-actions">

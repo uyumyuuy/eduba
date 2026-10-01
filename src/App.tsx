@@ -66,7 +66,7 @@ import { prepareBulkUpdates } from "./bulkApply";
 import { addOcrRegion, prepareRegionOcrImage, removeOcrLinesInRegion, removeOcrLineAtPoint, mergeOcrLinesInRegion } from "./ocrRegion";
 import { lineIdsCrossed, moveLineAfter, reorderPageLines, type Point } from "./readingOrder";
 import { candidatesForSelection } from "./correctionCandidates";
-import { importEntries, type ImportConfig } from "./importConfig";
+import { importEntries, prepareImportEntries, type ImportConfig } from "./importConfig";
 import { loadPageImage, type ImportMode } from "./pageImage";
 import {
   defaultOcrMargins,
@@ -196,6 +196,7 @@ function parseManifest(raw: string | null): Manifest {
           ? Number(page.rotation)
           : 0,
         angle: Number(page.angle || 0),
+        preprocessOrder: page.preprocessOrder === "split-deskew" ? "split-deskew" : "deskew-split",
         ocrMargins: page.ocrMargins
           ? validateOcrMargins(
               { ...defaultOcrMargins, ...page.ocrMargins },
@@ -621,8 +622,8 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
         rotation: entry.rotation as 0 | 90 | 180 | 270,
         split: entry.split === "single" ? "none" : entry.split,
         crop: entry.crop,
-        deskew: Boolean(entry.angle),
-        maxDeskewDegrees: Math.abs(entry.angle || 0),
+        deskewAngle: entry.angle,
+        preprocessOrder: entry.preprocessOrder ?? "deskew-split",
       });
       if (
         (!destination && (token !== loading.current || !canvasRef.current)) ||
@@ -826,6 +827,7 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
         });
         if (typeof projectPath !== "string") return;
         const next = makeImportManifest(config);
+        next.pages = await prepareImportEntries(source, config);
         next.settings = {
           ...manifestRef.current.settings,
           dpi: config.dpi,
@@ -1081,6 +1083,7 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
         split: entry.split,
         rotation: entry.rotation,
         angle: entry.angle,
+        preprocessOrder: entry.preprocessOrder,
         crop: entry.crop,
         ocrMargins: entry.ocrMargins,
         width: worker.width,

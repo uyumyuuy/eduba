@@ -1,4 +1,4 @@
-import { OPS, type PDFPageProxy } from "pdfjs-dist";
+import { ImageKind, OPS, type PDFPageProxy } from "pdfjs-dist";
 import { t } from "./i18n";
 
 export type ImportMode = "extract" | "render";
@@ -17,6 +17,7 @@ type ImageObject = {
   width?: number;
   height?: number;
   bitmap?: CanvasImageSource;
+  kind?: number;
   data?: Uint8ClampedArray | Uint8Array;
 };
 const I: M = [1, 0, 0, 1, 0, 0];
@@ -80,22 +81,39 @@ async function fallback(
 }
 function source(i: ImageObject): CanvasImageSource | null {
   if (i.bitmap) return i.bitmap;
-  if (
-    !finite(i.width ?? 0) ||
-    !finite(i.height ?? 0) ||
-    !i.data ||
-    i.data.length !== i.width! * i.height! * 4 ||
-    typeof ImageData === "undefined"
-  )
+  const w = i.width ?? 0, h = i.height ?? 0;
+  if (!Number.isInteger(w) || !Number.isInteger(h) || !finite(w) || !finite(h) || !i.data)
     return null;
-  const c = canvas(i.width!, i.height!),
-    x = c.getContext("2d");
+  const stride = Math.ceil(w / 8);
+  const kind = i.kind ?? ImageKind.RGBA_32BPP;
+  const expectedLength = kind === ImageKind.GRAYSCALE_1BPP ? stride * h
+    : kind === ImageKind.RGB_24BPP ? w * h * 3
+    : kind === ImageKind.RGBA_32BPP ? w * h * 4 : 0;
+  if (!expectedLength || i.data.length !== expectedLength) return null;
+  const c = canvas(w, h), x = c.getContext("2d");
   if (!x) return null;
-  x.putImageData(
-    new ImageData(new Uint8ClampedArray(i.data), i.width!, i.height!),
-    0,
-    0,
-  );
+  const image = x.createImageData(w, h);
+  if (kind === ImageKind.RGBA_32BPP) {
+    image.data.set(i.data);
+  } else {
+    for (let y = 0; y < h; y++) {
+      for (let pixel = 0; pixel < w; pixel++) {
+        const offset = (y * w + pixel) * 4;
+        if (kind === ImageKind.GRAYSCALE_1BPP) {
+          // PDF.js uses MSB-first packed rows, padded to whole bytes.
+          const value = (i.data[y * stride + (pixel >> 3)] & (128 >> (pixel & 7))) ? 255 : 0;
+          image.data[offset] = image.data[offset + 1] = image.data[offset + 2] = value;
+        } else {
+          const input = (y * w + pixel) * 3;
+          image.data[offset] = i.data[input];
+          image.data[offset + 1] = i.data[input + 1];
+          image.data[offset + 2] = i.data[input + 2];
+        }
+        image.data[offset + 3] = 255;
+      }
+    }
+  }
+  x.putImageData(image, 0, 0);
   return c;
 }
 async function object(
@@ -230,7 +248,7 @@ export async function loadPageImage(
   let m = I,
     clip: Box | undefined,
     pending: Box | undefined,
-    candidate: { image: ImageObject; m: M; clip?: Box } | undefined;
+    candidate: { image: ImageObject; src: CanvasImageSource; m: M; clip?: Box } | undefined;
   const stack: Array<{ m: M; clip?: Box }> = [];
   for (let n = 0; n < ops.fnArray.length; n++) {
     const op = ops.fnArray[n],
@@ -294,6 +312,14 @@ export async function loadPageImage(
       pending = undefined;
       continue;
     }
+    // Structure tags (for example /Part) do not paint or change image geometry.
+    // Optional-content groups (/OC) can change visibility, so keep rendering
+    // those pages rather than extracting an image from a possibly hidden layer.
+    if (
+      op === OPS.beginMarkedContent ||
+      op === OPS.endMarkedContent ||
+      (op === OPS.beginMarkedContentProps && args[0] !== "OC")
+    ) continue;
     if (op === OPS.endPath || op === OPS.dependency) continue;
     if (op === OPS.paintImageXObject || op === OPS.paintInlineImageXObject) {
       const image = await object(page, args[0]),
@@ -327,7 +353,7 @@ export async function loadPageImage(
           fallbackDpi,
           t("errors.multipleImages"),
         );
-      candidate = { image, m, clip };
+      candidate = { image, src, m, clip };
       continue;
     }
     if (
@@ -396,7 +422,7 @@ export async function loadPageImage(
   ctx.setTransform(
     ...mul(mul(mul(scale, vm), candidate.m), [1 / w, 0, 0, -1 / h, 0, 1]),
   );
-  ctx.drawImage(source(candidate.image)!, 0, 0);
+  ctx.drawImage(candidate.src, 0, 0);
   if (candidate.clip) ctx.restore();
   return {
     canvas: out,
