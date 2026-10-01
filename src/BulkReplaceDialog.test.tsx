@@ -116,4 +116,35 @@ describe("BulkReplaceDialog", () => {
     expect(rows[1].getAttribute("title")).toBe("old old value");
     expect(rows[1].innerHTML.indexOf("<mark")).toBeGreaterThan(rows[1].innerHTML.indexOf("old "));
   });
+
+  it("checks only the originating occurrence and respects manual deselection", async () => {
+    const initialMatch = { pageId: "page", pageLabel: "1", lineId: "line", lineText: "old old value", matchOrdinal: 1 };
+    const onApply = vi.fn();
+    await act(async () => root.render(<BulkReplaceDialog open projectPath="project" initialSearch="old" initialMatch={initialMatch} onApply={onApply} onClose={vi.fn()} />));
+    const checkboxes = [...container.querySelectorAll<HTMLInputElement>('.bulk-replace-result input[type="checkbox"]')];
+    expect(checkboxes.map(checkbox => checkbox.checked)).toEqual([false, true]);
+    const apply = container.querySelector<HTMLButtonElement>(".modal-actions .primary")!;
+    await act(async () => apply.click());
+    expect(onApply).toHaveBeenCalledWith(expect.objectContaining({ selections: [initialMatch] }));
+    await act(async () => checkboxes[1].click());
+    expect(checkboxes[1].checked).toBe(false);
+    expect(apply.disabled).toBe(true);
+  });
+
+  it("retains the originating selection when its result is on another page", async () => {
+    const initialMatch = { pageId: "later", pageLabel: "22", lineId: "later-line", lineText: "old", matchOrdinal: 0 };
+    invoke.mockImplementation(async (_command, args) => ({
+      results: args.page === 0 ? [{ pageId: "page", pageLabel: "1", lineId: "line", lineText: "old", matchOrdinal: 0 }] : [initialMatch],
+      total: 21, page: args.page, pageSize: 20,
+    }));
+    const onApply = vi.fn();
+    await act(async () => root.render(<BulkReplaceDialog open projectPath="project" initialSearch="old" initialMatch={initialMatch} onApply={onApply} onClose={vi.fn()} />));
+    expect(container.querySelector<HTMLInputElement>('.bulk-replace-result input')!.checked).toBe(false);
+    expect(container.querySelector<HTMLButtonElement>(".modal-actions .primary")!.disabled).toBe(false);
+    await act(async () => container.querySelectorAll<HTMLButtonElement>('.bulk-replace-pagination button')[1].click());
+    expect(container.querySelector<HTMLInputElement>('.bulk-replace-result input')!.checked).toBe(true);
+    await act(async () => container.querySelectorAll<HTMLButtonElement>('.bulk-replace-pagination button')[0].click());
+    await act(async () => container.querySelector<HTMLButtonElement>(".modal-actions .primary")!.click());
+    expect(onApply).toHaveBeenCalledWith(expect.objectContaining({ selections: [initialMatch] }));
+  });
 });

@@ -1158,14 +1158,14 @@ describe("saved project loading", () => {
     await waitFor(() => expect(container.textContent).toContain("2 results"));
     const checkboxes = Array.from(container.querySelectorAll<HTMLInputElement>('.bulk-replace-results input[type="checkbox"]'));
     expect(checkboxes).toHaveLength(2);
-    expect(checkboxes.every((checkbox) => !checkbox.checked)).toBe(true);
+    expect(checkboxes.map(checkbox => checkbox.checked)).toEqual([true, false]);
     const replacement = container.querySelector<HTMLInputElement>('.bulk-replace-fields input:not([readonly])')!;
     await act(async () => {
       const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!;
       setter.call(replacement, "stored");
       replacement.dispatchEvent(new Event("input", { bubbles: true }));
     });
-    await act(async () => checkboxes.forEach((checkbox) => checkbox.click()));
+    await act(async () => checkboxes[1].click());
     await waitFor(() => expect(container.querySelector<HTMLButtonElement>('.modal-actions .primary')?.disabled).toBe(false));
     await act(async () => container.querySelector<HTMLButtonElement>('.modal-actions .primary')!.click());
     await waitFor(() => expect(container.querySelector('[role="dialog"]')).toBeNull());

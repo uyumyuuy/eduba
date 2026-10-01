@@ -34,6 +34,7 @@ export type BulkReplaceDialogProps = {
   open: boolean;
   projectPath: string;
   initialSearch: string;
+  initialMatch?: BulkMatch;
   getSnippet?: (match: BulkMatch) => Promise<string | null>;
   onApply: (request: BulkReplaceRequest) => Promise<void> | void;
   onClose: () => void;
@@ -193,7 +194,7 @@ function MatchRow({ match, search, checked, getSnippet, onToggle }: {
   </label>;
 }
 
-export function BulkReplaceDialog({ open, projectPath, initialSearch, getSnippet, onApply, onClose }: BulkReplaceDialogProps) {
+export function BulkReplaceDialog({ open, projectPath, initialSearch, initialMatch, getSnippet, onApply, onClose }: BulkReplaceDialogProps) {
   const { t } = useTranslation();
   const [search, setSearch] = useState(initialSearch);
   const [replacement, setReplacement] = useState(initialSearch);
@@ -206,8 +207,8 @@ export function BulkReplaceDialog({ open, projectPath, initialSearch, getSnippet
 
   useEffect(() => {
     if (!open) return;
-    setSearch(initialSearch); setReplacement(initialSearch); setReplacementFormatting([]); setResultPage(0); setSelected(new Map()); setError(null);
-  }, [open, initialSearch]);
+    setSearch(initialSearch); setReplacement(initialSearch); setReplacementFormatting([]); setResultPage(0); setSelected(new Map(initialMatch ? [[keyOf(initialMatch), initialMatch]] : [])); setError(null);
+  }, [open, initialSearch, initialMatch]);
 
   useEffect(() => {
     if (!open || !projectPath || !search) { setData({ results: [], total: 0, page: resultPage, pageSize: PAGE_SIZE }); return; }

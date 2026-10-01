@@ -403,7 +403,7 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
   const magnifierSaveSequence = useRef(0);
   const magnifierPreferencesTouched = useRef(false);
 
-  const [bulkReplace, setBulkReplace] = useState<{ search: string } | null>(null);
+  const [bulkReplace, setBulkReplace] = useState<{ search: string; initialMatch?: BulkMatch } | null>(null);
   const [scriptCalibrationOpen, setScriptCalibrationOpen] = useState(false);
   const [scriptCalibrationCandidates, setScriptCalibrationCandidates] = useState<ScriptCalibrationCandidate[]>([]);
   const [scriptCalibrationLoading, setScriptCalibrationLoading] = useState(false);
@@ -1670,13 +1670,29 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
       setStartupWarning({ key: "notices.languageLoadFailed", values: { error: raw } });
     }
   }, [setNotice]);
-  const openBulkReplace = useCallback(async (search: string) => {
+  const openBulkReplace = useCallback(async (search: string, lineId: string, selectionStart: number) => {
     if (!project || working.current || importActive.current || !search) return;
     try {
+      const page = docRef.current;
+      const line = page && allLines(page).find(candidate => candidate.id === lineId);
+      let initialMatch: BulkMatch | undefined;
+      if (page && line) {
+        let cursor = 0, ordinal = 0;
+        while (cursor <= selectionStart) {
+          const start = line.correctedText.indexOf(search, cursor);
+          if (start < 0 || start > selectionStart) break;
+          if (start === selectionStart) {
+            initialMatch = { pageId: page.id, pageLabel: manifestRef.current.pages.find(entry => entry.id === page.id)?.label ?? "", lineId, lineText: line.correctedText, matchOrdinal: ordinal };
+            break;
+          }
+          cursor = start + search.length;
+          ordinal++;
+        }
+      }
       finishLineEditRef.current();
       await flush();
       bulkSnippetCanvases.current.clear();
-      setBulkReplace({ search });
+      setBulkReplace({ search, initialMatch });
     } catch (error) {
       setNotice("notices.saveFailed", { error: errorText(error) });
     }
@@ -2528,7 +2544,7 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
                             onUndo={() => void undo()}
                             onRedo={() => void redo()}
                             onFormat={(start, end, kind) => commitLineEdit(line.id, (before) => updateLineFormatting(before, line.id, start, end, kind))}
-                            onOpenBulk={(selection) => void openBulkReplace(selection)}
+                            onOpenBulk={(selection, start) => void openBulkReplace(selection, line.id, start)}
                             onSplit={(caret) => { const before = docRef.current; if (!before) return; const after = splitLineAtCaret(before, line.id, caret); if (after === before) { setNotice("notices.splitUnavailable"); return; } commitLineEdit(line.id, () => after); finishLineEdit(line.id); }}
                             left={line.bbox.left * zoom}
                             top={line.bbox.top * zoom}
@@ -2592,7 +2608,7 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
           }}
         />
       )}
-      {bulkReplace && project && (<BulkReplaceDialog open={true} projectPath={project.path} initialSearch={bulkReplace.search} getSnippet={getBulkSnippet} onApply={applyBulkReplace} onClose={() => { bulkSnippetCanvases.current.clear(); setBulkReplace(null); }} />)}
+      {bulkReplace && project && (<BulkReplaceDialog open={true} projectPath={project.path} initialSearch={bulkReplace.search} initialMatch={bulkReplace.initialMatch} getSnippet={getBulkSnippet} onApply={applyBulkReplace} onClose={() => { bulkSnippetCanvases.current.clear(); setBulkReplace(null); }} />)}
       {importSource && (
         <ImportModal
           pdfPath={importSource.path}
