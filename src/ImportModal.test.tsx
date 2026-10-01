@@ -85,6 +85,25 @@ describe("ImportModal validation", () => {
     expect(container.textContent).toContain("Right");
     expect(container.querySelectorAll(".preview-canvases canvas")).toHaveLength(2);
   });
+  it("shows each side's applied angle with its sign and replaces angles when deskew is off", async () => {
+    mocks.processCanvas.mockImplementation((_source, options) => ({
+      pages: [-1.3, 0.4].map(angle => ({
+        canvas: document.createElement("canvas"),
+        provenance: { angle: options.deskew ? angle : 0 },
+      })),
+    }));
+    await act(async () => root.render(<ImportModal pdfPath="book.pdf" pdf={pdf()} onCancel={vi.fn()} onConfirm={vi.fn()}/>));
+    await act(async () => input("Split spread into left and right").click());
+    const cards = () => Array.from(container.querySelectorAll(".preview-canvases figure"));
+    expect(cards()[0].querySelector(".deskew-angle")?.textContent).toBe("Correction: -1.3°");
+    expect(cards()[1].querySelector(".deskew-angle")?.textContent).toBe("Correction: +0.4°");
+    await act(async () => input("Automatically correct skew").click());
+    expect(cards().map(card => card.querySelector(".deskew-angle")?.textContent)).toEqual(["Skew correction: Off", "Skew correction: Off"]);
+    mocks.processCanvas.mockReturnValue({ pages: [{ canvas: document.createElement("canvas"), provenance: { angle: 0 } }] });
+    await act(async () => input("Automatically correct skew").click());
+    expect(cards()[0].querySelector(".deskew-angle")?.textContent).toBe("Correction: 0.0°");
+  });
+
   it("mirrors outer and inner exclusion overlays across split previews", async () => {
     mocks.processCanvas.mockReturnValue({ pages: canvases(2) });
     await act(async () => root.render(<ImportModal pdfPath="book.pdf" pdf={pdf()} onCancel={vi.fn()} onConfirm={vi.fn()}/>));

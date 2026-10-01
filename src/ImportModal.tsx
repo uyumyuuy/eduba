@@ -15,7 +15,7 @@ type Props = {
   busy?: boolean;
 };
 
-type Preview = { label: string; width: number; height: number; canvas: HTMLCanvasElement; modeUsed: ImportMode; dpiX: number; dpiY: number; reason?: string; sourceWidth?: number; sourceHeight?: number };
+type Preview = { angle: number; deskewEnabled: boolean; label: string; width: number; height: number; canvas: HTMLCanvasElement; modeUsed: ImportMode; dpiX: number; dpiY: number; reason?: string; sourceWidth?: number; sourceHeight?: number };
 
 function dpiError(raw: string, translate: (key: string) => string): string | null {
   const dpi = Number(raw);
@@ -75,6 +75,8 @@ export function ImportModal({ pdfPath, pdf, onCancel, onConfirm, busy = false }:
           width,
           height,
           canvas: display,
+          angle: item.provenance?.angle ?? 0,
+          deskewEnabled: deskew,
           modeUsed: loaded.modeUsed,
           dpiX: loaded.dpiX,
           dpiY: loaded.dpiY,
@@ -125,7 +127,7 @@ export function ImportModal({ pdfPath, pdf, onCancel, onConfirm, busy = false }:
             <button className="icon-btn" onClick={() => setPage(value => Math.min(end, value + 1))} disabled={busy || !valid || page >= end}><ChevronRight size={15}/></button>
           </div>
           <div className={`preview-canvases ${splitSpread ? "both" : ""}`}>
-            {preview.map((item, index) => { const margins = marginError ? resolveOcrMargins(defaultOcrMargins, "single") : resolveOcrMargins(ocrMargins, splitSpread ? (index === 0 ? "left" : "right") : "single"); return <figure key={`${item.label}-${index}`}><figcaption>{item.label}</figcaption><div className="preview-canvas-wrap"><canvas ref={node => { canvases.current[index] = node; if (node) { node.width = item.canvas.width; node.height = item.canvas.height; node.getContext("2d")!.drawImage(item.canvas, 0, 0); } }}/><i className="margin-top" style={{height:`${margins.top}%`}}/><i className="margin-bottom" style={{height:`${margins.bottom}%`}}/><i className="margin-left" style={{width:`${margins.left}%`}}/><i className="margin-right" style={{width:`${margins.right}%`}}/></div><small>{item.width} × {item.height} px · {(rotation === 90 || rotation === 270 ? item.dpiY : item.dpiX).toFixed(1)} × {(rotation === 90 || rotation === 270 ? item.dpiX : item.dpiY).toFixed(1)} DPI{item.modeUsed === "render" && item.reason ? ` · ${t("importUi.imageFallback", { reason: item.reason })}` : ""}{item.sourceWidth && item.sourceHeight ? ` · ${t("importUi.originalImage", { width: item.sourceWidth, height: item.sourceHeight })}` : ""}</small></figure>; })}</div><p className="margin-legend">{t("importUi.marginLegend")}</p>
+            {preview.map((item, index) => { const margins = marginError ? resolveOcrMargins(defaultOcrMargins, "single") : resolveOcrMargins(ocrMargins, splitSpread ? (index === 0 ? "left" : "right") : "single"); return <figure key={`${item.label}-${index}`}><figcaption>{item.label}</figcaption><small className="deskew-angle" title={t("importUi.deskewAngleNote")}>{item.deskewEnabled ? t("importUi.deskewAngle", { angle: `${item.angle > 0 ? "+" : ""}${item.angle.toFixed(1)}` }) : t("importUi.deskewOff")}</small><div className="preview-canvas-wrap"><canvas ref={node => { canvases.current[index] = node; if (node) { node.width = item.canvas.width; node.height = item.canvas.height; node.getContext("2d")!.drawImage(item.canvas, 0, 0); } }}/><i className="margin-top" style={{height:`${margins.top}%`}}/><i className="margin-bottom" style={{height:`${margins.bottom}%`}}/><i className="margin-left" style={{width:`${margins.left}%`}}/><i className="margin-right" style={{width:`${margins.right}%`}}/></div><small>{item.width} × {item.height} px · {(rotation === 90 || rotation === 270 ? item.dpiY : item.dpiX).toFixed(1)} × {(rotation === 90 || rotation === 270 ? item.dpiX : item.dpiY).toFixed(1)} DPI{item.modeUsed === "render" && item.reason ? ` · ${t("importUi.imageFallback", { reason: item.reason })}` : ""}{item.sourceWidth && item.sourceHeight ? ` · ${t("importUi.originalImage", { width: item.sourceWidth, height: item.sourceHeight })}` : ""}</small></figure>; })}</div><p className="margin-legend">{t("importUi.marginLegend")}</p>
           </div>
           {rendering && <small>{t("importUi.previewCreating")}</small>}
         </div>
