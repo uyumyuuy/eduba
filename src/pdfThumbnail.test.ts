@@ -100,6 +100,19 @@ describe("LogicalPageThumbnailCache", () => {
     expect(splitXs).toEqual(expect.arrayContaining([0, 70]));
   });
 
+  it("splits before applying each persisted angle, expands its canvas, and separates legacy cache entries", async () => {
+    const cache = new LogicalPageThumbnailCache({ getPage: async () => page() } as never);
+    const entry = { sourcePage: 1, rotation: 0, angle: -2, split: "left" as const };
+    const legacy = await cache.get(entry);
+    const corrected = await cache.get({ ...entry, preprocessOrder: "split-deskew" });
+    expect(legacy).toMatchObject({ width: 47, height: 140 });
+    expect(corrected).toMatchObject({ width: 52, height: 142 });
+    const correction = contexts.find(context => vi.mocked(context.rotate).mock.calls.some(([angle]) => angle === 358 * Math.PI / 180)
+      && vi.mocked(context.drawImage).mock.calls.some(call => (call as unknown[]).length === 3 && (call[0] as HTMLCanvasElement).width === 47));
+    expect(correction).toBeTruthy();
+    expect(corrected).not.toBe(legacy);
+  });
+
   it("scales persisted crop coordinates to the low-resolution source thumbnail", async () => {
     const source = page();
     const pdf = { getPage: vi.fn(async () => source) };

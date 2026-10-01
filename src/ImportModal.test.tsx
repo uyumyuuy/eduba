@@ -55,6 +55,18 @@ describe("ImportModal validation", () => {
     await vi.waitFor(() => expect(mocks.processCanvas.mock.calls.length).toBeGreaterThan(baseline));
   });
 
+  it("defaults deskew on, refreshes the preview when disabled, and submits the choice", async () => {
+    const confirm = vi.fn();
+    await act(async () => root.render(<ImportModal pdfPath="book.pdf" pdf={pdf()} onCancel={vi.fn()} onConfirm={confirm}/>));
+    const toggle = input("Automatically correct skew");
+    expect(toggle.checked).toBe(true);
+    expect(mocks.processCanvas).toHaveBeenLastCalledWith(expect.anything(), expect.objectContaining({ deskew: true }));
+    await act(async () => toggle.click());
+    expect(mocks.processCanvas).toHaveBeenLastCalledWith(expect.anything(), expect.objectContaining({ deskew: false }));
+    await act(async () => container.querySelector<HTMLButtonElement>(".modal-actions .primary")!.click());
+    expect(confirm).toHaveBeenCalledWith(expect.objectContaining({ deskew: false }));
+  });
+
   it("accepts a raw DPI while typing and blocks invalid DPI", async () => {
     await act(async () => root.render(<ImportModal pdfPath="book.pdf" pdf={pdf()} onCancel={vi.fn()} onConfirm={vi.fn()}/>));
     const mode = container.querySelector<HTMLSelectElement>('select[aria-label="Import method"]')!;

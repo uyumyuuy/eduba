@@ -51,6 +51,7 @@ function pdf() {
     getPage: vi.fn(async () => ({
       getViewport: () => ({ width: 100, height: 80 }),
       render: () => ({ promise: Promise.resolve() }),
+      cleanup: vi.fn(),
     })),
   };
 }
@@ -105,11 +106,17 @@ describe("PDF import configuration", () => {
     mocks.openSourcePdf.mockResolvedValue(pdf());
     mocks.openProjectPdf.mockResolvedValue(pdf());
     mocks.loadPageImage.mockImplementation(async (_page: unknown, mode: string, dpi: number) => { const canvas = document.createElement("canvas"); canvas.width = 100; canvas.height = 80; return { canvas, modeUsed: mode, dpiX: dpi, dpiY: dpi }; });
-    mocks.processCanvas.mockImplementation(() => {
-      const canvas = document.createElement("canvas");
-      canvas.width = 100;
-      canvas.height = 80;
-      return { pages: [{ canvas }] };
+    mocks.processCanvas.mockImplementation((_source, options) => {
+      const sides = options.split === "both" ? ["left", "right"] : [options.split === "none" ? "single" : options.split];
+      return { pages: sides.map(split => {
+        const canvas = document.createElement("canvas");
+        canvas.width = 100; canvas.height = 80;
+        return { canvas, provenance: {
+          sourcePage: options.sourcePage, rotation: options.rotation, split,
+          angle: options.deskewAngle ?? (options.deskew ? (split === "right" ? 0.4 : -1.2) : 0),
+          preprocessOrder: options.preprocessOrder ?? "split-deskew",
+        } };
+      }) };
     });
     mocks.invoke.mockImplementation(
       async (command: string, args?: { manifest?: string }) => {
@@ -197,14 +204,12 @@ describe("PDF import configuration", () => {
         .querySelector<HTMLInputElement>('[aria-label="Split spread into left and right"]')!
         .click();
     });
-    await act(async () => button(dialog, "4 logical pages").click());
-    await waitFor(() =>
-      expect(
-        mocks.invoke.mock.calls.some(
-          ([command]) => command === "create_project",
-        ),
-      ).toBe(true),
-    );
+    await act(async () => {
+      button(dialog, "4 logical pages").click();
+      await waitFor(() => expect(
+        mocks.invoke.mock.calls.some(([command]) => command === "create_project"),
+      ).toBe(true));
+    });
     const call = mocks.invoke.mock.calls.find(
       ([command]) => command === "create_project",
     )!;
@@ -215,6 +220,11 @@ describe("PDF import configuration", () => {
     });
     const manifest = JSON.parse((call[1] as { manifest: string }).manifest);
     expect(manifest.settings.dpi).toBe(300);
+    expect(manifest.pages.map((page: { angle: number }) => page.angle)).toEqual([-1.2, 0.4, -1.2, 0.4]);
+    expect(manifest.pages.every((page: { preprocessOrder: string }) => page.preprocessOrder === "split-deskew")).toBe(true);
+    await waitFor(() => expect(mocks.processCanvas).toHaveBeenCalledWith(
+      expect.anything(), expect.objectContaining({ deskewAngle: -1.2, preprocessOrder: "split-deskew" }),
+    ));
     expect(
       manifest.pages.map((page: { ocrMargins: unknown }) => page.ocrMargins),
     ).toEqual([
@@ -241,6 +251,32 @@ describe("PDF import configuration", () => {
     expect(
       mocks.invoke.mock.calls.some(([command]) => command === "save_page"),
     ).toBe(false);
+  });
+
+  it("persists zero corrections when automatic deskew is disabled", async () => {
+    await selectPdf();
+    const dialog = container.querySelector<HTMLElement>('[role="dialog"][aria-label="PDF import"]')!;
+    await act(async () => dialog.querySelector<HTMLInputElement>('[aria-label="Automatically correct skew"]')!.click());
+    await act(async () => {
+      button(dialog, "4 logical pages").click();
+      await waitFor(() => expect(mocks.invoke.mock.calls.some(([command]) => command === "create_project")).toBe(true));
+    });
+    const call = mocks.invoke.mock.calls.find(([command]) => command === "create_project")!;
+    const manifest = JSON.parse(call[1].manifest);
+    expect(manifest.pages).toHaveLength(4);
+    expect(manifest.pages.every((page: { angle: number; preprocessOrder: string }) =>
+      page.angle === 0 && page.preprocessOrder === "split-deskew")).toBe(true);
+    expect(mocks.processCanvas).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ deskew: false }));
+  });
+
+  it("keeps import settings available without creating a project if preparing a page fails", async () => {
+    await selectPdf();
+    mocks.loadPageImage.mockRejectedValueOnce(new Error("Raster preparation failed"));
+    const dialog = container.querySelector<HTMLElement>('[role="dialog"][aria-label="PDF import"]')!;
+    await act(async () => button(dialog, "4 logical pages").click());
+    await waitFor(() => expect(container.textContent).toContain("Raster preparation failed"));
+    expect(container.querySelector('[role="dialog"][aria-label="PDF import"]')).toBeTruthy();
+    expect(mocks.invoke.mock.calls.some(([command]) => command === "create_project")).toBe(false);
   });
 
   it("releases the import lock when the file picker is cancelled so a later selection works", async () => {
