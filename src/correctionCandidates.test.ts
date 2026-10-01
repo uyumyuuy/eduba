@@ -7,13 +7,18 @@ describe("transliteration candidates", () => {
     expect(convertIndexToAccent("ama2 e3 gu4")).toBe("áma è gu₄");
   });
 
-  it("puts a converted selection first, followed by ordered OCR candidates", () => {
-    expect(candidatesForSelection("c").slice(0, 5)).toEqual(["š", "C", "e", "Ç", "Ĝ"]);
+  it("keeps transliteration conversions ahead of OCR candidates", () => {
+    expect(candidatesForSelection("c")[0]).toBe("š");
+    expect(candidatesForSelection("a2")[0]).toBe("á");
   });
 
-  it("uses the bundled output-to-GT order and excludes the selected character", () => {
-    expect(candidatesForSelection("g").slice(0, 5)).toEqual(["3", "8", ":", "G", "i"]);
-    expect(candidatesForSelection("g")).not.toContain("g");
+  it("ranks OCR candidates by observed count and keeps tied candidates in source order", () => {
+    const candidates = candidatesForSelection("g");
+
+    expect(candidates.slice(0, 6)).toEqual(["G", "ṣ", "q", "8", "ç", "3"]);
+    expect(candidates).toEqual(["G", "ṣ", "q", "8", "ç", "3", ":", "i", "t", "ē", "ĝ", "Ḫ"]);
+    expect(candidates).not.toContain("g");
+    expect(new Set(candidates).size).toBe(candidates.length);
   });
 
   it("does not apply one-character OCR mappings to a multi-grapheme selection", () => {
