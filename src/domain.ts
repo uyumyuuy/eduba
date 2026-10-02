@@ -1,3 +1,4 @@
+import { contentRuns } from "./pageContent";
 import { estimateSkew, type DeskewEstimate } from "./deskew";
 import type { OcrMargins } from "./ocrMargins";
 /**
@@ -117,6 +118,12 @@ export interface LogicalPageProvenance {
   ocrMargins?: OcrMargins;
 }
 
+export interface FigureRegion {
+  id: string;
+  kind: "figure" | "table";
+  bbox: Rect;
+}
+
 export interface DocumentPage extends LogicalPageProvenance {
   id: string;
   width: number;
@@ -127,6 +134,9 @@ export interface DocumentPage extends LogicalPageProvenance {
   sourceDpiX?: number;
   sourceDpiY?: number;
   blocks: PageBlock[];
+  figureRegions?: FigureRegion[];
+  /** Stable IDs of OCR lines and figures in their shared reading order. */
+  readingOrderIds?: string[];
   /** One-shot manually selected OCR regions. Full-page OCR replaces this list. */
   manualOcrRegions?: { id: string; bbox: Rect; psm: 11 | 6; addedWordIds: string[]; addedLineIds: string[] }[];
   /** Removed OCR lines are retained only as a manual-change marker until full-page OCR. */
@@ -749,10 +759,8 @@ function formatHocrRange(line: OcrLine, start: number, end: number): string {
     return text;
   }).join("");
 }
-export function exportHocr(pages: DocumentPage[]): string {
-  const body = pages
-    .map((page) => {
-      const blocks = page.blocks
+function exportHocrBlocks(blocks: PageBlock[]): string {
+  return blocks
         .map((block) => {
           const paragraphs = block.paragraphs
             .map((paragraph) => {
@@ -809,13 +817,19 @@ export function exportHocr(pages: DocumentPage[]): string {
           return `<div class="ocr_carea" id="${escapeXml(block.id)}" title="${escapeXml(titleBbox(block.bbox))}">${paragraphs}</div>`;
         })
         .join("\n");
-      return `<div class="ocr_page" id="${escapeXml(page.id)}" title="${escapeXml(titleBbox({ left: 0, top: 0, right: page.width, bottom: page.height }))}">${blocks}</div>`;
-    })
-    .join("\n");
-  return `<?xml version="1.0" encoding="UTF-8"?>\n<html xmlns="http://www.w3.org/1999/xhtml"><body>${body}</body></html>`;
 }
 
-export function exportSvg(page: DocumentPage): string {
+export function exportHocr(pages: DocumentPage[]): string {
+  const body = pages.map(page => {
+    const content = contentRuns(page).map(run => run.kind === "text"
+      ? exportHocrBlocks(run.blocks)
+      : `<div class="${run.figure.kind === "table" ? "ocr_table" : "ocr_image"}" id="${escapeXml(run.figure.id)}" title="${escapeXml(titleBbox(run.figure.bbox))}"></div>`).join("\n");
+    return `<div class="ocr_page" id="${escapeXml(page.id)}" title="${escapeXml(titleBbox({ left: 0, top: 0, right: page.width, bottom: page.height }))}">${content}</div>`;
+  }).join("\n");
+  return `<?xml version="1.0" encoding="UTF-8"?>\n<html xmlns="http://www.w3.org/1999/xhtml"><head><meta name="ocr-capabilities" content="ocr_page ocr_carea ocr_par ocr_line ocrx_word ocrx_cinfo ocr_image ocr_table" /></head><body>${body}</body></html>`;
+}
+
+export function exportSvg(page: DocumentPage, images: Record<string, string> = {}): string {
   const lines = paragraphLines(page)
     .map((line) => {
       const size =
@@ -826,7 +840,13 @@ export function exportSvg(page: DocumentPage): string {
       return `<text x="${x}" y="${baseline}" font-family="Noto Serif" font-size="${size}" textLength="${Math.max(0, line.bbox.right - line.bbox.left)}" lengthAdjust="spacingAndGlyphs" data-line-id="${escapeXml(line.id)}" data-original="${escapeXml(line.originalText)}">${formattedSegments(line, true)}</text>`;
     })
     .join("\n");
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="${page.width}" height="${page.height}" viewBox="0 0 ${page.width} ${page.height}">${lines}</svg>`;
+  const figures = (page.figureRegions ?? []).map(figure => {
+    const image = images[figure.id];
+    if (!image) throw new Error(`Missing image for region ${figure.id}.`);
+    const box = figure.bbox;
+    return `<image data-region-id="${escapeXml(figure.id)}" data-region-kind="${figure.kind}" x="${box.left}" y="${box.top}" width="${box.right - box.left}" height="${box.bottom - box.top}" href="${escapeXml(image)}" />`;
+  }).join("\n");
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${page.width}" height="${page.height}" viewBox="0 0 ${page.width} ${page.height}">${figures}${lines}</svg>`;
 }
 
 export interface Candidate {

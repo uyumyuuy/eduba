@@ -869,13 +869,13 @@ describe("saved project loading", () => {
 
   it("deletes a clicked line from the OCR pane and can undo it", async () => {
     await openSavedProject();
-    const button = Array.from(container.querySelectorAll<HTMLButtonElement>("button")).find(item => item.textContent?.includes("Delete OCR region"))!;
+    const button = Array.from(container.querySelectorAll<HTMLButtonElement>("button")).find(item => item.textContent?.includes("Delete region"))!;
     expect(button.disabled).toBe(false);
     await act(async () => button.click());
     expect(button.getAttribute("aria-pressed")).toBe("true");
     expect(container.querySelector(".pdf-pane.region-inactive")).not.toBeNull();
     expect(container.querySelector(".ocr-pane.region-inactive")).toBeNull();
-    expect(container.querySelector(".region-instruction")?.textContent).toContain("Click a line");
+    expect(container.querySelector(".region-instruction")?.textContent).toContain("smallest region");
     const surface = container.querySelector<HTMLDivElement>(".layout-card")!;
     vi.spyOn(surface, "getBoundingClientRect").mockReturnValue({ left: 0, top: 0, right: 100, bottom: 80, width: 100, height: 80 } as DOMRect);
     Object.defineProperties(surface, {
@@ -898,6 +898,133 @@ describe("saved project loading", () => {
     await waitFor(() => expect(container.textContent).toContain("saved page one"));
   });
 
+  it("adds a tightly cropped table, persists it, and restores it with undo and redo", async () => {
+    const context = HTMLCanvasElement.prototype.getContext.call(document.createElement("canvas"), "2d") as CanvasRenderingContext2D;
+    context.getImageData = vi.fn((_x, _y, width: number, height: number) => {
+      const data = new Uint8ClampedArray(width * height * 4).fill(255);
+      for (let y = 3; y < 8; y++) for (let x = 2; x < 9; x++) data.set([0, 0, 0, 255], (y * width + x) * 4);
+      return { data, width, height } as ImageData;
+    });
+    vi.spyOn(HTMLCanvasElement.prototype, "toDataURL").mockReturnValue("data:image/png;base64,AAAA");
+    await openSavedProject();
+    const canvas = container.querySelector<HTMLCanvasElement>(".rendered-page")!;
+    vi.spyOn(canvas, "getBoundingClientRect").mockReturnValue({ left: 0, top: 0, right: 100, bottom: 80, width: 100, height: 80 } as DOMRect);
+    const surface = container.querySelector<HTMLDivElement>(".pdf-page")!;
+    Object.defineProperties(surface, {
+      setPointerCapture: { configurable: true, value: vi.fn() },
+      hasPointerCapture: { configurable: true, value: vi.fn(() => true) },
+      releasePointerCapture: { configurable: true, value: vi.fn() },
+    });
+    const pointer = (type: string, x: number, y: number) => {
+      const event = new MouseEvent(type, { bubbles: true, button: 0, clientX: x, clientY: y });
+      Object.defineProperty(event, "pointerId", { value: 10 }); return event;
+    };
+    await act(async () => Array.from(container.querySelectorAll<HTMLButtonElement>("button")).find(button => button.textContent?.trim() === "Add figure/table region")!.click());
+    await act(async () => { surface.dispatchEvent(pointer("pointerdown", 10, 35)); surface.dispatchEvent(pointer("pointerup", 50, 65)); });
+    expect(container.querySelector(".figure-region-coordinates")?.textContent).toContain("12, 38 — 19, 43");
+    expect(container.querySelector(".figure-region-preview")?.getAttribute("src")).toBe("data:image/png;base64,AAAA");
+    const select = container.querySelector<HTMLSelectElement>(".figure-region-modal select")!;
+    await act(async () => { select.value = "table"; select.dispatchEvent(new Event("change", { bubbles: true })); });
+    await act(async () => container.querySelector<HTMLButtonElement>(".figure-region-modal .primary")!.click());
+    await waitFor(() => expect(container.querySelector(".figure-region-modal")).toBeNull());
+    const figure = JSON.parse(persistedPages.get("page-1")!).figureRegions[0];
+    expect(figure.kind).toBe("table");
+    expect(figure.bbox).toEqual({ left: 12, top: 38, right: 19, bottom: 43 });
+    expect(container.querySelector(".figure-layout-region image")?.getAttribute("href")).toBe("data:image/png;base64,AAAA");
+    expect(container.textContent).toContain("saved page one");
+    await act(async () => window.dispatchEvent(new KeyboardEvent("keydown", { key: "z", ctrlKey: true })));
+    await waitFor(() => expect(container.querySelector(".figure-layout-region")).toBeNull());
+    await act(async () => window.dispatchEvent(new KeyboardEvent("keydown", { key: "y", ctrlKey: true })));
+    await waitFor(() => expect(container.querySelector(".figure-layout-region image")).not.toBeNull());
+    await act(async () => root.unmount()); root = createRoot(container);
+    await openSavedProject();
+    await waitFor(() => expect(container.querySelector(".figure-layout-region image")).not.toBeNull());
+    expect(JSON.parse(persistedPages.get("page-1")!).figureRegions[0]).toEqual(figure);
+  });
+
+  it("exports images from saved figures on all pages and preserves them after re-OCR", async () => {
+    vi.spyOn(HTMLCanvasElement.prototype, "toDataURL").mockReturnValue("data:image/png;base64,AAAA");
+    for (const id of ["page-1", "page-2"]) {
+      const page = JSON.parse(persistedPages.get(id)!);
+      page.figureRegions = [{ id: `${id}-figure`, kind: "figure", bbox: { left: 10, top: 35, right: 50, bottom: 65 } }];
+      page.readingOrderIds = [`${id}-figure`, `${id}-line`]; page.manualReadingOrder = true;
+      persistedPages.set(id, JSON.stringify(page));
+    }
+    const base = mocks.invoke.getMockImplementation()!;
+    mocks.invoke.mockImplementation(async (command: string, args?: unknown) => command === "run_ocr" ? numberRegionHocr : base(command, args as never));
+    await openSavedProject();
+    vi.spyOn(globalThis, "fetch").mockImplementation(async () => ({ ok: true, status: 200, arrayBuffer: async () => Uint8Array.of(0, 1).buffer } as Response));
+    await act(async () => Array.from(container.querySelectorAll<HTMLButtonElement>("button")).find(button => button.textContent?.trim() === "HTML")!.click());
+    const call = mocks.invoke.mock.calls.find(([command]) => command === "export_file")!;
+    const html = atob(call[1].contentBase64);
+    expect(html.match(/src="data:image\/png;base64,AAAA"/g)).toHaveLength(2);
+    expect(html.indexOf('data-region-id="page-1-figure"')).toBeLessThan(html.indexOf("saved page one"));
+    await act(async () => Array.from(container.querySelectorAll<HTMLButtonElement>("button")).find(button => button.textContent?.trim() === "OCR current")!.click());
+    await waitFor(() => expect(container.querySelector(".modal-actions .primary")).not.toBeNull());
+    await act(async () => container.querySelector<HTMLButtonElement>(".modal-actions .primary")!.click());
+    await waitFor(() => expect(JSON.parse(persistedPages.get("page-1")!).blocks[0].paragraphs[0].lines[0].correctedText).toBe("2"));
+    const after = JSON.parse(persistedPages.get("page-1")!);
+    expect(after.figureRegions[0].id).toBe("page-1-figure");
+    expect(after.readingOrderIds).toBeUndefined();
+    expect(after.manualReadingOrder).toBeUndefined();
+    expect(container.querySelector(".figure-layout-region image")).not.toBeNull();
+  });
+
+  it("deletes the smallest overlapping figure on click and all intersecting regions on drag", async () => {
+    vi.spyOn(HTMLCanvasElement.prototype, "toDataURL").mockReturnValue("data:image/png;base64,AAAA");
+    const saved = JSON.parse(persistedPages.get("page-1")!);
+    saved.figureRegions = [{ id: "small-figure", kind: "figure", bbox: { left: 10, top: 12, right: 20, bottom: 22 } }];
+    persistedPages.set("page-1", JSON.stringify(saved));
+    await openSavedProject();
+    const surface = container.querySelector<HTMLDivElement>(".layout-card")!;
+    vi.spyOn(surface, "getBoundingClientRect").mockReturnValue({ left: 0, top: 0, right: 100, bottom: 80, width: 100, height: 80 } as DOMRect);
+    Object.defineProperties(surface, { setPointerCapture: { value: vi.fn() }, hasPointerCapture: { value: vi.fn(() => true) }, releasePointerCapture: { value: vi.fn() } });
+    const pointer = (type: string, x: number, y: number) => {
+      const event = new MouseEvent(type, { bubbles: true, button: 0, clientX: x, clientY: y });
+      Object.defineProperty(event, "pointerId", { value: 11 }); return event;
+    };
+    const deleteButton = () => Array.from(container.querySelectorAll<HTMLButtonElement>("button")).find(button => button.textContent?.trim() === "Delete region")!;
+    await act(async () => deleteButton().click());
+    await act(async () => { surface.dispatchEvent(pointer("pointerdown", 15, 17)); surface.dispatchEvent(pointer("pointerup", 15, 17)); });
+    await waitFor(() => expect(JSON.parse(persistedPages.get("page-1")!).figureRegions).toHaveLength(0));
+    expect(container.textContent).toContain("saved page one");
+    await act(async () => window.dispatchEvent(new KeyboardEvent("keydown", { key: "z", ctrlKey: true })));
+    await waitFor(() => expect(container.querySelector(".figure-layout-region image")).not.toBeNull());
+    await act(async () => deleteButton().click());
+    await act(async () => { surface.dispatchEvent(pointer("pointerdown", 8, 8)); surface.dispatchEvent(pointer("pointerup", 25, 25)); });
+    await waitFor(() => expect(JSON.parse(persistedPages.get("page-1")!).blocks).toHaveLength(0));
+    expect(JSON.parse(persistedPages.get("page-1")!).figureRegions).toHaveLength(0);
+    expect(container.textContent).toContain("Deleted 2 region");
+  });
+
+  it("includes image regions in the reading-order overlay and saves their chosen positions", async () => {
+    vi.spyOn(HTMLCanvasElement.prototype, "toDataURL").mockReturnValue("data:image/png;base64,AAAA");
+    const saved = JSON.parse(persistedPages.get("page-1")!);
+    saved.figureRegions = [{ id: "figure", kind: "figure", bbox: { left: 10, top: 40, right: 50, bottom: 50 } }];
+    persistedPages.set("page-1", JSON.stringify(saved));
+    await openSavedProject();
+    await act(async () => Array.from(container.querySelectorAll<HTMLButtonElement>("button")).find(button => button.textContent?.trim() === "Change reading order")!.click());
+    expect(container.querySelectorAll(".reading-order-overlay circle")).toHaveLength(2);
+    const surface = container.querySelector<HTMLDivElement>(".layout-card")!;
+    vi.spyOn(surface, "getBoundingClientRect").mockReturnValue({ left: 0, top: 0, right: 100, bottom: 80, width: 100, height: 80 } as DOMRect);
+    Object.defineProperties(surface, { setPointerCapture: { value: vi.fn() }, hasPointerCapture: { value: vi.fn(() => true) }, releasePointerCapture: { value: vi.fn() } });
+    const clickRegion = async (y: number) => {
+      await act(async () => {
+        for (const type of ["pointerdown", "pointerup"]) {
+          const event = new MouseEvent(type, { bubbles: true, button: 0, clientX: 15, clientY: y });
+          Object.defineProperty(event, "pointerId", { value: 12 }); surface.dispatchEvent(event);
+        }
+      });
+    };
+    await clickRegion(45); await clickRegion(20);
+    await waitFor(() => expect(JSON.parse(persistedPages.get("page-1")!).readingOrderIds).toEqual(["figure", "page-1-line"]));
+    expect(container.querySelector(".figure-layout-region rect")?.getAttribute("class")).toBe("reading-order-chosen");
+    await act(async () => window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" })));
+    await act(async () => window.dispatchEvent(new KeyboardEvent("keydown", { key: "z", ctrlKey: true })));
+    await waitFor(() => expect(JSON.parse(persistedPages.get("page-1")!).readingOrderIds).toBeUndefined());
+    expect(container.querySelector(".figure-layout-region image")).not.toBeNull();
+  });
+
   it("deletes every OCR line overlapped by a drag on the recognition layout", async () => {
     const saved = JSON.parse(persistedPages.get("page-1")!);
     saved.blocks[0].paragraphs[0].lines.push({ ...saved.blocks[0].paragraphs[0].lines[0],
@@ -905,7 +1032,7 @@ describe("saved project loading", () => {
       originalText: "second OCR line", correctedText: "second OCR line" });
     persistedPages.set("page-1", JSON.stringify(saved));
     await openSavedProject();
-    const button = Array.from(container.querySelectorAll<HTMLButtonElement>("button")).find(item => item.textContent?.includes("Delete OCR region"))!;
+    const button = Array.from(container.querySelectorAll<HTMLButtonElement>("button")).find(item => item.textContent?.includes("Delete region"))!;
     await act(async () => button.click());
     const surface = container.querySelector<HTMLDivElement>(".layout-card")!;
     vi.spyOn(surface, "getBoundingClientRect").mockReturnValue({ left: 0, top: 0, right: 100, bottom: 80, width: 100, height: 80 } as DOMRect);
@@ -926,7 +1053,7 @@ describe("saved project loading", () => {
     expect(container.querySelector(".region-selection.deleting")).not.toBeNull();
     await act(async () => surface.dispatchEvent(pointer("pointerup", 50, 55)));
     await waitFor(() => expect(JSON.parse(persistedPages.get("page-1")!).blocks).toHaveLength(0));
-    expect(container.textContent).toContain("Deleted 2 OCR line");
+    expect(container.textContent).toContain("Deleted 2 region");
   });
 
   it("merges same-row OCR regions dragged on the recognition layout and can undo", async () => {
@@ -977,7 +1104,7 @@ describe("saved project loading", () => {
     await openSavedProject();
     for (const [start, finish] of [
       ["Add OCR region", "Finish adding OCR regions"],
-      ["Delete OCR region", "Finish deleting OCR regions"],
+      ["Delete region", "Finish deleting regions"],
       ["Merge OCR regions", "Finish merging OCR regions"],
     ]) {
       const button = Array.from(container.querySelectorAll<HTMLButtonElement>("button"))

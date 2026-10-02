@@ -63,8 +63,11 @@ import { ScriptCalibrationDialog, type ScriptCalibrationCandidate, type ScriptCa
 import { DEFAULT_SCRIPT_DETECTION_SETTINGS, SCRIPT_HEIGHT_REFERENCE_VERSION, ScriptHeightTrainer, detectScriptRanges, migrateLegacyScriptSettings, referenceHeightsForPage, type ScriptDetectionSettings, type ScriptHeightProfile } from "./scriptDetection";
 import { BulkReplaceDialog, type BulkMatch, type BulkReplaceRequest } from "./BulkReplaceDialog";
 import { prepareBulkUpdates } from "./bulkApply";
-import { addOcrRegion, prepareRegionOcrImage, removeOcrLinesInRegion, removeOcrLineAtPoint, mergeOcrLinesInRegion } from "./ocrRegion";
-import { lineIdsCrossed, moveLineAfter, reorderPageLines, type Point } from "./readingOrder";
+import { addOcrRegion, prepareRegionOcrImage, mergeOcrLinesInRegion } from "./ocrRegion";
+import { lineIdsCrossed, moveLineAfter, reorderPageItems, type Point } from "./readingOrder";
+import { pageItems, type PageItem } from "./pageContent";
+import { addFigureRegion, cropFigure, nonWhiteBounds, preserveFiguresAfterOcr, removePageRegions } from "./figureRegions";
+import { FigureRegionDialog } from "./FigureRegionDialog";
 import { candidatesForSelection } from "./correctionCandidates";
 import { importEntries, prepareImportEntries, type ImportConfig } from "./importConfig";
 import { loadPageImage, type ImportMode } from "./pageImage";
@@ -343,7 +346,11 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
   const [selected, setSelected] = useState<string | null>(null);
   const [editing, setEditing] = useState<string | null>(null);
   const [editCaret, setEditCaret] = useState<{ lineId: string; offset: number } | null>(null);
-  const [regionMode, setRegionMode] = useState<"add" | "delete" | "merge" | "order" | null>(null);
+  const [regionMode, setRegionMode] = useState<"add" | "figure" | "delete" | "merge" | "order" | null>(null);
+  const [pendingFigure, setPendingFigure] = useState<{ pageId: string; selection: Rect; tight: Rect } | null>(null);
+  const [figureImages, setFigureImages] = useState<Record<string, string>>({});
+  const [imageRevision, setImageRevision] = useState(0);
+  const [imagePageId, setImagePageId] = useState<string | null>(null);
   const [regionSelection, setRegionSelection] = useState<Rect | null>(null);
   const [regionHintHidden, setRegionHintHidden] = useState(false);
   const [orderVisited, setOrderVisited] = useState<string[]>([]);
@@ -639,7 +646,7 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
       target.width = image.width;
       target.height = image.height;
       target.getContext("2d")!.drawImage(image, 0, 0);
-      if (!destination) setCanvasSize({ width: image.width, height: image.height });
+      if (!destination) { setCanvasSize({ width: image.width, height: image.height }); setImagePageId(entry.id); setImageRevision(value => value + 1); }
       return { ...loaded, canvas: image };
     },
     [pdf],
@@ -1146,15 +1153,16 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
                 : p,
             ),
           };
-          const path = projectRef.current.path,
-            data = JSON.stringify(result);
+          const path = projectRef.current.path;
           const beforeData = await invokeCommand("load_page", { projectPath: path, pageId: entry.id });
+          const preserved = preserveFiguresAfterOcr(beforeData ? JSON.parse(beforeData) as DocumentPage : null, result);
+          const data = JSON.stringify(preserved);
           await commitHistoryOperation(path, [{ pageId: entry.id, ...(beforeData === null ? { expectedMissing: true } : { expectedData: beforeData }), data }], {
             targetPageId: entry.id, changes: [{ pageId: entry.id, beforeData, afterData: data }],
             beforeEntry: copy(entry), afterEntry: copy(next.pages.find(page => page.id === entry.id)!),
           }, next);
           putManifest(next);
-          if (entry.id === next.pages[indexRef.current]?.id) putDoc(result);
+          if (entry.id === next.pages[indexRef.current]?.id) putDoc(preserved);
           setProgress({ done: i + 1, total: targets.length });
         }
         setNotice(
@@ -1275,8 +1283,8 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
     const beforePage = docRef.current;
     const info = projectRef.current;
     if (!entry || entry.status !== "review" || !beforePage || !info || working.current || importActive.current) return;
-    const result = "x" in selection ? removeOcrLineAtPoint(beforePage, selection.x, selection.y) : removeOcrLinesInRegion(beforePage, selection);
-    if (!result.removedLines) { setNotice("notices.regionDeleteEmpty"); setRegionMode("delete"); return; }
+    const result = removePageRegions(beforePage, selection);
+    if (!result.removedRegions) { setNotice("notices.regionDeleteEmpty"); setRegionMode("delete"); return; }
     working.current = true;
     setBusy("save");
     try {
@@ -1287,7 +1295,7 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
         targetPageId: entry.id, changes: [{ pageId: entry.id, beforeData, afterData }],
       });
       putDoc(result.page);
-      setNotice("notices.regionDeleted", { count: result.removedLines });
+      setNotice("notices.regionDeleted", { count: result.removedRegions });
     } catch (error) {
       setNotice("notices.saveFailed", { error: errorText(error) });
       setRegionMode("delete");
@@ -1326,8 +1334,33 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
       setBusy(null);
     }
   }, [commitHistoryOperation, flush, putDoc, setNotice]);
+  const prepareFigureSelection = useCallback((selection: Rect) => {
+    const page = docRef.current, source = canvasRef.current;
+    if (!page || !source || imagePageId !== page.id) return;
+    try {
+      const data = source.getContext("2d")!.getImageData(selection.left, selection.top, selection.right - selection.left, selection.bottom - selection.top);
+      const bounds = nonWhiteBounds(data);
+      if (!bounds) { setNotice("notices.figureEmpty"); return; }
+      setPendingFigure({ pageId: page.id, selection, tight: { left: bounds.left + selection.left, top: bounds.top + selection.top, right: bounds.right + selection.left, bottom: bounds.bottom + selection.top } });
+    } catch (error) { setNotice("notices.saveFailed", { error: errorText(error) }); }
+  }, [imagePageId, setNotice]);
+  const confirmFigure = useCallback(async (kind: "figure" | "table", bbox: Rect) => {
+    const before = docRef.current, info = projectRef.current;
+    if (!before || !info || before.id !== pendingFigure?.pageId || working.current || importActive.current) return;
+    working.current = true; setBusy("save");
+    try {
+      await flush();
+      const next = addFigureRegion(before, { id: `${before.id}--figure-${crypto.randomUUID()}`, kind, bbox: { ...bbox } });
+      const beforeData = JSON.stringify(before), afterData = JSON.stringify(next);
+      await commitHistoryOperation(info.path, [{ pageId: before.id, expectedData: beforeData, data: afterData }], {
+        targetPageId: before.id, changes: [{ pageId: before.id, beforeData, afterData }],
+      });
+      putDoc(next); setPendingFigure(null); setNotice("notices.figureAdded");
+    } catch (error) { setNotice("notices.saveFailed", { error: errorText(error) }); }
+    finally { working.current = false; setBusy(null); }
+  }, [pendingFigure, flush, commitHistoryOperation, putDoc, setNotice]);
   const clientToRegionPage = useCallback((clientX: number, clientY: number) => {
-    const target = regionMode === "add" ? canvasRef.current : layoutCardRef.current;
+    const target = regionMode === "add" || regionMode === "figure" ? canvasRef.current : layoutCardRef.current;
     if (!target || !canvasSize.width || !canvasSize.height) return null;
     const bounds = target.getBoundingClientRect();
     if (!bounds.width || !bounds.height) return null;
@@ -1342,8 +1375,8 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
   }, []);
   const onRegionPointerDown = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
     if (!regionMode || event.button !== 0 || busy ||
-      (regionMode === "add" && event.currentTarget !== pdfPageRef.current) ||
-      (regionMode !== "add" && event.currentTarget !== layoutCardRef.current)) return;
+      ((regionMode === "add" || regionMode === "figure") && event.currentTarget !== pdfPageRef.current) ||
+      (regionMode !== "add" && regionMode !== "figure" && event.currentTarget !== layoutCardRef.current)) return;
     const point = clientToRegionPage(event.clientX, event.clientY);
     if (!point || point.x <= 0 || point.x >= canvasSize.width || point.y <= 0 || point.y >= canvasSize.height) return;
     event.preventDefault();
@@ -1352,7 +1385,7 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
     setRegionSelection({ left: point.x, top: point.y, right: point.x, bottom: point.y });
     stopRegionScroll();
     regionScrollTimer.current = window.setInterval(() => {
-      const drag = regionDrag.current, stage = regionMode === "add" ? pdfStageRef.current : ocrStageRef.current;
+      const drag = regionDrag.current, stage = regionMode === "add" || regionMode === "figure" ? pdfStageRef.current : ocrStageRef.current;
       if (!drag || !stage) return;
       const bounds = stage.getBoundingClientRect();
       const edge = 28;
@@ -1415,14 +1448,15 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
       return;
     }
     setRegionMode(null);
-    void addSelectedRegion(selection);
-  }, [addSelectedRegion, clientToRegionPage, deleteSelectedRegion, mergeSelectedRegion, regionMode, setNotice, stopRegionScroll]);
+    if (regionMode === "figure") prepareFigureSelection(selection);
+    else void addSelectedRegion(selection);
+  }, [addSelectedRegion, prepareFigureSelection, clientToRegionPage, deleteSelectedRegion, mergeSelectedRegion, regionMode, setNotice, stopRegionScroll]);
   const extendReadingOrder = useCallback((drag: NonNullable<typeof orderDrag.current>, point: Point) => {
     const previous = drag.last;
     drag.last = point;
     const already = new Set([...drag.priorVisited, ...drag.visits]);
     let changed = false;
-    for (const id of lineIdsCrossed(allLines(drag.page), previous, point)) {
+    for (const id of lineIdsCrossed(pageItems(drag.page), previous, point)) {
       if (already.has(id)) continue;
       const anchor = drag.visits.at(-1) ?? drag.priorVisited.at(-1);
       if (anchor) drag.ids = moveLineAfter(drag.ids, anchor, id);
@@ -1444,7 +1478,7 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
     const page = docRef.current;
     const drag = { pointerId: event.pointerId, page, last: point,
       clientX: event.clientX, clientY: event.clientY,
-      ids: allLines(page).map(line => line.id), priorVisited: orderVisitedRef.current.slice(), visits: [] as string[] };
+      ids: pageItems(page).map(item => item.id), priorVisited: orderVisitedRef.current.slice(), visits: [] as string[] };
     orderDrag.current = drag;
     extendReadingOrder(drag, point);
     stopRegionScroll();
@@ -1472,7 +1506,7 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
       drag.clientX = event.clientX; drag.clientY = event.clientY;
       extendReadingOrder(drag, point);
     } else if (!drag && docRef.current) {
-      setOrderHoverId(lineIdsCrossed(allLines(docRef.current), point, point)[0] ?? null);
+      setOrderHoverId(lineIdsCrossed(pageItems(docRef.current), point, point)[0] ?? null);
     }
   }, [clientToRegionPage, extendReadingOrder, regionMode]);
   const onOrderPointerUp = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
@@ -1487,7 +1521,7 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
     window.setTimeout(() => { suppressLayoutClick.current = false; }, 0);
     if (!drag.visits.length) { setOrderPendingVisited([]); setOrderPreviewIds(null); return; }
     const visited = [...drag.priorVisited, ...drag.visits];
-    const oldIds = allLines(drag.page).map(line => line.id);
+    const oldIds = pageItems(drag.page).map(item => item.id);
     if (drag.ids.every((id, index) => id === oldIds[index])) {
       orderVisitedRef.current = visited; setOrderVisited(visited); setOrderPendingVisited([]); setOrderPreviewIds(null);
       return;
@@ -1500,7 +1534,7 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
     void (async () => {
       try {
         await flush();
-        const next = reorderPageLines(drag.page, drag.ids);
+        const next = reorderPageItems(drag.page, drag.ids);
         const beforeData = JSON.stringify(copy(drag.page)), afterData = JSON.stringify(copy(next));
         await commitHistoryOperation(info.path, [{ pageId: entry.id, expectedData: beforeData, data: afterData }], {
           targetPageId: entry.id, changes: [{ pageId: entry.id, beforeData, afterData }],
@@ -1552,17 +1586,29 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
         }
         if (!pages.length)
           throw new Error(globalT("appErrors.noExport"));
+        const images: Record<string, string> = {};
+        if (type === "html" || type === "svg") {
+          for (const page of pages) {
+            if (!page.figureRegions?.length) continue;
+            const entry = entries.find(entry => entry.id === page.id);
+            if (!entry) throw new Error(globalT("appErrors.processedPage"));
+            const rendered = await renderEntry(entry, loading.current, pdf, document.createElement("canvas"), false);
+            if (!rendered || rendered.canvas.width !== page.width || rendered.canvas.height !== page.height)
+              throw new Error(globalT("appErrors.coordinateMismatch"));
+            for (const figure of page.figureRegions) images[figure.id] = cropFigure(rendered.canvas, figure.bbox);
+          }
+        }
         let content = "",
           suffix = type === "txt" ? "txt" : type === "hocr" ? "html" : type === "html" ? "readable.html" : "svg",
           readyBase64 = false;
         if (type === "txt") content = exportText(pages);
         else if (type === "hocr") content = exportHocr(pages);
-        else if (type === "html") content = createReadableHtml(projectRef.current.name.replace(/\.eduba$/i, ""), labeledPages, await loadReadableFontFaces(), notoSerifLicense);
-        else if (pages.length === 1) content = exportSvg(pages[0]);
+        else if (type === "html") content = createReadableHtml(projectRef.current.name.replace(/\.eduba$/i, ""), labeledPages, await loadReadableFontFaces(), notoSerifLicense, images);
+        else if (pages.length === 1) content = exportSvg(pages[0], images);
         else {
           const zip = new JSZip();
           pages.forEach((page, i) =>
-            zip.file(`page-${i + 1}.svg`, exportSvg(page)),
+            zip.file(`page-${i + 1}.svg`, exportSvg(page, images)),
           );
           content = await zip.generateAsync({ type: "base64" });
           suffix = "zip";
@@ -1585,7 +1631,7 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
         setBusy(null);
       }
     },
-    [flush],
+    [flush, renderEntry, pdf],
   );
   useEffect(() => {
     if (!isTauri) return;
@@ -2040,10 +2086,19 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
   }, [commitHistoryOperation, flush, project, putDoc]);
   const lines = useMemo(() => (doc ? allLines(doc) : []), [doc]);
   const orderedLines = useMemo(() => {
-    if (!orderPreviewIds) return lines;
-    const byId = new Map(lines.map(line => [line.id, line]));
-    return orderPreviewIds.map(id => byId.get(id)).filter((line): line is OcrLine => line != null);
-  }, [lines, orderPreviewIds]);
+    const items = doc ? pageItems(doc) : [];
+    if (!orderPreviewIds) return items;
+    const byId = new Map(items.map(item => [item.id, item]));
+    return orderPreviewIds.map(id => byId.get(id)).filter((item): item is PageItem => item != null);
+  }, [doc, orderPreviewIds]);
+  const figureGeometry = JSON.stringify(doc?.figureRegions ?? []);
+  useEffect(() => {
+    if (!doc || imagePageId !== doc.id || !canvasRef.current) { setFigureImages({}); return; }
+    try {
+      const figures = JSON.parse(figureGeometry) as NonNullable<DocumentPage["figureRegions"]>;
+      setFigureImages(Object.fromEntries(figures.map(figure => [figure.id, cropFigure(canvasRef.current!, figure.bbox)])));
+    } catch (error) { setFigureImages({}); setNotice("notices.saveFailed", { error: errorText(error) }); }
+  }, [doc?.id, figureGeometry, imagePageId, imageRevision, setNotice]);
   const orderChosenIds = new Set([...orderVisited, ...orderPendingVisited]);
   const activeOrderId = orderPendingVisited.at(-1) ?? orderVisited.at(-1);
   const w = canvasSize.width * zoom,
@@ -2068,7 +2123,7 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
     lastScrolledPane.current = sourcePane;
     synchronizeProofingPane(sourcePane);
   }, [synchronizeProofingPane]);
-  useEffect(() => { setRegionMode(null); setRegionSelection(null); regionDrag.current = null; stopRegionScroll(); }, [current?.id, stopRegionScroll]);
+  useEffect(() => { setRegionMode(null); setRegionSelection(null); setPendingFigure(null); regionDrag.current = null; stopRegionScroll(); }, [current?.id, stopRegionScroll]);
   useEffect(() => { setRegionHintHidden(false); }, [regionMode]);
   useEffect(() => {
     if (regionMode === "order") return;
@@ -2283,6 +2338,16 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
                 })();
               }}
             >{regionMode === "add" ? <X size={15} /> : <ScanLine size={15} />} {t(regionMode === "add" ? "ui.finishAddOcrRegion" : "ui.addOcrRegion")}</button>
+            <button className={"region-add-button" + (regionMode === "figure" ? " active" : "")}
+              disabled={current?.status !== "review" || !doc || imagePageId !== doc.id || Boolean(busy) || Boolean(pendingFigure)}
+              aria-pressed={regionMode === "figure"} onClick={() => {
+                if (regionMode === "figure") { regionDrag.current = null; stopRegionScroll(); setRegionSelection(null); setRegionMode(null); return; }
+                void (async () => {
+                  const active = manifestRef.current.pages[indexRef.current];
+                  if (!active || !await clearCompletion([active.id]) || manifestRef.current.pages[indexRef.current]?.id !== active.id) return;
+                  finishLineEditRef.current(); setSelected(null); setRegionMode("figure");
+                })();
+              }}><ScanLine size={15} /> {t(regionMode === "figure" ? "ui.finishAddFigureRegion" : "ui.addFigureRegion")}</button>
             <button
               className={"region-add-button region-delete-button" + (regionMode === "delete" ? " active" : "")}
               disabled={current?.status !== "review" || !doc || !canvasSize.width || Boolean(busy)}
@@ -2378,18 +2443,18 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
               setRegionHintHidden(event.clientX >= box.left - margin && event.clientX <= box.right + margin &&
                 event.clientY >= box.top - margin && event.clientY <= box.bottom + margin);
             }} onPointerLeave={() => setRegionHintHidden(false)}>
-            <article className={"pdf-pane" + (regionMode && regionMode !== "add" ? " region-inactive" : "")}>
+            <article className={"pdf-pane" + (regionMode && regionMode !== "add" && regionMode !== "figure" ? " region-inactive" : "")}>
               <div className="pane-label">
                 <span>{t("ui.processedImage")}</span>
               </div>
-              {regionMode === "add" && <div ref={regionHintRef} className={"region-instruction" + (regionHintHidden ? " hidden" : "")} role="status">
-                {t("ui.regionSelectHint")}
+              {(regionMode === "add" || regionMode === "figure") && <div ref={regionHintRef} className={"region-instruction" + (regionHintHidden ? " hidden" : "")} role="status">
+                {t(regionMode === "figure" ? "ui.figureSelectHint" : "ui.regionSelectHint")}
               </div>}
               <div ref={pdfStageRef} className="pdf-stage" onScroll={() => onProofingScroll("pdf")}>
                 {project ? (
                   <div
                     ref={pdfPageRef}
-                    className={"pdf-page" + (regionMode === "add" ? " selecting" : "")}
+                    className={"pdf-page" + (regionMode === "add" || regionMode === "figure" ? " selecting" : "")}
                     style={{ width: w || undefined, height: h || undefined }}
                     onPointerDown={onRegionPointerDown}
                     onPointerMove={onRegionPointerMove}
@@ -2420,7 +2485,7 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
                       return line ? <EditImageFocus line={line} caret={editCaret?.lineId === line.id ? editCaret.offset : 0}
                         zoom={zoom} pageWidth={canvasSize.width} sourceRef={canvasRef} showMagnifier={magnifierPreferences.imageMagnifierEnabled} /> : null;
                     })()}
-                    {regionMode === "add" && regionSelection && <div className="region-selection" style={{
+                    {(regionMode === "add" || regionMode === "figure") && regionSelection && <div className="region-selection" style={{
                       left: regionSelection.left * zoom, top: regionSelection.top * zoom,
                       width: (regionSelection.right - regionSelection.left) * zoom,
                       height: (regionSelection.bottom - regionSelection.top) * zoom,
@@ -2431,7 +2496,7 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
                 )}
               </div>
             </article>
-            <article className={"ocr-pane" + (regionMode === "add" ? " region-inactive" : "")}>
+            <article className={"ocr-pane" + (regionMode === "add" || regionMode === "figure" ? " region-inactive" : "")}>
               <div className="pane-label">
                 <span>{t("ui.recognitionLayout")}</span>
                 {regionMode === null || regionMode === "add" ? <span className="pane-hint">{t("ui.clickLine")}</span> : null}
@@ -2463,6 +2528,14 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
                       className="layout-svg"
                       viewBox={`0 0 ${canvasSize.width} ${canvasSize.height}`}
                     >
+                      {(doc.figureRegions ?? []).map(figure => <g key={figure.id} className="figure-layout-region">
+                        {figureImages[figure.id] && <image href={figureImages[figure.id]} x={figure.bbox.left} y={figure.bbox.top}
+                          width={figure.bbox.right - figure.bbox.left} height={figure.bbox.bottom - figure.bbox.top} />}
+                        <rect data-figure-id={figure.id} x={figure.bbox.left} y={figure.bbox.top}
+                          width={figure.bbox.right - figure.bbox.left} height={figure.bbox.bottom - figure.bbox.top}
+                          className={regionMode === "order" && figure.id === activeOrderId ? "reading-order-active" : regionMode === "order" && orderChosenIds.has(figure.id) ? "reading-order-chosen" : "figure-region-box"} />
+                        <title>{t(figure.kind === "table" ? "ui.table" : "ui.figure")}</title>
+                      </g>)}
                       {lines.map((line) => (
                         <g key={line.id}>
                           <rect
@@ -2612,6 +2685,8 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
         />
       )}
       {bulkReplace && project && (<BulkReplaceDialog open={true} projectPath={project.path} initialSearch={bulkReplace.search} initialMatch={bulkReplace.initialMatch} getSnippet={getBulkSnippet} onApply={applyBulkReplace} onClose={() => { bulkSnippetCanvases.current.clear(); setBulkReplace(null); }} />)}
+      {pendingFigure && canvasRef.current && <FigureRegionDialog source={canvasRef.current} selection={pendingFigure.selection} tight={pendingFigure.tight}
+        working={Boolean(busy)} onConfirm={(kind, bbox) => void confirmFigure(kind, bbox)} onClose={() => { if (!working.current) setPendingFigure(null); }} />}
       {importSource && (
         <ImportModal
           pdfPath={importSource.path}

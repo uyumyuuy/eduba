@@ -1,4 +1,5 @@
 import { allLines, type DocumentPage, type OcrLine, type PageBlock, type Paragraph, type Rect } from "./domain";
+import { pageItems } from "./pageContent";
 
 export type Point = { x: number; y: number };
 const area = (box: Rect) => Math.max(0, box.right - box.left) * Math.max(0, box.bottom - box.top);
@@ -69,6 +70,15 @@ export function reorderPageLines(page: DocumentPage, ids: string[]): DocumentPag
   return next;
 }
 
+export function reorderPageItems(page: DocumentPage, ids: string[]): DocumentPage {
+  const items = pageItems(page);
+  if (ids.length !== items.length || new Set(ids).size !== ids.length || ids.some(id => !items.some(item => item.id === id)))
+    throw new Error("Reading order must contain every line and figure exactly once.");
+  const lines = new Set(allLines(page).map(line => line.id));
+  const next = reorderPageLines(page, ids.filter(id => lines.has(id)));
+  return { ...next, readingOrderIds: ids.slice(), manualReadingOrder: true };
+}
+
 /** Entry point along a pointer segment, including segments too fast for intermediate pointer events. */
 function segmentEntry(from: Point, to: Point, box: Rect): number | null {
   let earliest = 0, latest = 1;
@@ -87,7 +97,7 @@ function segmentEntry(from: Point, to: Point, box: Rect): number | null {
 }
 
 /** The first region at an overlap wins; order follows the pointer path, not page order. */
-export function lineIdsCrossed(lines: OcrLine[], from: Point, to: Point): string[] {
+export function lineIdsCrossed(lines: { id: string; bbox: Rect }[], from: Point, to: Point): string[] {
   const hits = lines.map((line, index) => ({ id: line.id, index, t: segmentEntry(from, to, line.bbox), size: area(line.bbox) }))
     .filter((item): item is { id: string; index: number; t: number; size: number } => item.t !== null)
     .sort((a, b) => a.t - b.t || a.size - b.size || a.index - b.index);

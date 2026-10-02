@@ -173,7 +173,7 @@ export function addOcrRegion(page: DocumentPage, recognized: DocumentPage, selec
 }
 
 /** Removes complete OCR lines and repairs the page hierarchy and manual-region references. */
-function removeLineIds(page: DocumentPage, ids: Set<string>): { page: DocumentPage; removedLines: number } {
+export function removeOcrLineIds(page: DocumentPage, ids: Set<string>): { page: DocumentPage; removedLines: number } {
   if (!ids.size) return { page, removedLines: 0 };
   const next: DocumentPage = JSON.parse(JSON.stringify(page));
   for (const block of next.blocks) {
@@ -201,14 +201,14 @@ function removeLineIds(page: DocumentPage, ids: Set<string>): { page: DocumentPa
 
 /** A drag on the OCR layout removes each line whose visible line box overlaps it. */
 export function removeOcrLinesInRegion(page: DocumentPage, selection: Rect): { page: DocumentPage; removedLines: number } {
-  return removeLineIds(page, new Set(allLines(page).filter(line => intersects(line.bbox, selection)).map(line => line.id)));
+  return removeOcrLineIds(page, new Set(allLines(page).filter(line => intersects(line.bbox, selection)).map(line => line.id)));
 }
 
 /** A click removes one line. Prefer the smallest line box if OCR boxes overlap. */
 export function removeOcrLineAtPoint(page: DocumentPage, x: number, y: number): { page: DocumentPage; removedLines: number } {
   const target = allLines(page).filter(line => x >= line.bbox.left && x <= line.bbox.right && y >= line.bbox.top && y <= line.bbox.bottom)
     .sort((a, b) => area(a.bbox) - area(b.bbox))[0];
-  return removeLineIds(page, new Set(target ? [target.id] : []));
+  return removeOcrLineIds(page, new Set(target ? [target.id] : []));
 }
 
 export type MergeRegionResult = { page: DocumentPage; mergedLines: number; reason?: "tooFew" | "differentRows" | "overlap" | "classes" };
