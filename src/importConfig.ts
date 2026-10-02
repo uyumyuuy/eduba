@@ -25,31 +25,55 @@ export function importEntries(config: ImportConfig): ImportEntry[] {
 }
 
 /** Resolve correction angles once, before saving the new project's manifest. */
-export async function prepareImportEntries(pdf: PDFDocumentProxy, config: ImportConfig) {
+export type ImportProgress = { completed: number; total: number };
+
+export async function prepareImportEntries(
+  pdf: PDFDocumentProxy,
+  config: ImportConfig,
+  options: { signal?: AbortSignal; onProgress?: (progress: ImportProgress) => void } = {},
+) {
   const entries = importEntries(config);
   const prepared = [];
+  const total = config.end - config.begin + 1;
+  const throwIfAborted = () => {
+    if (options.signal?.aborted) throw new DOMException("Import cancelled", "AbortError");
+  };
+  options.onProgress?.({ completed: 0, total });
   for (let page = config.begin; page <= config.end; page++) {
-    const source = await pdf.getPage(page);
-    const loaded = await loadPageImage(source, config.importMode, config.dpi);
-    const processed = processCanvas(loaded.canvas, {
-      sourcePage: page, rotation: config.rotation,
-      split: config.splitSpread ? "both" : "none", deskew: config.deskew !== false,
-    });
-    for (const item of processed.pages) {
-      const entry = entries.find(entry => entry.sourcePage === page && entry.split === item.provenance.split)!;
-      prepared.push({
-        ...entry, ...item.provenance,
-        width: item.canvas.width, height: item.canvas.height,
-        resolvedImportMode: loaded.modeUsed,
-        sourceDpiX: config.rotation === 90 || config.rotation === 270 ? loaded.dpiY : loaded.dpiX,
-        sourceDpiY: config.rotation === 90 || config.rotation === 270 ? loaded.dpiX : loaded.dpiY,
+    let source: Awaited<ReturnType<PDFDocumentProxy["getPage"]>> | undefined;
+    let loaded: Awaited<ReturnType<typeof loadPageImage>> | undefined;
+    let processed: ReturnType<typeof processCanvas> | undefined;
+    try {
+      throwIfAborted();
+      source = await pdf.getPage(page);
+      throwIfAborted();
+      loaded = await loadPageImage(source, config.importMode, config.dpi);
+      throwIfAborted();
+      processed = processCanvas(loaded.canvas, {
+        sourcePage: page, rotation: config.rotation,
+        split: config.splitSpread ? "both" : "none", deskew: config.deskew !== false,
       });
+      for (const item of processed.pages) {
+        const entry = entries.find(entry => entry.sourcePage === page && entry.split === item.provenance.split)!;
+        prepared.push({
+          ...entry, ...item.provenance,
+          width: item.canvas.width, height: item.canvas.height,
+          resolvedImportMode: loaded.modeUsed,
+          sourceDpiX: config.rotation === 90 || config.rotation === 270 ? loaded.dpiY : loaded.dpiX,
+          sourceDpiY: config.rotation === 90 || config.rotation === 270 ? loaded.dpiX : loaded.dpiY,
+        });
+      }
+    } finally {
+      // Release canvases even when loading or processing the current page fails.
+      for (const item of processed?.pages ?? []) { item.canvas.width = 1; item.canvas.height = 1; }
+      if (loaded) { loaded.canvas.width = 1; loaded.canvas.height = 1; }
+      source?.cleanup();
     }
-    // Release large raster buffers and allow the busy indicator to repaint.
-    for (const item of processed.pages) { item.canvas.width = 1; item.canvas.height = 1; }
-    loaded.canvas.width = 1; loaded.canvas.height = 1;
-    source.cleanup();
+    options.onProgress?.({ completed: page - config.begin + 1, total });
+    throwIfAborted();
+    // Allow progress to repaint and cancellation to be observed before the next page.
     await new Promise<void>(resolve => setTimeout(resolve, 0));
   }
+  throwIfAborted();
   return prepared;
 }
