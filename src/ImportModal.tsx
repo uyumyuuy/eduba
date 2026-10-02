@@ -4,7 +4,7 @@ import { useTranslation } from "react-i18next";
 import type { PDFDocumentProxy } from "pdfjs-dist";
 import { ChevronLeft, ChevronRight, X } from "lucide-react";
 import { processCanvas } from "./domain";
-import { validateImportRange, type ImportConfig } from "./importConfig";
+import { validateImportRange, type ImportConfig, type ImportProgress } from "./importConfig";
 import { defaultOcrMargins, resolveOcrMargins, validateOcrMargins, type OcrMargins } from "./ocrMargins";
 import { loadPageImage, type ImportMode } from "./pageImage";
 
@@ -14,6 +14,7 @@ type Props = {
   onCancel: () => void;
   onConfirm: (config: ImportConfig) => void;
   busy?: boolean;
+  progress?: ImportProgress | null;
 };
 
 type Preview = { deskewStatus?: DeskewStatus; angle: number; deskewEnabled: boolean; label: string; width: number; height: number; canvas: HTMLCanvasElement; modeUsed: ImportMode; dpiX: number; dpiY: number; reason?: string; sourceWidth?: number; sourceHeight?: number };
@@ -24,7 +25,7 @@ function dpiError(raw: string, translate: (key: string) => string): string | nul
   return null;
 }
 
-export function ImportModal({ pdfPath, pdf, onCancel, onConfirm, busy = false }: Props) {
+export function ImportModal({ pdfPath, pdf, onCancel, onConfirm, busy = false, progress = null }: Props) {
   const { t, i18n } = useTranslation();
   const [begin, setBegin] = useState(1);
   const [end, setEnd] = useState(pdf.numPages);
@@ -105,7 +106,7 @@ export function ImportModal({ pdfPath, pdf, onCancel, onConfirm, busy = false }:
     <div className="modal import-modal" role="dialog" aria-label={t("importUi.dialogLabel")}>
       <div className="modal-head">
         <div><div className="eyebrow">{t("importUi.eyebrow")}</div><h2>{t("importUi.title")}</h2></div>
-        <button className="icon-btn" onClick={onCancel} disabled={busy} aria-label={t("importUi.close")}><X size={16}/></button>
+        <button className="icon-btn" onClick={onCancel} aria-label={t("importUi.close")}><X size={16}/></button>
       </div>
       <p className="source-path">{pdfPath}</p>
       <div className="import-body">
@@ -135,8 +136,8 @@ export function ImportModal({ pdfPath, pdf, onCancel, onConfirm, busy = false }:
         </div>
       {(rangeError || currentDpiError || marginError || previewError) && <p className="form-error">{rangeError || currentDpiError || marginError || previewError}</p>}
       <div className="modal-actions">
-        <button className="secondary" onClick={onCancel} disabled={busy}>{t("importUi.cancel")}</button>
-        <button className="primary" onClick={submit} disabled={busy || rendering || !valid || Boolean(previewError)}>{busy ? t("importUi.creating") : t("importUi.logicalPages", { count: logicalPageCount })}</button>
+        <button className="secondary" onClick={onCancel}>{t("importUi.cancel")}</button>
+        <button className="primary" onClick={submit} disabled={busy || rendering || !valid || Boolean(previewError)}>{busy ? progress ? t("importUi.processingPages", progress) : t("importUi.creating") : t("importUi.logicalPages", { count: logicalPageCount })}</button>
       </div>
     </div>
   </div>;
