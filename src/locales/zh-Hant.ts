@@ -42,7 +42,7 @@ const zhHant = {
     closeSaveFailed: "關閉前無法儲存：{{error}}",
     saved: "已儲存",
     noPendingOcr: "沒有等待 OCR 的頁面。",
-    exported: "已匯出。",
+    exportedIncompleteCoordinates: "已匯出。部分頁面的原始 PDF 座標還原資訊不完整。", exported: "已匯出。",
     ocrComplete: "OCR 已完成。", splitUnavailable: "無法在此位置安全地分割行。",
     ocrCancelled: "OCR 已取消。已儲存的結果仍可使用。",
   },

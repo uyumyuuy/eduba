@@ -57,6 +57,7 @@ describe("native page-image extraction", () => {
     const result = await loadPageImage(fake as never, "extract", 72);
     expect(result).toMatchObject({
       modeUsed: "extract",
+      pdfToSource: [1, 0, 0, -1, 0, 100],
       sourceWidth: 100,
       sourceHeight: 100,
       dpiX: 72,
@@ -90,6 +91,7 @@ describe("native page-image extraction", () => {
     );
     const result = await loadPageImage(fake as never, "extract");
     expect(result.modeUsed).toBe("render");
+    expect(result.pdfToSource).toEqual([1, 0, 0, -1, 0, 100]);
     expect(fake.render).toHaveBeenCalled();
   });
 
@@ -140,6 +142,17 @@ describe("native page-image extraction", () => {
       { width: 9, height: 2, kind: ImageKind.GRAYSCALE_1BPP, data: new Uint8Array([0xaa, 0x80, 0x55]) },
     );
     expect((await loadPageImage(fake as never, "extract")).modeUsed).toBe("render");
+  });
+
+  it("retains the exact viewport mapping including PDF rotation, UserUnit, box origin and fractional canvas edges", async () => {
+    const fake = page([], [], undefined);
+    const transform = [0, 2, 2, 0, -40, -20];
+    fake.getViewport.mockReturnValue({ width: 200.2, height: 300.2, transform });
+    const result = await loadPageImage(fake as never, "render", 144);
+    expect(result.pdfToSource).toEqual(transform);
+    expect(result.canvas).toMatchObject({ width: 201, height: 301 });
+    // Canvas ceil adds white edge pixels, not a rescale of viewport coordinates.
+    expect(fake.render).toHaveBeenCalled();
   });
 
   it("falls back safely when no dominant embedded image exists", async () => {

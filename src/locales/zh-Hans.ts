@@ -42,7 +42,7 @@ const zhHans = {
     closeSaveFailed: "关闭前无法保存：{{error}}",
     saved: "已保存",
     noPendingOcr: "没有等待 OCR 的页面。",
-    exported: "已导出。",
+    exportedIncompleteCoordinates: "已导出。部分页面的原始 PDF 坐标还原信息不完整。", exported: "已导出。",
     ocrComplete: "OCR 已完成。", splitUnavailable: "无法在此位置安全地分割行。",
     ocrCancelled: "OCR 已取消。已保存的结果仍可使用。",
   },

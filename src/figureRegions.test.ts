@@ -1,5 +1,6 @@
+import { exportFixtureHocr as exportHocr } from "./testSupport/hocr";
 import { describe, expect, it } from "vitest";
-import { allLines, exportHocr, exportSvg, type DocumentPage } from "./domain";
+import { allLines, exportSvg, type DocumentPage } from "./domain";
 import { addFigureRegion, nonWhiteBounds, preserveFiguresAfterOcr, removePageRegions } from "./figureRegions";
 import { pageItems } from "./pageContent";
 import { reorderPageItems } from "./readingOrder";

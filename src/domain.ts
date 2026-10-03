@@ -1,3 +1,4 @@
+import { identity, inverse, multiply, rotationTransform, type Affine, type HocrSource } from "./coordinates";
 import { contentRuns } from "./pageContent";
 import { estimateSkew, type DeskewEstimate } from "./deskew";
 import type { OcrMargins } from "./ocrMargins";
@@ -821,14 +822,56 @@ function exportHocrBlocks(blocks: PageBlock[]): string {
         .join("\n");
 }
 
-export function exportHocr(pages: DocumentPage[]): string {
-  const body = pages.map(page => {
+/** Output contract: docs/hocr-output-spec.md. Update it whenever this format changes. */
+export function exportHocr(pages: DocumentPage[], source: HocrSource): string {
+  const validFingerprint = !!source && /^[a-zA-Z0-9-]+$/.test(source.fingerprint);
+  const validBytes = !!source && Number.isSafeInteger(source.byteLength) && source.byteLength > 0;
+  let incomplete = false;
+  const body = pages.map((page, index) => {
+    const properties = [titleBbox({ left: 0, top: 0, right: page.width, bottom: page.height }), `ppageno ${index}`];
+    const validPage = Number.isInteger(page.sourcePage) && page.sourcePage > 0;
+    if (validFingerprint) properties.push(`x_edubapdffingerprint "${source.fingerprint}"`);
+    if (validBytes) properties.push(`x_edubapdfbytes ${source.byteLength}`);
+    if (validPage) properties.push(`x_edubasourcepage ${page.sourcePage}`);
+    if (validPage && validFingerprint) properties.push(`x_source "pdf:${source.fingerprint}" "${page.sourcePage}"`);
+    if (["single", "left", "right"].includes(page.split)) properties.push(`x_edubasplit ${page.split}`);
+    if (Number.isFinite(page.rotation)) properties.push(`x_edubarotation ${page.rotation}`);
+    if (Number.isFinite(page.angle)) properties.push(`x_edubadeskew ${page.angle}`);
+    properties.push(`x_edubapreprocessorder ${page.preprocessOrder ?? "deskew-split"}`);
+    if (!page.crop || Object.values(page.crop).every(Number.isFinite))
+      properties.push(`x_edubacrop ${page.crop ? [page.crop.left, page.crop.top, page.crop.right, page.crop.bottom].join(" ") : "none"}`);
+
+    const geometry = source?.pages[page.id];
+    let reason = source?.unavailable?.[page.id];
+    if (!reason && (!validFingerprint || !validBytes || !validPage)) reason = "missing-source";
+    if (!reason && !geometry) reason = "missing-geometry";
+    if (!reason && geometry) {
+      try {
+        const { pageToPdf, pdfBox, pdfRotation, pdfUserUnit, sourceWidth, sourceHeight, dpiX, dpiY, mode } = geometry;
+        if (pageToPdf.length !== 6 || pdfBox.length !== 4 ||
+          ![...pageToPdf, ...pdfBox, pdfRotation, pdfUserUnit, sourceWidth, sourceHeight, dpiX, dpiY].every(Number.isFinite) ||
+          pdfUserUnit <= 0 || sourceWidth <= 0 || sourceHeight <= 0 || dpiX <= 0 || dpiY <= 0 ||
+          !["extract", "render"].includes(mode)) throw new Error("Invalid geometry");
+        inverse(pageToPdf);
+      } catch { reason = "invalid-geometry"; }
+    }
+    if (reason || !geometry) {
+      incomplete = true;
+      properties.push("x_edubacoordinates unavailable", `x_edubacoordinatereason ${reason ?? "missing-geometry"}`);
+    } else {
+      const { pageToPdf, pdfBox, pdfRotation, pdfUserUnit, sourceWidth, sourceHeight, dpiX, dpiY, mode } = geometry;
+      properties.push("x_edubacoordinates complete", `x_edubapdfbox ${pdfBox.join(" ")}`,
+        `x_edubapdfrotation ${pdfRotation}`, `x_edubapdfuserunit ${pdfUserUnit}`,
+        `x_edubasourcesize ${sourceWidth} ${sourceHeight}`, `x_edubasourcedpi ${dpiX} ${dpiY}`,
+        `x_edubaimportmode ${mode}`, `x_edubapagetopdf ${pageToPdf.join(" ")}`);
+    }
     const content = contentRuns(page).map(run => run.kind === "text"
       ? exportHocrBlocks(run.blocks)
       : `<div class="${run.figure.kind === "table" ? "ocr_table" : "ocr_image"}" id="${escapeXml(run.figure.id)}" title="${escapeXml(titleBbox(run.figure.bbox))}"></div>`).join("\n");
-    return `<div class="ocr_page" id="${escapeXml(page.id)}" title="${escapeXml(titleBbox({ left: 0, top: 0, right: page.width, bottom: page.height }))}">${content}</div>`;
+    return `<div class="ocr_page" id="${escapeXml(page.id)}" title="${escapeXml(properties.join("; "))}">${content}</div>`;
   }).join("\n");
-  return `<?xml version="1.0" encoding="UTF-8"?>\n<html xmlns="http://www.w3.org/1999/xhtml"><head><meta name="ocr-capabilities" content="ocr_page ocr_carea ocr_par ocr_line ocrx_word ocrx_cinfo ocr_image ocr_table" /></head><body>${body}</body></html>`;
+  const propertyNames = ["bbox", "ppageno", "baseline", "x_size", "x_wconf", "x_bboxes", "x_conf", "x_source", "x_edubapdffingerprint", "x_edubapdfbytes", "x_edubasourcepage", "x_edubapdfbox", "x_edubapdfrotation", "x_edubapdfuserunit", "x_edubasourcesize", "x_edubasourcedpi", "x_edubaimportmode", "x_edubasplit", "x_edubarotation", "x_edubadeskew", "x_edubapreprocessorder", "x_edubacrop", "x_edubapagetopdf", "x_edubacoordinates", "x_edubacoordinatereason"];
+  return `<?xml version="1.0" encoding="UTF-8"?>\n<html xmlns="http://www.w3.org/1999/xhtml"><head><meta name="eduba-hocr-version" content="1" /><meta name="eduba-hocr-coordinates" content="${incomplete ? "incomplete" : "complete"}" /><meta name="ocr-capabilities" content="ocr_page ocr_carea ocr_par ocr_line ocrx_word ocrx_cinfo ocr_image ocr_table ${propertyNames.map(name => `ocrp_${name}`).join(" ")}" /></head><body>${body}</body></html>`;
 }
 
 export function exportSvg(page: DocumentPage, images: Record<string, string> = {}): string {
@@ -962,6 +1005,7 @@ export interface PreprocessOptions {
 }
 
 export interface ProcessedPage {
+  sourceToPage: Affine;
   deskew?: DeskewEstimate;
   canvas: HTMLCanvasElement;
   provenance: LogicalPageProvenance;
@@ -1074,10 +1118,14 @@ export function processCanvas(
       : canvas };
   };
   let working = rotateCanvas(source, sourceWidth, sourceHeight, rotation);
+  let workingTransform = rotationTransform(sourceWidth, sourceHeight, working.width, working.height, rotation);
   let legacyAngle = 0;
   let legacyDeskew: DeskewEstimate = { angle: 0, status: "disabled" };
-  if (order === "deskew-split")
+  if (order === "deskew-split") {
+    const before = working;
     ({ canvas: working, angle: legacyAngle, deskew: legacyDeskew } = correction(working));
+    workingTransform = multiply(rotationTransform(before.width, before.height, working.width, working.height, legacyAngle), workingTransform);
+  }
   const split = options.split ?? "none";
   const sides: Array<LogicalPageProvenance["split"]> = split === "none"
     ? ["single"] : split === "both" ? ["left", "right"] : [split];
@@ -1087,11 +1135,19 @@ export function processCanvas(
       left: side === "left" ? 0 : half, top: 0,
       right: side === "left" ? half : working.width, bottom: working.height,
     });
+    let sourceToPage = multiply(side === "right" ? [1, 0, 0, 1, -half, 0] : identity, workingTransform);
     let angle = legacyAngle;
     let deskew = legacyDeskew;
-    if (order === "split-deskew") ({ canvas, angle, deskew } = correction(canvas));
-    if (options.crop) canvas = cropCanvas(canvas, options.crop);
-    return { canvas, deskew, provenance: {
+    if (order === "split-deskew") {
+      const before = canvas;
+      ({ canvas, angle, deskew } = correction(canvas));
+      sourceToPage = multiply(rotationTransform(before.width, before.height, canvas.width, canvas.height, angle), sourceToPage);
+    }
+    if (options.crop) {
+      canvas = cropCanvas(canvas, options.crop);
+      sourceToPage = multiply([1, 0, 0, 1, -Math.max(0, Math.floor(options.crop.left)), -Math.max(0, Math.floor(options.crop.top))], sourceToPage);
+    }
+    return { canvas, deskew, sourceToPage, provenance: {
       sourcePage: options.sourcePage ?? 0, split: side, crop: options.crop,
       rotation, angle, preprocessOrder: order,
     } };

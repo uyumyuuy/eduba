@@ -46,10 +46,11 @@ const projectPath = "D:/projects/book.eduba";
 
 function pdf() {
   return {
-    numPages: 4,
+    numPages: 4, fingerprints: ["test-pdf"],
     destroy: mocks.destroy,
     getPage: vi.fn(async () => ({
-      getViewport: () => ({ width: 100, height: 80 }),
+      view: [0, 0, 100, 80], rotate: 0, userUnit: 1,
+        getViewport: () => ({ width: 100, height: 80 }),
       render: () => ({ promise: Promise.resolve() }),
       cleanup: vi.fn(),
     })),
@@ -105,13 +106,13 @@ describe("PDF import configuration", () => {
     mocks.dialogSave.mockResolvedValue(projectPath);
     mocks.openSourcePdf.mockResolvedValue(pdf());
     mocks.openProjectPdf.mockResolvedValue(pdf());
-    mocks.loadPageImage.mockImplementation(async (_page: unknown, mode: string, dpi: number) => { const canvas = document.createElement("canvas"); canvas.width = 100; canvas.height = 80; return { canvas, modeUsed: mode, dpiX: dpi, dpiY: dpi }; });
+    mocks.loadPageImage.mockImplementation(async (_page: unknown, mode: string, dpi: number) => { const canvas = document.createElement("canvas"); canvas.width = 100; canvas.height = 80; return { canvas, modeUsed: mode, dpiX: dpi, dpiY: dpi, pdfToSource: [1, 0, 0, -1, 0, 80] }; });
     mocks.processCanvas.mockImplementation((_source, options) => {
       const sides = options.split === "both" ? ["left", "right"] : [options.split === "none" ? "single" : options.split];
       return { pages: sides.map(split => {
         const canvas = document.createElement("canvas");
         canvas.width = 100; canvas.height = 80;
-        return { canvas, provenance: {
+        return { canvas, sourceToPage: [1, 0, 0, 1, 0, 0], provenance: {
           sourcePage: options.sourcePage, rotation: options.rotation, split,
           angle: options.deskewAngle ?? (options.deskew ? (split === "right" ? 0.4 : -1.2) : 0),
           preprocessOrder: options.preprocessOrder ?? "split-deskew",
@@ -302,7 +303,7 @@ describe("PDF import configuration", () => {
     original.width = 100;
     original.height = 80;
     mocks.processCanvas.mockImplementation(() => ({
-      pages: [{ canvas: original }],
+      pages: [{ canvas: original, sourceToPage: [1, 0, 0, 1, 0, 0] }],
     }));
     let ocrCanvas: HTMLCanvasElement | undefined;
     mocks.canvasToBase64.mockImplementation((...values: unknown[]) => {

@@ -1,3 +1,4 @@
+import type { Affine } from "./coordinates";
 import { ImageKind, OPS, type PDFPageProxy } from "pdfjs-dist";
 import { t } from "./i18n";
 
@@ -5,6 +6,7 @@ export type ImportMode = "extract" | "render";
 export type PageImageResult = {
   canvas: HTMLCanvasElement;
   modeUsed: ImportMode;
+  pdfToSource: Affine;
   dpiX: number;
   dpiY: number;
   sourceWidth?: number;
@@ -77,7 +79,7 @@ async function fallback(
     x = c.getContext("2d");
   if (!x) throw new Error(t("errors.canvasContext"));
   await page.render({ canvasContext: x, viewport: v }).promise;
-  return { canvas: c, modeUsed: "render", dpiX: dpi, dpiY: dpi, reason };
+  return { canvas: c, modeUsed: "render", dpiX: dpi, dpiY: dpi, reason, pdfToSource: v.transform as Affine };
 }
 function source(i: ImageObject): CanvasImageSource | null {
   if (i.bitmap) return i.bitmap;
@@ -426,6 +428,7 @@ export async function loadPageImage(
   if (candidate.clip) ctx.restore();
   return {
     canvas: out,
+    pdfToSource: mul(scale, vm),
     modeUsed: "extract",
     dpiX: 72 * sx,
     dpiY: 72 * sy,

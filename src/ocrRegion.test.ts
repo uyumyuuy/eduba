@@ -1,6 +1,7 @@
+import { exportFixtureHocr as exportHocr } from "./testSupport/hocr";
 // @vitest-environment jsdom
 import { describe, expect, it, vi } from "vitest";
-import { allLines, exportHocr, exportText, type DocumentPage, type OcrChar, type OcrLine, type OcrWord, type Rect } from "./domain";
+import { allLines, exportText, type DocumentPage, type OcrChar, type OcrLine, type OcrWord, type Rect } from "./domain";
 import { addOcrRegion, prepareRegionOcrImage, removeOcrLineAtPoint, removeOcrLinesInRegion, mergeOcrLinesInRegion } from "./ocrRegion";
 
 function word(id: string, text: string, bbox: Rect): OcrWord {

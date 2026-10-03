@@ -42,7 +42,7 @@ const ja = {
     closeSaveFailed: "閉じる前に保存できませんでした: {{error}}",
     saved: "保存しました",
     noPendingOcr: "OCR 待ちのページはありません。",
-    exported: "書き出しました。",
+    exportedIncompleteCoordinates: "書き出しました。一部のページでは元PDFの座標復元情報が不完全です。", exported: "書き出しました。",
     ocrComplete: "OCR が完了しました。", splitUnavailable: "この位置では安全に行を分割できません。",
     ocrCancelled: "OCR を中止しました。保存済みの結果は引き続き利用できます。",
   },

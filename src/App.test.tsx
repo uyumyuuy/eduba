@@ -51,7 +51,7 @@ vi.mock("./domain", async importOriginal => {
       const canvas = document.createElement("canvas");
       canvas.width = 100;
       canvas.height = 80;
-      return { pages: [{ canvas }] };
+      return { pages: [{ canvas, sourceToPage: [1, 0, 0, 1, 0, 0] }] };
     }),
   };
 });
@@ -163,13 +163,14 @@ describe("saved project loading", () => {
     mocks.dialogSave.mockResolvedValue("D:/exports/reading.readable.html");
     mocks.closeRequested.mockResolvedValue(() => undefined);
     mocks.openProjectPdf.mockResolvedValue({
-      numPages: 2,
+      numPages: 2, fingerprints: ["test-pdf"],
       getPage: vi.fn(async () => ({
+        view: [0, 0, 100, 80], rotate: 0, userUnit: 1,
         getViewport: () => ({ width: 100, height: 80 }),
         render: () => ({ promise: Promise.resolve() }),
       })),
     });
-    mocks.loadPageImage.mockImplementation(async (_page: unknown, mode: string, dpi: number) => { const canvas = document.createElement("canvas"); canvas.width = 100; canvas.height = 80; return { canvas, modeUsed: mode, dpiX: dpi, dpiY: dpi }; });
+    mocks.loadPageImage.mockImplementation(async (_page: unknown, mode: string, dpi: number) => { const canvas = document.createElement("canvas"); canvas.width = 100; canvas.height = 80; return { canvas, modeUsed: mode, dpiX: dpi, dpiY: dpi, pdfToSource: [1, 0, 0, -1, 0, 80] }; });
 
     let manifest = JSON.stringify({
       version: 1,
@@ -1378,6 +1379,79 @@ describe("saved project loading", () => {
     const redo = Array.from(container.querySelectorAll<HTMLButtonElement>("button")).find(button => button.textContent?.includes("Redo"))!;
     await act(async () => redo.click());
     await waitFor(() => expect(container.querySelectorAll("svg text")).toHaveLength(2));
+  });
+
+  it("exports PDF geometry for every saved page in hOCR", async () => {
+    await openSavedProject();
+    await act(async () => Array.from(container.querySelectorAll<HTMLButtonElement>("button")).find(button => button.textContent === "hOCR")!.click());
+    await waitFor(() => expect(mocks.invoke.mock.calls.some(([command]) => command === "export_file")).toBe(true));
+    const call = mocks.invoke.mock.calls.find(([command]) => command === "export_file")!;
+    const hocr = atob((call[1] as { contentBase64: string }).contentBase64);
+    expect(hocr).toContain('name="eduba-hocr-version" content="1"');
+    expect(hocr.match(/x_edubapagetopdf 1 0 0 -1 0 80/g)).toHaveLength(2);
+    expect(hocr).toContain("x_edubasourcepage 2");
+    expect(hocr).toContain("x_edubapreprocessorder deskew-split");
+  });
+
+  it("exports hOCR with a per-page warning when saved OCR dimensions differ from the PDF reconstruction", async () => {
+    const page = JSON.parse(persistedPages.get("page-2")!);
+    page.width = 101;
+    persistedPages.set("page-2", JSON.stringify(page));
+    await openSavedProject();
+    await act(async () => Array.from(container.querySelectorAll<HTMLButtonElement>("button")).find(button => button.textContent === "hOCR")!.click());
+    await waitFor(() => expect(container.textContent).toContain("PDF coordinate restoration information is incomplete"));
+    const call = mocks.invoke.mock.calls.find(([command]) => command === "export_file")!;
+    const xml = new DOMParser().parseFromString(atob((call[1] as {contentBase64:string}).contentBase64), "application/xml");
+    const titles = [...xml.querySelectorAll(".ocr_page")].map(page=>page.getAttribute("title")!);
+    expect(titles[0]).toContain("x_edubacoordinates complete");
+    expect(titles[1]).toContain("x_edubacoordinatereason coordinate-mismatch");
+    expect(titles[1]).not.toContain("x_edubapagetopdf");
+    expect(xml.documentElement.textContent).toContain("saved page two");
+  });
+
+  it("exports hOCR text even when the source PDF fingerprint is unavailable", async () => {
+    // Configure before opening; keep PDF rendering available but remove its identity.
+    const sourcePdf = { numPages: 2, fingerprints: [], getPage: vi.fn(async () => ({
+      view:[0,0,100,80],rotate:0,userUnit:1,
+      getViewport:()=>({width:100,height:80}), render:()=>({promise:Promise.resolve()}),
+    })) };
+    mocks.openProjectPdf.mockResolvedValue(sourcePdf);
+    await openSavedProject();
+    await act(async () => Array.from(container.querySelectorAll<HTMLButtonElement>("button")).find(button => button.textContent === "hOCR")!.click());
+    await waitFor(() => expect(container.textContent).toContain("PDF coordinate restoration information is incomplete"));
+    const call = mocks.invoke.mock.calls.find(([command]) => command === "export_file")!;
+    const hocr = atob((call[1] as {contentBase64:string}).contentBase64);
+    expect(hocr).toContain("saved page one");
+    expect(hocr).toContain("x_edubacoordinatereason missing-source");
+    expect(hocr).not.toContain("; x_edubapagetopdf ");
+  });
+
+  it("recovers a missing render DPI from saved OCR resolution before declaring coordinates unavailable", async () => {
+    const page = JSON.parse(persistedPages.get("page-1")!);
+    page.sourceDpiX = 600; page.sourceDpiY = 600;
+    persistedPages.set("page-1", JSON.stringify(page));
+    await openSavedProject();
+    mocks.loadPageImage.mockClear();
+    await act(async () => Array.from(container.querySelectorAll<HTMLButtonElement>("button")).find(button => button.textContent === "hOCR")!.click());
+    await waitFor(() => expect(mocks.invoke.mock.calls.some(([command]) => command === "export_file")).toBe(true));
+    expect(mocks.loadPageImage).toHaveBeenCalledWith(expect.anything(), "render", 600);
+    const call = mocks.invoke.mock.calls.find(([command]) => command === "export_file")!;
+    expect(atob((call[1] as {contentBase64:string}).contentBase64)).toContain('name="eduba-hocr-coordinates" content="complete"');
+  });
+
+  it("continues hOCR export after a PDF page reconstruction error", async () => {
+    await openSavedProject();
+    const sourcePdf = await mocks.openProjectPdf.mock.results[0].value;
+    sourcePdf.getPage.mockRejectedValueOnce(new Error("Page decoding failed"));
+    await act(async () => Array.from(container.querySelectorAll<HTMLButtonElement>("button")).find(button => button.textContent === "hOCR")!.click());
+    await waitFor(() => expect(container.textContent).toContain("PDF coordinate restoration information is incomplete"));
+    const call = mocks.invoke.mock.calls.find(([command]) => command === "export_file")!;
+    const xml = new DOMParser().parseFromString(atob((call[1] as {contentBase64:string}).contentBase64), "application/xml");
+    const titles = [...xml.querySelectorAll(".ocr_page")].map(page=>page.getAttribute("title")!);
+    expect(titles[0]).toContain("x_edubacoordinatereason reconstruction-failed");
+    expect(titles[1]).toContain("x_edubacoordinates complete");
+    expect(xml.documentElement.textContent).toContain("saved page one");
+    expect(xml.documentElement.textContent).toContain("saved page two");
   });
 
   it("exports readable HTML through its own button with all page labels", async () => {

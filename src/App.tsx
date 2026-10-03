@@ -1,3 +1,4 @@
+import { inverse, multiply, type HocrPageGeometry, type HocrSource } from "./coordinates";
 import { LicenseModal } from "./LicenseModal";
 import { prepareFigureOcr } from "./automaticFigures";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
@@ -99,7 +100,7 @@ type HistoryChange = { pageId: string; beforeData: string; afterData: string };
 type ScriptCalibrationSampleScope = { kind: "all-pages" } | { kind: "current-page"; pageId: string };
 type LineEditSession = { id: number; pageId: string; lineId: string; beforeData: string };
 type HistoryOperation = EditHistoryOperation<Settings, Entry>;
-type RenderedEntry = { canvas: HTMLCanvasElement; modeUsed: ImportMode; dpiX: number; dpiY: number; reason?: string; sourceWidth?: number; sourceHeight?: number; };
+type RenderedEntry = { geometry: HocrPageGeometry; canvas: HTMLCanvasElement; modeUsed: ImportMode; dpiX: number; dpiY: number; reason?: string; sourceWidth?: number; sourceHeight?: number; };
 const defaultSettings: Settings = {
   modelPath: "",
   psm: 3,
@@ -649,7 +650,13 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
       target.height = image.height;
       target.getContext("2d")!.drawImage(image, 0, 0);
       if (!destination) { setCanvasSize({ width: image.width, height: image.height }); setImagePageId(entry.id); setImageRevision(value => value + 1); }
-      return { ...loaded, canvas: image };
+      return { ...loaded, canvas: image, geometry: {
+        pageToPdf: inverse(multiply(result.pages[0].sourceToPage, loaded.pdfToSource)),
+        pdfBox: [...source.view] as [number, number, number, number],
+        pdfRotation: source.rotate, pdfUserUnit: source.userUnit,
+        sourceWidth: loaded.canvas.width, sourceHeight: loaded.canvas.height,
+        dpiX: loaded.dpiX, dpiY: loaded.dpiY, mode: loaded.modeUsed,
+      } };
     },
     [pdf],
   );
@@ -1593,23 +1600,45 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
         }
         if (!pages.length)
           throw new Error(globalT("appErrors.noExport"));
+        const hocrSource: HocrSource | undefined = type === "hocr" ? {
+          fingerprint: pdf?.fingerprints[0] ?? "", byteLength: projectRef.current.pdfSize, pages: {}, unavailable: {},
+        } : undefined;
         const images: Record<string, string> = {};
-        if (type === "html" || type === "svg") {
+        if (type === "html" || type === "svg" || type === "hocr") {
           for (const page of pages) {
-            if (!page.figureRegions?.length) continue;
+            if (type !== "hocr" && !page.figureRegions?.length) continue;
             const entry = entries.find(entry => entry.id === page.id);
+            if (hocrSource) {
+              if (!entry || !pdf) { hocrSource.unavailable![page.id] = "missing-source"; continue; }
+              try {
+                // Legacy entries may lack their render DPI; recover it from the saved OCR resolution.
+                const dpiX = page.sourceDpiX ?? entry.sourceDpiX;
+                const dpiY = page.sourceDpiY ?? entry.sourceDpiY;
+                const savedDpi = dpiX && dpiY && Number.isFinite(dpiX) && Number.isFinite(dpiY) && dpiX > 0 && dpiY > 0
+                  ? Math.sqrt(dpiX * dpiY) : undefined;
+                const rendered = await renderEntry({ ...entry, ...page, dpi: entry.dpi ?? savedDpi },
+                  loading.current, pdf, document.createElement("canvas"), false);
+                if (!rendered || rendered.canvas.width !== page.width || rendered.canvas.height !== page.height)
+                  hocrSource.unavailable![page.id] = "coordinate-mismatch";
+                else hocrSource.pages[page.id] = rendered.geometry;
+              } catch (error) {
+                hocrSource.unavailable![page.id] = errorText(error) === globalT("appErrors.coordinateMismatch")
+                  ? "coordinate-mismatch" : "reconstruction-failed";
+              }
+              continue;
+            }
             if (!entry) throw new Error(globalT("appErrors.processedPage"));
             const rendered = await renderEntry(entry, loading.current, pdf, document.createElement("canvas"), false);
             if (!rendered || rendered.canvas.width !== page.width || rendered.canvas.height !== page.height)
               throw new Error(globalT("appErrors.coordinateMismatch"));
-            for (const figure of page.figureRegions) images[figure.id] = cropFigure(rendered.canvas, figure.bbox);
+            for (const figure of page.figureRegions ?? []) images[figure.id] = cropFigure(rendered.canvas, figure.bbox);
           }
         }
         let content = "",
           suffix = type === "txt" ? "txt" : type === "hocr" ? "html" : type === "html" ? "readable.html" : "svg",
           readyBase64 = false;
         if (type === "txt") content = exportText(pages);
-        else if (type === "hocr") content = exportHocr(pages);
+        else if (type === "hocr") content = exportHocr(pages, hocrSource!);
         else if (type === "html") content = createReadableHtml(projectRef.current.name.replace(/\.eduba$/i, ""), labeledPages, await loadReadableFontFaces(), notoSerifLicense, images);
         else if (pages.length === 1) content = exportSvg(pages[0], images);
         else {
@@ -1630,7 +1659,8 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
             path,
             contentBase64: readyBase64 ? content : encode(content),
           });
-        setNotice("notices.exported");
+        const incompleteCoordinates = type === "hocr" && content.includes('name="eduba-hocr-coordinates" content="incomplete"');
+        setNotice(incompleteCoordinates ? "notices.exportedIncompleteCoordinates" : "notices.exported");
       } catch (e) {
         setNotice("notices.exportFailed", { error: errorText(e) });
       } finally {

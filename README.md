@@ -54,3 +54,7 @@ The interface and native menu support English, Japanese, Simplified Chinese, and
 The preference is stored per user in the Tauri app configuration directory at `settings.json`, separately from each `.eduba` project. Saving it uses a versioned atomic replacement, so opening or saving a project does not overwrite the user preference. A language selection applies to the React interface and native menu immediately; a native menu error remains visible in the status area while the selected interface language is preserved.
 
 Translation resources, the PDF worker, and OCR model are local assets. Normal use does not require a network connection. Run `npm run build` for the web bundle, `npm test` for the frontend tests, and `cargo test --manifest-path src-tauri/Cargo.toml --lib` for the preference and menu backend tests.
+
+## hOCR 出力仕様
+
+[hOCR 出力仕様](docs/hocr-output-spec.md) に、出力形式と元 PDF 座標の復元方法を定義しています。hOCR 出力を変更する場合は、同じ変更で必ずこの仕様書を更新してください。
