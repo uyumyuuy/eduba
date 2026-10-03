@@ -8,6 +8,18 @@ describe("transliteration candidates", () => {
     expect(convertIndexToAccent("ama2 e3 gu4")).toBe("áma è gu₄");
   });
 
+  it.each([
+    ["k,", "ḳ"], ["K,", "Ḳ"], ["[[", "⸢"], ["]]", "⸣"],
+  ])("offers the added transliteration %s as %s", (selection, expected) => {
+    expect(convert(selection)).toBe(expected);
+    expect(candidatesForSelection(selection)).toEqual([expected]);
+  });
+
+  it("converts the new patterns together with existing transliteration rules", () => {
+    expect(convert("k, K, [[text]]")).toBe("ḳ Ḳ ⸢text⸣");
+    expect(candidatesForSelection("[[k, sz]]")).toEqual(["⸢ḳ š⸣"]);
+  });
+
   it("keeps transliteration conversions ahead of OCR candidates", () => {
     expect(candidatesForSelection("c")[0]).toBe("š");
     expect(candidatesForSelection("a2")[0]).toBe("á");
