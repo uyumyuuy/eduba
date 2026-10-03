@@ -27,11 +27,14 @@
   "bundle": {
     "active": true,
     "targets": "all",
-    "icon": ["icons/icon.ico"],
+    "icon": [
+      "icons/icon.ico"
+    ],
     "resources": {
       "resources/tesseract": "tesseract",
       "resources/models": "models",
-      "../src/assets/fonts/NotoSerif-OFL.txt": "NotoSerif-OFL.txt"
+      "../src/assets/fonts/NotoSerif-OFL.txt": "NotoSerif-OFL.txt",
+      "resources/figure-detection": "figure-detection"
     }
   }
 }

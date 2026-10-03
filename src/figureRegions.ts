@@ -48,6 +48,8 @@ export function preserveFiguresAfterOcr(before: DocumentPage | null, after: Docu
   const next = { ...after };
   delete next.readingOrderIds;
   delete next.manualReadingOrder;
-  if (before?.figureRegions?.length) next.figureRegions = before.figureRegions.map(figure => ({ ...figure, bbox: { ...figure.bbox } }));
+  const existing = before?.figureRegions ?? [];
+  if (existing.length) next.figureRegions = [...existing, ...(after.figureRegions ?? []).filter(figure => !existing.some(old => old.id === figure.id))]
+    .map(figure => ({ ...figure, bbox: { ...figure.bbox } }));
   return next;
 }

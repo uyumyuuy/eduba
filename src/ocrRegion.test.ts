@@ -33,6 +33,18 @@ describe("manual OCR region", () => {
     vi.restoreAllMocks();
   });
 
+  it("masks figure regions and import exclusions during manual region OCR", () => {
+    const context={fillRect:vi.fn(),drawImage:vi.fn(),fillStyle:""};
+    vi.spyOn(HTMLCanvasElement.prototype,"getContext").mockReturnValue(context as never);
+    const source=document.createElement("canvas");source.width=300;source.height=300;
+    const initial=page([]);initial.figureRegions=[{id:"fig",kind:"figure",bbox:{left:70,top:100,right:90,bottom:120}}];
+    initial.ocrMargins={top:0,bottom:0,left:20,right:0,inner:0,outer:0};
+    prepareRegionOcrImage(source,selection,initial,20);
+    expect(context.fillRect).toHaveBeenCalledWith(40,30,20,20);
+    expect(context.fillRect).toHaveBeenCalledWith(20,20,10,45);
+    vi.restoreAllMocks();
+  });
+
   it("attaches a recognized margin number to the matching existing line and preserves page coordinates", () => {
     const initial = page([body()]);
     const result = addOcrRegion(initial, page([marker()]), selection, 20, "region-a");

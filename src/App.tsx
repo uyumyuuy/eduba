@@ -1,3 +1,4 @@
+import { prepareFigureOcr } from "./automaticFigures";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import { useTranslation } from "react-i18next";
 import { EditToolbarButton } from "./EditToolbarButton";
@@ -73,7 +74,6 @@ import { importEntries, prepareImportEntries, type ImportConfig } from "./import
 import { loadPageImage, type ImportMode } from "./pageImage";
 import {
   defaultOcrMargins,
-  maskOcrCanvas,
   validateOcrMargins,
 } from "./ocrMargins";
 
@@ -206,6 +206,7 @@ function parseManifest(raw: string | null): Manifest {
               page.split === "left" || page.split === "right",
             )
           : undefined,
+        autoFigureDetection: page.autoFigureDetection === true,
         crop: page.crop,
         status:
           page.status === "ocr" || page.status === "review"
@@ -1063,10 +1064,13 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
       const sourceDpiX = entry.rotation === 90 || entry.rotation === 270 ? rendered.dpiY : rendered.dpiX;
       const sourceDpiY = entry.rotation === 90 || entry.rotation === 270 ? rendered.dpiX : rendered.dpiY;
       const renderDpi = Math.max(70, Math.min(2400, Math.round(Math.sqrt(sourceDpiX * sourceDpiY))));
+      const saved = await invokeCommand("load_page", { projectPath: projectRef.current!.path, pageId: entry.id });
+      const existing = saved ? (JSON.parse(saved) as DocumentPage).figureRegions ?? [] : [];
+      const figureOcr = await prepareFigureOcr(worker, entry, existing,
+        canvas => invokeCommand("detect_figures", { imageBase64: canvasToBase64(canvas) }));
+      if (cancelled.current || token !== ocrLoading.current) throw new Error(globalT("appErrors.ocrCancelled"));
       const hocr = await invokeCommand("run_ocr", {
-        imageBase64: canvasToBase64(
-          maskOcrCanvas(worker, entry.split, entry.ocrMargins),
-        ),
+        imageBase64: canvasToBase64(figureOcr.canvas),
         modelPath: manifestRef.current.settings.modelPath,
         psm: manifestRef.current.settings.psm,
         dpi: renderDpi,
@@ -1085,6 +1089,8 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
       }
       return {
         ...detected,
+        figureRegions: figureOcr.figures,
+        autoFigureDetection: entry.autoFigureDetection,
         id: entry.id,
         sourcePage: entry.sourcePage,
         split: entry.split,
