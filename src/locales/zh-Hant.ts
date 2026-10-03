@@ -89,7 +89,7 @@ const zhHant = {
     addOcrRegion: "新增 OCR 區域",
     finishAddOcrRegion: "結束新增 OCR 區域",
     regionSelectHint: "拖曳選取要新增的區域 · 按 ESC 取消",
-    settings: "設定", language: "語言", imageMagnifier: "影像窗格放大鏡", textMagnifier: "校對窗格放大鏡", close: "關閉", model: "模型（.traineddata）", selectModel: "選擇模型",
+    licenses: "第三方授權條款", settings: "設定", language: "語言", imageMagnifier: "影像窗格放大鏡", textMagnifier: "校對窗格放大鏡", close: "關閉", model: "模型（.traineddata）", selectModel: "選擇模型",
     automatic: "自動", singleBlock: "單一文字區塊", sparseText: "稀疏文字", done: "完成", importPdf: "匯入 PDF",
     open: "開啟", save: "儲存", undo: "復原", redo: "重做", ocrCurrent: "辨識目前頁面",
     ocrPending: "辨識待處理頁面", cancel: "取消", currentPage: "目前頁面", allPages: "所有頁面", logicalPages: "邏輯頁面",

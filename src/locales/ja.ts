@@ -89,7 +89,7 @@ const ja = {
     addOcrRegion: "OCR 領域を追加",
     finishAddOcrRegion: "OCR 領域の追加を終了",
     regionSelectHint: "追加する範囲をドラッグ・ESCキーで中止",
-    settings: "設定", language: "言語", imageMagnifier: "画像ペインの拡大鏡", textMagnifier: "校正ペインの拡大鏡", close: "閉じる", model: "モデル（.traineddata）", selectModel: "モデルを選択",
+    licenses: "第三者ライセンス", settings: "設定", language: "言語", imageMagnifier: "画像ペインの拡大鏡", textMagnifier: "校正ペインの拡大鏡", close: "閉じる", model: "モデル（.traineddata）", selectModel: "モデルを選択",
     automatic: "自動", singleBlock: "単一ブロック", sparseText: "疎なテキスト", done: "完了", importPdf: "PDF を読み込む",
     open: "開く", save: "保存", undo: "元に戻す", redo: "やり直す", ocrCurrent: "現在のページを OCR",
     ocrPending: "未処理ページを OCR", cancel: "中止", currentPage: "現在のページ", allPages: "全ページ", logicalPages: "論理ページ",

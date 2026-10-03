@@ -89,7 +89,7 @@ const zhHans = {
     addOcrRegion: "添加 OCR 区域",
     finishAddOcrRegion: "结束添加 OCR 区域",
     regionSelectHint: "拖动选择要添加的区域 · 按 ESC 取消",
-    settings: "设置", language: "语言", imageMagnifier: "图像面板放大镜", textMagnifier: "校对面板放大镜", close: "关闭", model: "模型（.traineddata）", selectModel: "选择模型",
+    licenses: "第三方许可证", settings: "设置", language: "语言", imageMagnifier: "图像面板放大镜", textMagnifier: "校对面板放大镜", close: "关闭", model: "模型（.traineddata）", selectModel: "选择模型",
     automatic: "自动", singleBlock: "单一文本块", sparseText: "稀疏文本", done: "完成", importPdf: "导入 PDF",
     open: "打开", save: "保存", undo: "撤销", redo: "重做", ocrCurrent: "识别当前页",
     ocrPending: "识别待处理页面", cancel: "取消", currentPage: "当前页", allPages: "所有页面", logicalPages: "逻辑页面",

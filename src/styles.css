@@ -218,3 +218,10 @@ button:disabled { cursor: not-allowed; opacity: .42; }
 .proofing-text-flow { display: inline-block; flex: 0 0 auto; width: max-content; min-width: max-content; color: #273b38; font-family: var(--ocr-font); white-space: pre; }
 .proofing-text-selection { border-radius: 2px; background: rgba(61, 143, 140, .3); }
 .proofing-text-caret { display: inline-block; width: 0; height: 1.15em; margin: 0; border-left: 1.5px solid #1a6360; vertical-align: middle; }
+
+.license-modal { width: min(760px, calc(100vw - 32px)); max-height: calc(100vh - 32px); display: flex; flex-direction: column; }
+.license-content { min-height: 0; overflow-y: auto; margin-top: 16px; }
+.license-content details { margin-bottom: 12px; }
+.license-content summary { cursor: pointer; font-weight: 600; line-height: 1.6; }
+.license-content pre { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12px; line-height: 1.6; padding: 12px; background: #f0f1eb; border-radius: 5px; }
+.license-modal .modal-actions { flex-shrink: 0; }

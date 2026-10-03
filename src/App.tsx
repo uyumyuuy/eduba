@@ -1,3 +1,4 @@
+import { LicenseModal } from "./LicenseModal";
 import { prepareFigureOcr } from "./automaticFigures";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import { useTranslation } from "react-i18next";
@@ -2783,6 +2784,8 @@ function SettingsModal({
   setMagnifierPreference: (key: "imageMagnifierEnabled" | "textMagnifierEnabled", enabled: boolean) => void;
 }) {
   const { t } = useTranslation();
+  const [showLicenses, setShowLicenses] = useState(false);
+  if (showLicenses) return <LicenseModal back={() => setShowLicenses(false)} close={close} />;
   return (
     <div className="modal-scrim">
       <div className="modal settings-modal">
@@ -2801,7 +2804,7 @@ function SettingsModal({
           }}>{manifest.settings.modelPath || t("ui.selectModel")}</button>
         </label>
         <label>PSM<select value={manifest.settings.psm} onChange={(e) => { putManifest({ ...manifest, settings: { ...manifest.settings, psm: Number(e.target.value) as Settings["psm"] } }); scheduleSave(); }}><option value="3">3 — {t("ui.automatic")}</option><option value="6">6 — {t("ui.singleBlock")}</option><option value="11">11 — {t("ui.sparseText")}</option></select></label>
-        <div className="modal-actions"><button className="primary" onClick={close}>{t("ui.done")}</button></div>
+        <div className="modal-actions"><button onClick={() => setShowLicenses(true)}>{t("ui.licenses")}</button><button className="primary" onClick={close}>{t("ui.done")}</button></div>
       </div>
     </div>
   );
