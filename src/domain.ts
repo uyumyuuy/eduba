@@ -116,6 +116,8 @@ export interface LogicalPageProvenance {
   /** Missing on legacy projects, whose deskew preceded spread splitting. */
   preprocessOrder?: "split-deskew" | "deskew-split";
   ocrMargins?: OcrMargins;
+  /** Absent on older projects: automatic detection is disabled. */
+  autoFigureDetection?: boolean;
 }
 
 export interface FigureRegion {

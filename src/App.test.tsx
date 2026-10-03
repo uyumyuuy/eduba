@@ -698,6 +698,44 @@ describe("saved project loading", () => {
     expect(JSON.parse(persistedPages.get("page-1")!).blocks[0].paragraphs[0].lines[0].correctedText).toBe("2");
   });
 
+  it("detects figures before OCR and restores them together with OCR through undo and redo", async () => {
+    vi.spyOn(HTMLCanvasElement.prototype, "toDataURL").mockReturnValue("data:image/png;base64,image");
+    persistedPages.delete("page-1");
+    const base = mocks.invoke.getMockImplementation()!;
+    let firstOpen = true;
+    const bbox = { left: 10, top: 40, right: 50, bottom: 60 };
+    mocks.invoke.mockImplementation(async (command: string, args?: unknown) => {
+      if (command === "detect_figures") return [{ bbox, score: 0.9 }];
+      if (command === "run_ocr") return numberRegionHocr;
+      const result = await base(command, args as never);
+      if (command === "open_project" && firstOpen) {
+        firstOpen = false;
+        const info = result as { manifest: string };
+        const manifest = JSON.parse(info.manifest);
+        manifest.pages[0].status = "pending";
+        manifest.pages[0].autoFigureDetection = true;
+        return { ...info, manifest: JSON.stringify(manifest) };
+      }
+      return result;
+    });
+    await openSavedProject("");
+    const ocr = Array.from(container.querySelectorAll<HTMLButtonElement>("button")).find(button => button.textContent?.trim() === "OCR current")!;
+    await waitFor(() => expect(ocr.disabled).toBe(false));
+    await act(async () => ocr.click());
+    await waitFor(() => expect(persistedPages.has("page-1")).toBe(true));
+    const calls = mocks.invoke.mock.calls.map(call => call[0]);
+    expect(calls.indexOf("detect_figures")).toBeGreaterThanOrEqual(0);
+    expect(calls.indexOf("detect_figures")).toBeLessThan(calls.indexOf("run_ocr"));
+    const figures = JSON.parse(persistedPages.get("page-1")!).figureRegions;
+    expect(figures).toHaveLength(1);
+    expect(figures[0]).toMatchObject({ kind: "figure", bbox });
+    await act(async () => window.dispatchEvent(new KeyboardEvent("keydown", { key: "z", ctrlKey: true, cancelable: true })));
+    await waitFor(() => expect(persistedPages.has("page-1")).toBe(false));
+    await act(async () => window.dispatchEvent(new KeyboardEvent("keydown", { key: "y", ctrlKey: true, cancelable: true })));
+    await waitFor(() => expect(persistedPages.has("page-1")).toBe(true));
+    expect(JSON.parse(persistedPages.get("page-1")!).figureRegions).toEqual(figures);
+  });
+
   it("keeps the page and history cursor unchanged when saving an undo fails", async () => {
     await openSavedProject();
     await act(async () => container.querySelector<SVGRectElement>(".layout-svg rect")!.dispatchEvent(new MouseEvent("click", { bubbles: true })));

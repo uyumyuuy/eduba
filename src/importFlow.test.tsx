@@ -220,6 +220,7 @@ describe("PDF import configuration", () => {
     });
     const manifest = JSON.parse((call[1] as { manifest: string }).manifest);
     expect(manifest.settings.dpi).toBe(300);
+    expect(manifest.pages.every((page: { autoFigureDetection: boolean }) => page.autoFigureDetection === true)).toBe(true);
     expect(manifest.pages.map((page: { angle: number }) => page.angle)).toEqual([-1.2, 0.4, -1.2, 0.4]);
     expect(manifest.pages.every((page: { preprocessOrder: string }) => page.preprocessOrder === "split-deskew")).toBe(true);
     await waitFor(() => expect(mocks.processCanvas).toHaveBeenCalledWith(

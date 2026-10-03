@@ -1,4 +1,4 @@
-import type { LogicalPageProvenance } from "./domain";
+import type { LogicalPageProvenance, Rect } from "./domain";
 import { t } from "./i18n";
 
 export type OcrMargins = {
@@ -78,6 +78,7 @@ export function maskOcrCanvas(
   source: HTMLCanvasElement,
   split: LogicalPageProvenance["split"],
   value?: OcrMargins,
+  regions: Rect[] = [],
 ): HTMLCanvasElement {
   const margins = resolveOcrMargins(value, split);
   const output = source.ownerDocument.createElement("canvas");
@@ -97,5 +98,6 @@ export function maskOcrCanvas(
   if (bottom) context.fillRect(0, height - bottom, width, bottom);
   if (left) context.fillRect(0, 0, left, height);
   if (right) context.fillRect(width - right, 0, right, height);
+  for (const b of regions) context.fillRect(b.left, b.top, b.right - b.left, b.bottom - b.top);
   return output;
 }

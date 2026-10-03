@@ -14,6 +14,7 @@ use std::{
 use tauri::{menu::MenuBuilder, AppHandle, Emitter, Manager, State};
 use thiserror::Error;
 mod preferences;
+mod figure_detector;
 mod edit_history;
 use edit_history::{load_edit_history, save_project_state};
 #[path = "style_classifier_runtime/lib.rs"]
@@ -215,6 +216,7 @@ pub struct ExportArgs {
 }
 
 pub struct AppState {
+    figure_detector: Arc<Mutex<Option<figure_detector::Detector>>>,
     ocr_child: Arc<Mutex<Option<Child>>>,
     preferences_lock: Arc<Mutex<()>>,
     style_classifier: Arc<Mutex<Option<style_classifier_runtime::Classifier>>>,
@@ -223,6 +225,7 @@ pub struct AppState {
 impl Default for AppState {
     fn default() -> Self {
         Self {
+            figure_detector: Arc::new(Mutex::new(None)),
             ocr_child: Arc::new(Mutex::new(None)),
             preferences_lock: Arc::new(Mutex::new(())),
             style_classifier: Arc::new(Mutex::new(None)),
@@ -1066,6 +1069,44 @@ fn hide_console(command: &mut Command) {
 fn hide_console(_command: &mut Command) {}
 
 #[tauri::command]
+async fn detect_figures(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    image_base64: String,
+) -> Result<Vec<figure_detector::Detection>, String> {
+    let detector = state.figure_detector.clone();
+    tauri::async_runtime::spawn_blocking(move || -> anyhow::Result<Vec<figure_detector::Detection>> {
+        if image_base64.len() > MAX_OCR_IMAGE * 4 / 3 + 256 {
+            anyhow::bail!("figure image exceeds 64 MiB");
+        }
+        let data = image_base64.split_once(',').map(|(_, data)| data).unwrap_or(&image_base64);
+        let bytes = BASE64.decode(data)?;
+        if bytes.is_empty() || bytes.len() > MAX_OCR_IMAGE {
+            anyhow::bail!("empty or oversized figure image");
+        }
+        let mut reader = image::ImageReader::new(std::io::Cursor::new(bytes)).with_guessed_format()?;
+        let mut limits = image::Limits::default();
+        limits.max_image_width = Some(20000);
+        limits.max_image_height = Some(20000);
+        limits.max_alloc = Some(256 * 1024 * 1024);
+        reader.limits(limits);
+        let image = reader.decode()?.to_rgb8();
+        let mut model = detector.lock().map_err(|_| anyhow::anyhow!("figure detector lock poisoned"))?;
+        if model.is_none() {
+            let resource = app.path().resource_dir()?.join("figure-detection/picodet-s-layout-3cls.onnx");
+            let dev = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                .join("resources/figure-detection/picodet-s-layout-3cls.onnx");
+            let path = if resource.is_file() { resource } else { dev };
+            *model = Some(figure_detector::Detector::load(&process_path(path))?);
+        }
+        model.as_mut().unwrap().predict(&image)
+    })
+    .await
+    .map_err(|e| format!("figure detection worker failed: {e}"))?
+    .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
 async fn classify_word_styles(
     app: AppHandle,
     state: State<'_, AppState>,
@@ -1578,6 +1619,7 @@ pub fn run() {
             apply_bulk_corrections,
             run_ocr,
             classify_word_styles,
+            detect_figures,
             cancel_ocr,
             export_file
         ])

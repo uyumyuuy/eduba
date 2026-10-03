@@ -63,6 +63,7 @@ export type BackendCommands = {
   load_page: { args: { projectPath: string; pageId: string }; result: string | null };
   save_page: { args: { projectPath: string; pageId: string; data: string }; result: void };
   run_ocr: { args: { imageBase64: string; modelPath: string; psm: number; dpi?: number }; result: string };
+  detect_figures: { args: { imageBase64: string }; result: import("./automaticFigures").FigureDetection[] };
   classify_word_styles: { args: { imageBase64: string; samples: WordStyleSample[] }; result: WordStylePrediction[] };
   cancel_ocr: { args: undefined; result: void };
   export_file: { args: { path: string; contentBase64: string }; result: void };

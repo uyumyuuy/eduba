@@ -92,6 +92,12 @@ describe("figure and table regions", () => {
     expect(exportHocr([initial])).toContain('class="ocr_image"');
   });
 
+  it("retains newly detected figures along with manual figures after re-OCR", () => {
+    const before=page();const detected={id:"new-auto",kind:"figure" as const,bbox:{left:0,top:0,right:10,bottom:10}};
+    const after=preserveFiguresAfterOcr(before,{...page(),figureRegions:[...before.figureRegions!,detected]});
+    expect(after.figureRegions?.map(f=>f.id)).toEqual(["figure","new-auto"]);
+  });
+
   it("preserves figure rectangles and types after re-OCR but resets reading order", () => {
     const before = reorderPageItems(page(), ["last", "figure", "first"]);
     const recognized = { ...page(), figureRegions: undefined, readingOrderIds: ["first", "last"], manualReadingOrder: true };

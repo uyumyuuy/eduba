@@ -1,3 +1,4 @@
+import { resolveOcrMargins } from "./ocrMargins";
 import { allLines, type DocumentPage, type OcrChar, type OcrLine, type PageBlock, type Paragraph, type Rect, type TextFormatRange } from "./domain";
 
 const intersects = (a: Rect, b: Rect) => a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom;
@@ -28,6 +29,24 @@ export function prepareRegionOcrImage(source: HTMLCanvasElement, selection: Rect
     if (!intersects(b, selection)) continue;
     const left = Math.max(b.left, selection.left), top = Math.max(b.top, selection.top);
     const right = Math.min(b.right, selection.right), bottom = Math.min(b.bottom, selection.bottom);
+    context.fillRect(padding + left - selection.left, padding + top - selection.top, right - left, bottom - top);
+  }
+  const margins = resolveOcrMargins(page.ocrMargins, page.split);
+  const topMargin = Math.ceil(source.height * margins.top / 100);
+  const bottomMargin = Math.ceil(source.height * margins.bottom / 100);
+  const leftMargin = Math.ceil(source.width * margins.left / 100);
+  const rightMargin = Math.ceil(source.width * margins.right / 100);
+  const excluded: Rect[] = [
+    { left: 0, top: 0, right: source.width, bottom: topMargin },
+    { left: 0, top: source.height - bottomMargin, right: source.width, bottom: source.height },
+    { left: 0, top: 0, right: leftMargin, bottom: source.height },
+    { left: source.width - rightMargin, top: 0, right: source.width, bottom: source.height },
+    ...(page.figureRegions ?? []).map(figure => figure.bbox),
+  ];
+  for (const bbox of excluded) {
+    if (!intersects(bbox, selection)) continue;
+    const left = Math.max(bbox.left, selection.left), top = Math.max(bbox.top, selection.top);
+    const right = Math.min(bbox.right, selection.right), bottom = Math.min(bbox.bottom, selection.bottom);
     context.fillRect(padding + left - selection.left, padding + top - selection.top, right - left, bottom - top);
   }
   return result;
