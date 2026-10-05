@@ -1270,6 +1270,41 @@ describe("saved project loading", () => {
     expect(container.querySelectorAll<HTMLButtonElement>(".page-item")[0].className).toContain("active");
   });
 
+  it.each(["click", "shortcut"])("restores the editing caret after a candidate replacement via %s", async mode => {
+    persistedPages.set("page-1", savedPage("page-1", "left sz right", 1));
+    await openSavedProject("left sz right");
+    await act(async () => container.querySelector<SVGRectElement>("svg rect")!.dispatchEvent(new MouseEvent("click", { bubbles: true })));
+    const editor = container.querySelector<HTMLTextAreaElement>("textarea.line-overlay")!;
+    await act(async () => {
+      editor.setSelectionRange(5, 7, "backward");
+      editor.dispatchEvent(new Event("select", { bubbles: true }));
+    });
+    if (mode === "click") {
+      const candidate = container.querySelector<HTMLButtonElement>('.text-candidate[aria-label="š"]')!;
+      expect(candidate).not.toBeNull();
+      await act(async () => {
+        candidate.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, cancelable: true }));
+        candidate.click();
+      });
+    } else {
+      await act(async () => editor.dispatchEvent(new KeyboardEvent("keydown", {key:"1",ctrlKey:true,bubbles:true})));
+    }
+    await waitFor(() => expect(editor.value).toBe("left š right"));
+    expect(document.activeElement).toBe(editor);
+    expect(editor.selectionStart).toBe(6);
+    expect(editor.selectionEnd).toBe(6);
+    expect(container.querySelector(".text-candidate")).toBeNull();
+    // The next typed character belongs at the replacement site, not the line end.
+    await act(async () => {
+      const at = editor.selectionStart;
+      Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")!.set!.call(editor,
+        editor.value.slice(0, at) + "!" + editor.value.slice(at));
+      editor.setSelectionRange(at + 1, at + 1);
+      editor.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    expect(editor.value).toBe("left š! right");
+  });
+
   it("keeps action labels below shortcut keys while Ctrl is pressed", async () => {
     await openSavedProject();
     const firstRect = container.querySelector<SVGRectElement>("svg rect")!;
