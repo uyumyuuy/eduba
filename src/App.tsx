@@ -50,6 +50,7 @@ import {
   parseHocr,
   processCanvas,
   updateLineText,
+  replaceLineSelection,
   splitLineAtCaret,
   updateLineFormatting,
   applyScriptDetection,
@@ -288,8 +289,8 @@ function PageThumbnail({ cache, page }: { cache: LogicalPageThumbnailCache | nul
 
   return <span ref={frameRef} className="thumb" aria-hidden="true"><canvas ref={canvasRef} /></span>;
 }
-type LineOverlayProps = { portalTarget:HTMLElement|null; value:string; formatting:TextFormatRange[]; left:number; top:number; width:number; height:number; fontSize:number; onChange:(value:string)=>void; onCaretChange:(offset:number)=>void; onFinish:()=>void; onUndo:()=>void; onRedo:()=>void; onFormat:(start:number,end:number,kind:TextFormatKind)=>void; onOpenBulk:(selection:string,start:number,end:number)=>void; onSplit:(caret:number)=>void; textMagnifierEnabled:boolean; };
-function LineOverlay({portalTarget,value,formatting,left,top,width,height,fontSize:naturalFontSize,onChange,onCaretChange,onFinish,onUndo,onRedo,onFormat,onOpenBulk,onSplit,textMagnifierEnabled}:LineOverlayProps) {
+type LineOverlayProps = { portalTarget:HTMLElement|null; value:string; formatting:TextFormatRange[]; left:number; top:number; width:number; height:number; fontSize:number; onChange:(value:string)=>void; onReplaceCandidate:(start:number,end:number,text:string)=>void; onCaretChange:(offset:number)=>void; onFinish:()=>void; onUndo:()=>void; onRedo:()=>void; onFormat:(start:number,end:number,kind:TextFormatKind)=>void; onOpenBulk:(selection:string,start:number,end:number)=>void; onSplit:(caret:number)=>void; textMagnifierEnabled:boolean; };
+function LineOverlay({portalTarget,value,formatting,left,top,width,height,fontSize:naturalFontSize,onChange,onReplaceCandidate,onCaretChange,onFinish,onUndo,onRedo,onFormat,onOpenBulk,onSplit,textMagnifierEnabled}:LineOverlayProps) {
  const { t } = useTranslation(); const inputRef=useRef<HTMLTextAreaElement>(null); const mirrorRef=useRef<HTMLDivElement>(null); const toolbarRef=useRef<HTMLDivElement>(null); const magnifierRef=useRef<HTMLDivElement>(null); const [magnifierPosition,setMagnifierPosition]=useState<{left:number;top:number}|null>(null); const [magnifierFontSize,setMagnifierFontSize]=useState(naturalFontSize*2); const [selection,setSelection]=useState({start:0,end:0,caret:0}); const [ctrl,setCtrl]=useState(false); const pendingCaret=useRef<number|null>(null);
  const selected=value.slice(selection.start,selection.end); const candidates=selected?candidatesForSelection(selected):[];
  // Keep the normal text baseline fixed while giving raised glyphs room above it.
@@ -318,7 +319,7 @@ const viewportTop=rect.top-stageRect.top>=70?rect.top-68:rect.bottom+8;setMagnif
  const replace=(text:string)=>{
   const caret=selection.start+text.length;
   pendingCaret.current=caret;
-  onChange(value.slice(0,selection.start)+text+value.slice(selection.end));
+  onReplaceCandidate(selection.start,selection.end,text);
   setSelection({start:caret,end:caret,caret});
   onCaretChange(caret);
  };
@@ -2666,6 +2667,7 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
                             value={line.correctedText}
                             formatting={effectiveFormatting(line)}
                             onChange={(value) => editLine(line.id, value)}
+                            onReplaceCandidate={(start, end, text) => commitLineEdit(line.id, before => replaceLineSelection(before, line.id, start, end, text))}
                             onCaretChange={(offset) => setEditCaret({ lineId: line.id, offset })}
                             onFinish={() => finishLineEdit(line.id)}
                             onUndo={() => void undo()}

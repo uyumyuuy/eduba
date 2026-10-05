@@ -1270,6 +1270,22 @@ describe("saved project loading", () => {
     expect(container.querySelectorAll<HTMLButtonElement>(".page-item")[0].className).toContain("active");
   });
 
+  it.each(["bold", "italic", "superscript", "subscript"] as const)("retains %s when choosing a replacement candidate", async kind => {
+    const page = JSON.parse(savedPage("page-1", "left sz right", 1));
+    page.blocks[0].paragraphs[0].lines[0].formatting = [{start:5,end:7,kind}];
+    persistedPages.set("page-1", JSON.stringify(page));
+    await openSavedProject("left sz right");
+    await act(async () => container.querySelector<SVGRectElement>("svg rect")!.dispatchEvent(new MouseEvent("click", { bubbles:true })));
+    const editor = container.querySelector<HTMLTextAreaElement>("textarea.line-overlay")!;
+    await act(async () => { editor.setSelectionRange(5,7); editor.dispatchEvent(new Event("select", {bubbles:true})); });
+    await act(async () => container.querySelector<HTMLButtonElement>('.text-candidate[aria-label="š"]')!.click());
+    expect(editor.value).toBe("left š right");
+    expect(editor.selectionStart).toBe(6);
+    await act(async () => editor.dispatchEvent(new KeyboardEvent("keydown", {key:"Enter",bubbles:true})));
+    await act(async () => { await waitFor(() => expect(JSON.parse(persistedPages.get("page-1")!).blocks[0].paragraphs[0].lines[0].correctedText).toBe("left š right")); });
+    expect(JSON.parse(persistedPages.get("page-1")!).blocks[0].paragraphs[0].lines[0].formatting).toEqual([{start:5,end:6,kind}]);
+  });
+
   it.each(["click", "shortcut"])("restores the editing caret after a candidate replacement via %s", async mode => {
     persistedPages.set("page-1", savedPage("page-1", "left sz right", 1));
     await openSavedProject("left sz right");

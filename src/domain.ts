@@ -702,6 +702,40 @@ export function updateLineText(
   return copy;
 }
 
+/** Replace a selected candidate and inherit each decoration by non-whitespace grapheme majority.
+ * Ties stay undecorated. Formatting outside the exact selection is preserved.
+ */
+export function replaceLineSelection(page: DocumentPage, lineId: string, start: number, end: number, replacement: string): DocumentPage {
+  const before = allLines(page).find(line => line.id === lineId);
+  if (!before) throw new Error(t("errors.unknownLine", { id: lineId }));
+  if (!Number.isInteger(start) || !Number.isInteger(end) || start < 0 || end > before.correctedText.length || start >= end)
+    return page;
+  const rendered = effectiveFormatting(before);
+  const graphemes = [...new Intl.Segmenter(undefined, { granularity: "grapheme" }).segment(before.correctedText.slice(start, end))]
+    .filter(item => !/^\s+$/u.test(item.segment));
+  const kinds = (["bold", "italic", "superscript", "subscript"] as const).filter(kind => {
+    const decorated = graphemes.filter(item => rendered.some(range => range.kind === kind &&
+      range.start < start + item.index + item.segment.length && range.end > start + item.index)).length;
+    return decorated > graphemes.length / 2;
+  });
+  const delta = replacement.length - (end - start);
+  const ranges = rendered.flatMap(range => {
+    if (range.end <= start) return [range];
+    if (range.start >= end) return [{ ...range, start: range.start + delta, end: range.end + delta }];
+    return [
+      ...(range.start < start ? [{ ...range, end: start }] : []),
+      ...(range.end > end ? [{ ...range, start: start + replacement.length, end: range.end + delta }] : []),
+    ];
+  });
+  for (const match of replacement.matchAll(/\S+/gu)) {
+    for (const kind of kinds) ranges.push({start: start + match.index!, end: start + match.index! + match[0].length, kind});
+  }
+  const next = updateLineText(page, lineId, before.correctedText.slice(0, start) + replacement + before.correctedText.slice(end));
+  const line = allLines(next).find(line => line.id === lineId)!;
+  line.formatting = ranges.length ? ranges : undefined;
+  return next;
+}
+
 export function escapeXml(value: string): string {
   return value.replace(
     /[&<>"']/g,
