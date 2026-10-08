@@ -1321,6 +1321,25 @@ describe("saved project loading", () => {
     expect(editor.value).toBe("left š! right");
   });
 
+  it("starts editing at the clicked glyph boundary and preserves later caret movement", async () => {
+    persistedPages.set("page-1", savedPage("page-1", "Wii", 1));
+    await openSavedProject("Wii");
+    const hit = container.querySelector<SVGRectElement>(".layout-svg rect")!;
+    const text = hit.parentElement!.querySelector("text")!;
+    Object.assign(text, {
+      getScreenCTM:()=>({a:2,c:0,e:100}), getNumberOfChars:()=>3,
+      getStartPositionOfChar:(index:number)=>({x:[0,30,35][index],y:0}),
+      getEndPositionOfChar:(index:number)=>({x:[30,35,40][index],y:0}),
+    });
+    await act(async () => hit.dispatchEvent(new MouseEvent("click", {bubbles:true,clientX:158})));
+    const editor = container.querySelector<HTMLTextAreaElement>("textarea.line-overlay")!;
+    expect(document.activeElement).toBe(editor);
+    expect(editor.selectionStart).toBe(1);
+    expect(editor.selectionEnd).toBe(1);
+    await act(async () => { editor.setSelectionRange(2,2); editor.dispatchEvent(new Event("select",{bubbles:true})); });
+    expect(editor.selectionStart).toBe(2);
+  });
+
   it("keeps action labels below shortcut keys while Ctrl is pressed", async () => {
     await openSavedProject();
     const firstRect = container.querySelector<SVGRectElement>("svg rect")!;

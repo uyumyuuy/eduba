@@ -1,3 +1,4 @@
+import { clickedLineCaret } from "./clickCaret";
 import { inverse, multiply, type HocrPageGeometry, type HocrSource } from "./coordinates";
 import { LicenseModal } from "./LicenseModal";
 import { prepareFigureOcr } from "./automaticFigures";
@@ -289,9 +290,9 @@ function PageThumbnail({ cache, page }: { cache: LogicalPageThumbnailCache | nul
 
   return <span ref={frameRef} className="thumb" aria-hidden="true"><canvas ref={canvasRef} /></span>;
 }
-type LineOverlayProps = { portalTarget:HTMLElement|null; value:string; formatting:TextFormatRange[]; left:number; top:number; width:number; height:number; fontSize:number; onChange:(value:string)=>void; onReplaceCandidate:(start:number,end:number,text:string)=>void; onCaretChange:(offset:number)=>void; onFinish:()=>void; onUndo:()=>void; onRedo:()=>void; onFormat:(start:number,end:number,kind:TextFormatKind)=>void; onOpenBulk:(selection:string,start:number,end:number)=>void; onSplit:(caret:number)=>void; textMagnifierEnabled:boolean; };
-function LineOverlay({portalTarget,value,formatting,left,top,width,height,fontSize:naturalFontSize,onChange,onReplaceCandidate,onCaretChange,onFinish,onUndo,onRedo,onFormat,onOpenBulk,onSplit,textMagnifierEnabled}:LineOverlayProps) {
- const { t } = useTranslation(); const inputRef=useRef<HTMLTextAreaElement>(null); const mirrorRef=useRef<HTMLDivElement>(null); const toolbarRef=useRef<HTMLDivElement>(null); const magnifierRef=useRef<HTMLDivElement>(null); const [magnifierPosition,setMagnifierPosition]=useState<{left:number;top:number}|null>(null); const [magnifierFontSize,setMagnifierFontSize]=useState(naturalFontSize*2); const [selection,setSelection]=useState({start:0,end:0,caret:0}); const [ctrl,setCtrl]=useState(false); const pendingCaret=useRef<number|null>(null);
+type LineOverlayProps = { initialCaret:number; portalTarget:HTMLElement|null; value:string; formatting:TextFormatRange[]; left:number; top:number; width:number; height:number; fontSize:number; onChange:(value:string)=>void; onReplaceCandidate:(start:number,end:number,text:string)=>void; onCaretChange:(offset:number)=>void; onFinish:()=>void; onUndo:()=>void; onRedo:()=>void; onFormat:(start:number,end:number,kind:TextFormatKind)=>void; onOpenBulk:(selection:string,start:number,end:number)=>void; onSplit:(caret:number)=>void; textMagnifierEnabled:boolean; };
+function LineOverlay({initialCaret,portalTarget,value,formatting,left,top,width,height,fontSize:naturalFontSize,onChange,onReplaceCandidate,onCaretChange,onFinish,onUndo,onRedo,onFormat,onOpenBulk,onSplit,textMagnifierEnabled}:LineOverlayProps) {
+ const { t } = useTranslation(); const inputRef=useRef<HTMLTextAreaElement>(null); const mirrorRef=useRef<HTMLDivElement>(null); const toolbarRef=useRef<HTMLDivElement>(null); const magnifierRef=useRef<HTMLDivElement>(null); const [magnifierPosition,setMagnifierPosition]=useState<{left:number;top:number}|null>(null); const [magnifierFontSize,setMagnifierFontSize]=useState(naturalFontSize*2); const [selection,setSelection]=useState({start:initialCaret,end:initialCaret,caret:initialCaret}); const [ctrl,setCtrl]=useState(false); const pendingCaret=useRef<number|null>(initialCaret);
  const selected=value.slice(selection.start,selection.end); const candidates=selected?candidatesForSelection(selected):[];
  // Keep the normal text baseline fixed while giving raised glyphs room above it.
  const extraTop=Math.min(top,Math.max(4,naturalFontSize*.45));
@@ -924,7 +925,7 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
     if (hadSessionHistory) scheduleSave();
   }, [scheduleSave, setUndoStack, setRedoStack]);
   finishLineEditRef.current = finishLineEdit;
-  const beginLineEdit = useCallback(async (lineId: string) => {
+  const beginLineEdit = useCallback(async (lineId: string, initialCaret = 0) => {
     finishLineEditRef.current();
     const pageId = manifestRef.current.pages[indexRef.current]?.id;
     if (!pageId) return;
@@ -933,6 +934,7 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
     if (!await clearCompletion([pageId])) return;
     lineEditSession.current = { id: ++nextLineEditSession.current, pageId, lineId, beforeData: JSON.stringify(before) };
     setSelected(lineId);
+    setEditCaret({ lineId, offset: initialCaret });
     setEditing(lineId);
   }, [clearCompletion]);
   const commitLineEdit = useCallback((lineId: string, update: (before: DocumentPage) => DocumentPage) => {
@@ -2606,7 +2608,12 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
                               1,
                               line.bbox.bottom - line.bbox.top,
                             )}
-                            onClick={() => { if (!regionMode) void beginLineEdit(line.id); }}
+                            onClick={event => {
+                              if (regionMode) return;
+                              const hit = event.currentTarget;
+                              const text = hit.parentElement?.querySelector<SVGTextElement>("text") ?? null;
+                              void beginLineEdit(line.id, clickedLineCaret(text, line.correctedText, event.clientX, hit.getBoundingClientRect()));
+                            }}
                           />
                           <text
                             x={line.bbox.left}
@@ -2663,6 +2670,7 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
                         return line ? (
                           <LineOverlay
                             key={line.id}
+                            initialCaret={editCaret?.lineId === line.id ? editCaret.offset : 0}
                             portalTarget={ocrStageRef.current}
                             value={line.correctedText}
                             formatting={effectiveFormatting(line)}
