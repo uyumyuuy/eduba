@@ -1405,6 +1405,15 @@ describe("saved project loading", () => {
     expect(raised.style.fontSize).toBe("0.7em");
     expect(raised.style.top).toBe("0.1em");
     expect(raised.style.bottom).toBe("auto");
+    expect(mirror.querySelector(".formatted-edit-caret")).toBeNull();
+    await act(async () => {
+      editor.setSelectionRange(3, 3);
+      editor.dispatchEvent(new Event("select", { bubbles: true }));
+    });
+    const visualCaret = mirror.querySelector(".formatted-edit-caret")!;
+    expect(visualCaret.parentElement).toBe(raised);
+    expect(visualCaret.previousSibling?.textContent).toBe("sav");
+    expect(visualCaret.nextSibling?.textContent).toBe("ed");
   });
 
   it("replaces selected matches across pages and navigates on undo and redo", async () => {
