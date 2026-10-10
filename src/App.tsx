@@ -887,8 +887,10 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
     },
     [flush, importSource, openInfo],
   );
+  const openingProject = useRef(false);
   const openProject = useCallback(async () => {
-    if (working.current || importActive.current) return;
+    if (working.current || importActive.current || openingProject.current) return;
+    openingProject.current = true;
     restorationGeneration.current += 1;
     try {
       await flush();
@@ -902,6 +904,8 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
         );
     } catch (e) {
       setNotice("notices.projectOpenFailed", { error: errorText(e) });
+    } finally {
+      openingProject.current = false;
     }
   }, [flush, openInfo]);
   const finishLineEdit = useCallback((lineId?: string) => {
@@ -1690,21 +1694,26 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
   useEffect(() => {
     if (!isTauri) return;
     let off: (() => void) | undefined;
+    let disposed = false;
     listen<string>("app-menu", (event) => {
-      if (working.current || importActive.current) return;
+      if (disposed || working.current || importActive.current) return;
       if (event.payload === "import") importPdf();
       if (event.payload === "open") openProject();
       if (event.payload === "export") exportFile("txt");
       if (event.payload === "settings") setSettingsOpen(true);
-    }).then((value) => (off = value));
-    return () => off?.();
+    }).then((value) => {
+      if (disposed) value();
+      else off = value;
+    });
+    return () => { disposed = true; off?.(); };
   }, [exportFile, importPdf, openProject]);
   useEffect(() => {
     if (!isTauri) return;
     let unlisten: (() => void) | undefined;
+    let disposed = false;
     getCurrentWindow()
       .onCloseRequested(async (event) => {
-        if (closing.current) return;
+        if (disposed || closing.current) return;
         event.preventDefault();
         if (
           working.current ||
@@ -1726,9 +1735,10 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
         }
       })
       .then((value) => {
-        unlisten = value;
+        if (disposed) value();
+        else unlisten = value;
       });
-    return () => unlisten?.();
+    return () => { disposed = true; unlisten?.(); };
   }, [flush]);
   useEffect(
     () => () => {

@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { act } from "react";
+import { act, StrictMode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import App, { synchronizePageScroll } from "./App";
@@ -14,6 +14,7 @@ const mocks = vi.hoisted(() => ({
   loadPageImage: vi.fn(),
   closeRequested: vi.fn(),
   destroy: vi.fn(),
+  listen: vi.fn(),
 }));
 
 vi.mock("@tauri-apps/plugin-dialog", () => ({
@@ -22,7 +23,7 @@ vi.mock("@tauri-apps/plugin-dialog", () => ({
 }));
 
 vi.mock("@tauri-apps/api/event", () => ({
-  listen: vi.fn(async () => () => undefined),
+  listen: mocks.listen,
 }));
 
 vi.mock("@tauri-apps/api/window", () => ({
@@ -162,6 +163,7 @@ describe("saved project loading", () => {
     mocks.dialogOpen.mockResolvedValue("D:/projects/reading.eduba");
     mocks.dialogSave.mockResolvedValue("D:/exports/reading.readable.html");
     mocks.closeRequested.mockResolvedValue(() => undefined);
+    mocks.listen.mockResolvedValue(() => undefined);
     mocks.openProjectPdf.mockResolvedValue({
       numPages: 2, fingerprints: ["test-pdf"],
       getPage: vi.fn(async () => ({
@@ -243,6 +245,32 @@ describe("saved project loading", () => {
     await act(async () => openButton?.click());
     await waitFor(() => expect(container.textContent).toContain(expectedText));
   }
+
+  it("cleans up delayed menu subscriptions and opens only one dialog until it closes", async () => {
+    const subscriptions: Array<{ callback: (event: { payload: string }) => void; resolve: (off: () => void) => void; off: ReturnType<typeof vi.fn> }> = [];
+    mocks.listen.mockImplementation((_name: string, callback: (event: { payload: string }) => void) =>
+      new Promise<() => void>(resolve => subscriptions.push({ callback, resolve, off: vi.fn() })),
+    );
+    let closeDialog!: (value: null) => void;
+    mocks.dialogOpen.mockImplementation(() => new Promise<null>(resolve => { closeDialog = resolve; }));
+    await act(async () => root.render(<StrictMode><App /></StrictMode>));
+    expect(subscriptions.length).toBeGreaterThanOrEqual(2);
+    await act(async () => subscriptions.forEach(subscription => subscription.resolve(subscription.off)));
+    expect(subscriptions.filter(subscription => !subscription.off.mock.calls.length)).toHaveLength(1);
+    await act(async () => {
+      for (const subscription of subscriptions) {
+        subscription.callback({ payload: "open" });
+        subscription.callback({ payload: "open" });
+      }
+    });
+    expect(mocks.dialogOpen).toHaveBeenCalledTimes(1);
+    await act(async () => closeDialog(null));
+    await act(async () => subscriptions.forEach(subscription => subscription.callback({ payload: "open" })));
+    expect(mocks.dialogOpen).toHaveBeenCalledTimes(2);
+    await act(async () => closeDialog(null));
+    await act(async () => root.unmount());
+    expect(subscriptions.every(subscription => subscription.off.mock.calls.length === 1)).toBe(true);
+  });
 
   it("reopens the last project on its saved logical page", async () => {
     const base = mocks.invoke.getMockImplementation()!;
