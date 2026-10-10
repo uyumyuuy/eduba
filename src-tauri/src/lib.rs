@@ -15,6 +15,7 @@ use tauri::{menu::MenuBuilder, AppHandle, Emitter, Manager, State};
 use thiserror::Error;
 mod preferences;
 mod figure_detector;
+mod text_alignment;
 mod edit_history;
 use edit_history::{load_edit_history, save_project_state};
 #[path = "style_classifier_runtime/lib.rs"]
@@ -796,22 +797,33 @@ fn correction_match_bbox(line: &serde_json::Value, text: &str, byte_start: usize
             && rect.3 > line_bounds.1 && rect.1 < line_bounds.3
     };
     let mut bounds: Option<(f64, f64, f64, f64)> = None;
-    if let Some(chars) = line.get("chars").and_then(serde_json::Value::as_array).filter(|chars| chars.len() == count) {
-        let mut boxes: Vec<_> = chars.iter()
-            .map(|character| character.get("bbox").and_then(rect_components).filter(&valid_rect))
-            .collect();
+    {
+        let mut boxes = vec![None; count];
+        let corrected_chars: Vec<_> = text.chars().collect();
+        if let Some(chars) = line.get("chars").and_then(serde_json::Value::as_array).filter(|chars| chars.len() == count) {
+            for (index, character) in chars.iter().enumerate() {
+                if character.get("correctedText").or_else(|| character.get("originalText"))
+                    .and_then(serde_json::Value::as_str).map_or(true, |value| value == corrected_chars[index].to_string()) {
+                    boxes[index] = character.get("bbox").and_then(rect_components).filter(&valid_rect);
+                }
+            }
+        }
         // Older edits can replace all line characters with inserted entries,
         // while the original word characters still retain their coordinates.
-        // Recover anchors only in the unchanged prefix/suffix of the text.
-        if let (Some(original), Some(words)) = (
-            line.get("originalText").and_then(serde_json::Value::as_str),
-            line.get("words").and_then(serde_json::Value::as_array),
-        ) {
+        // Recover unambiguous unchanged runs throughout the edited text.
+        if let Some(original) = line.get("originalText").and_then(serde_json::Value::as_str) {
             let original_chars: Vec<_> = original.chars().collect();
-            let corrected_chars: Vec<_> = text.chars().collect();
             let mut original_boxes = vec![None; original_chars.len()];
+            if let Some(chars) = line.get("chars").and_then(serde_json::Value::as_array).filter(|chars| chars.len() == original_chars.len()) {
+                for (index, character) in chars.iter().enumerate() {
+                    if character.get("originalText").and_then(serde_json::Value::as_str)
+                        == Some(original_chars[index].to_string().as_str()) {
+                        original_boxes[index] = character.get("bbox").and_then(rect_components).filter(&valid_rect);
+                    }
+                }
+            }
             let mut cursor = 0;
-            for word in words {
+            for word in line.get("words").and_then(serde_json::Value::as_array).into_iter().flatten() {
                 let Some(word_text) = word.get("originalText").and_then(serde_json::Value::as_str).filter(|text| !text.is_empty()) else { continue; };
                 let Some(offset) = original[cursor..].find(word_text) else { continue; };
                 let byte_start = cursor + offset;
@@ -823,18 +835,15 @@ fn correction_match_bbox(line: &serde_json::Value, text: &str, byte_start: usize
                     // original text position, even when the lengths match.
                     if character.get("originalText").and_then(serde_json::Value::as_str)
                         != original_chars.get(char_start + index).map(|value| value.to_string()).as_deref() { continue; }
-                    original_boxes[char_start + index] = character.get("bbox").and_then(rect_components).filter(&valid_rect);
+                    if let Some(rect) = character.get("bbox").and_then(rect_components).filter(&valid_rect) {
+                        original_boxes[char_start + index] = Some(rect);
+                    }
                 }
             }
-            let prefix = original_chars.iter().zip(&corrected_chars).take_while(|(before, after)| before == after).count();
-            let suffix = original_chars[prefix..].iter().rev().zip(corrected_chars[prefix..].iter().rev())
-                .take_while(|(before, after)| before == after).count();
-            for index in 0..prefix {
-                if boxes[index].is_none() { boxes[index] = original_boxes[index]; }
-            }
-            for offset in 0..suffix {
-                let index = count - 1 - offset;
-                if boxes[index].is_none() { boxes[index] = original_boxes[original_chars.len() - 1 - offset]; }
+            for (index, original_index) in text_alignment::unchanged_positions(&original_chars, &corrected_chars).into_iter().enumerate() {
+                if boxes[index].is_none() {
+                    boxes[index] = original_index.and_then(|original_index| original_boxes[original_index]);
+                }
             }
         }
         let horizontal = line_bounds.2 - line_bounds.0 >= line_bounds.3 - line_bounds.1;
@@ -1923,6 +1932,52 @@ mod tests {
         assert_eq!(edited["left"], 232.0);
         assert_eq!(edited["right"], 270.0);
     }
+    #[test]
+    fn correction_match_bbox_recovers_internal_anchors_after_multiple_edits() {
+        let original = "aAšṭBxCz";
+        let text = "QAšṭByyCW";
+        let original_chars: Vec<_> = original.chars().enumerate().map(|(index, character)| serde_json::json!({
+            "originalText": character.to_string(),
+            "bbox": {"left": index * 10, "top": 2, "right": index * 10 + 8, "bottom": 18}
+        })).collect();
+        // Legacy edits may discard line coordinates, or retain an original array
+        // whose length no longer agrees with the corrected text.
+        for chars in [serde_json::json!(vec![serde_json::json!({}); text.chars().count()]), serde_json::Value::Null] {
+            let line = serde_json::json!({
+                "bbox": {"left": 0, "top": 0, "right": 200, "bottom": 20},
+                "originalText": original, "chars": chars,
+                "words": [{"originalText": original, "chars": original_chars}]
+            });
+            let exact = correction_match_bbox(&line, text, "QA".len(), "QAšṭ".len()).unwrap();
+            assert_eq!(exact, serde_json::json!({"left": 20.0, "top": 2.0, "right": 38.0, "bottom": 18.0}));
+            let inferred = correction_match_bbox(&line, text, "QAšṭB".len(), "QAšṭByy".len()).unwrap();
+            assert_eq!(inferred, serde_json::json!({"left": 48.0, "top": 0.0, "right": 60.0, "bottom": 20.0}));
+        }
+        let line = serde_json::json!({
+            "bbox": {"left": 0, "top": 0, "right": 200, "bottom": 20},
+            "originalText": original, "chars": original_chars
+        });
+        let bbox = correction_match_bbox(&line, text, "QA".len(), "QAšṭ".len()).unwrap();
+        assert_eq!(bbox["left"], 20.0);
+        assert_eq!(bbox["right"], 38.0);
+    }
+
+    #[test]
+    fn correction_match_bbox_does_not_choose_an_ambiguous_repeated_word() {
+        let original = "AB AB";
+        let chars: Vec<_> = original.chars().enumerate().map(|(index, character)| serde_json::json!({
+            "originalText": character.to_string(),
+            "bbox": {"left": index * 10, "top": 2, "right": index * 10 + 8, "bottom": 18}
+        })).collect();
+        let line = serde_json::json!({
+            "bbox": {"left": 0, "top": 0, "right": 200, "bottom": 20},
+            "originalText": original, "chars": [{}, {}],
+            "words": [{"originalText": original, "chars": chars}]
+        });
+        assert_eq!(correction_match_bbox(&line, "AB", 0, 2).unwrap(),
+            serde_json::json!({"left": 0.0, "top": 0.0, "right": 200.0, "bottom": 20.0}));
+    }
+
     #[test]
     fn bulk_search_uses_manifest_order_and_corrected_text() {
         let (_dir, pdf, project) = fixture();
