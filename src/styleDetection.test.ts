@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import type { DocumentPage, OcrLine } from "./domain";
-import { inferWordStyles, wordStyleSamples } from "./styleDetection";
+import { applyWordStylePredictions, inferWordStyles, wordStyleSamples } from "./styleDetection";
 
 function makeLine(id: string, text: string, x: number, autoFormatting?: OcrLine["autoFormatting"]): OcrLine {
   const chars = Array.from(text).map((character, index) => ({
@@ -52,8 +52,22 @@ describe("word style inference", () => {
     const result = await inferWordStyles(page, "png", 100, 30, classify);
     expect(classify.mock.calls[0][1].map(sample => sample.text)).toEqual(["A", "B", "CD"]);
     expect(result.blocks[0].paragraphs[0].lines[0].autoFormatting).toContainEqual({ start: 1, end: 2, kind: "superscript" });
-    expect(result.blocks[0].paragraphs[0].lines[0].autoFormatting).toContainEqual({ start: 2, end: 3, kind: "bold" });
+    expect(result.blocks[0].paragraphs[0].lines[0].autoFormatting).toEqual([{ start: 1, end: 2, kind: "superscript" }]);
     expect(result.blocks[0].paragraphs[0].lines[1].autoFormatting).toBeUndefined();
     expect(result.blocks[0].paragraphs[0].lines[2].autoFormatting).toContainEqual({ start: 0, end: 2, kind: "italic" });
+  });
+
+  it("ignores confident bold predictions while retaining italic, scripts and manual bold", () => {
+    const automatic = makeLine("automatic", "AB", 5, [{ start: 0, end: 1, kind: "bold" }]);
+    const manual = makeLine("manual", "CD", 35);
+    manual.formatting = [{ start: 0, end: 2, kind: "bold" }];
+    const page = pageWithLines([automatic, manual]);
+    const prediction = { italic: true, italic_probability: 1, bold: true, bold_probability: 1 };
+    const result = applyWordStylePredictions(page, new Map([["automatic", [prediction]], ["manual", [prediction]]]));
+    const lines = result.blocks[0].paragraphs[0].lines;
+    expect(lines[0].autoFormatting).toEqual([{ start: 0, end: 2, kind: "italic" }]);
+    expect(lines[1].formatting).toEqual(manual.formatting);
+    expect(lines[1].autoFormatting).toBeUndefined();
+    expect(automatic.autoFormatting).toEqual([{ start: 0, end: 1, kind: "bold" }]);
   });
 });

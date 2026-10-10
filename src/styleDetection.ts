@@ -51,7 +51,7 @@ export function applyWordStylePredictions(page: DocumentPage, predictionsByLine:
       const prediction = predictions[index];
       if (!prediction) return;
       if (prediction.italic) ranges.push({ start: entry.start, end: entry.end, kind: "italic" });
-      if (prediction.bold) ranges.push({ start: entry.start, end: entry.end, kind: "bold" });
+      // Bold classification is temporarily ignored because its accuracy is insufficient.
     });
     const scripts = (line.autoFormatting ?? []).filter(range => range.kind === "superscript" || range.kind === "subscript");
     line.autoFormatting = [...scripts, ...ranges].length ? [...scripts, ...ranges] : undefined;
