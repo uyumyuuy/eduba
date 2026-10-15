@@ -16,6 +16,8 @@ HTML出力では読み順に沿って図表を配置し、SVGでは元の座標�
 
 ## 開発
 
+ブラウザ版は静的配信に対応します。ローカルPDFの読み込み、Tesseract.jsでのOCR、校正、`.eduba`の保存・再オープンをブラウザ内で処理します。ビルド手順と保存方式は [ブラウザ版](docs/browser-version.md) を参照してください。
+
 ```powershell
 npm install
 ./scripts/setup-runtime.ps1 -TesseractRoot 'C:\Program Files\Tesseract-OCR' -ModelPath 'C:\path\to\traineddata'

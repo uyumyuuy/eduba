@@ -12,10 +12,7 @@ import { createPortal } from "react-dom";
 import { applyLanguage, t as globalT, type LocalePreference } from "./i18n";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import {
-  open as dialogOpen,
-  save as dialogSave,
-} from "@tauri-apps/plugin-dialog";
+import { dialogOpen, dialogSave, forgetFile, fileName } from "./browser/files";
 import JSZip from "jszip";
 import {
   ChevronLeft,
@@ -343,7 +340,7 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
   const changeLanguage = useCallback(async (preference: LocalePreference) => {
     setLanguageSaving(true);
     try {
-      if (isTauri) await invokeCommand("save_user_preferences", { language: preference });
+      await invokeCommand("save_user_preferences", { language: preference });
       const resolved = await applyLanguage(preference, osLocale.current);
       document.documentElement.lang = resolved;
       setLanguage(preference);
@@ -357,6 +354,8 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
     } finally { setLanguageSaving(false); }
   }, []);
   const [project, setProject] = useState<ProjectInfo | null>(null);
+  const [browserDirty, setBrowserDirty] = useState(false);
+  const [recoveryProjects, setRecoveryProjects] = useState<ProjectInfo[] | null>(null);
   const [manifest, setManifest] = useState<Manifest>(makeManifest);
   const [index, setIndex] = useState(0);
   const [pdf, setPdf] = useState<PDFDocumentProxy | null>(null);
@@ -521,7 +520,6 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
     setIndex(value);
   }, []);
   const saveLastOpenedProject = useCallback((info: ProjectInfo, pageId: string) => {
-    if (!isTauri) return;
     const write = lastProjectWrite.current
       .catch(() => undefined)
       .then(() => invokeCommand("save_last_opened_project", { projectPath: info.path, pageId }));
@@ -541,7 +539,7 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
     putManifest(next);
     const info = projectRef.current;
     try {
-      if (isTauri && info) await writeQueue.current.enqueue(() => invokeCommand("save_manifest", { projectPath: info.path, manifest: JSON.stringify(copy(next)) }));
+      if (info) await writeQueue.current.enqueue(() => invokeCommand("save_manifest", { projectPath: info.path, manifest: JSON.stringify(copy(next)) }));
       return true;
     } catch (error) {
       putManifest(previous);
@@ -575,7 +573,7 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
     const p = projectRef.current,
       entry = manifestRef.current.pages[indexRef.current],
       page = docRef.current;
-    if (!isTauri || !p || !entry) return;
+    if (!p || !entry) return;
     const projectPath = p.path,
       pageId = entry.id,
       data = page?.id === entry.id ? JSON.stringify(copy(page)) : null,
@@ -607,6 +605,10 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
     }
   }, [persistState, setUndoStack, setRedoStack]);
   const scheduleSave = useCallback(() => {
+    if (!isTauri && projectRef.current) {
+      const path = projectRef.current.path;
+      void import("./browser/backend").then(backend => backend.markBrowserProjectDirty(path));
+    }
     if (timer.current) clearTimeout(timer.current);
     timer.current = window.setTimeout(() => {
       timer.current = null;
@@ -614,7 +616,7 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
       setBusy("save");
       flush()
         .then(
-          () => setNotice("notices.saved"),
+          () => setNotice(isTauri ? "notices.saved" : "browser.workingSaved"),
           (e) => setNotice("notices.saveFailed", { error: errorText(e) }),
         )
         .finally(() => {
@@ -735,6 +737,12 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
       }
       if (!existing.settings.modelPath)
         existing.settings.modelPath = environmentModel.current;
+      if (!isTauri && !existing.settings.modelPath.startsWith("model:")) {
+        existing.settings.modelPath = "eng_assyriology_scan_candidate_20260920_v1.traineddata";
+      }
+      if (isTauri && (existing.settings.modelPath.startsWith("model:") || existing.settings.modelPath === "eng_assyriology_scan_candidate_20260920_v1.traineddata")) {
+        existing.settings.modelPath = environmentModel.current;
+      }
       try {
         const opened = await openProjectPdf(info.path, info.pdfSize);
         const historyStore = new HistoryPersistence<Settings, Entry>();
@@ -772,6 +780,11 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
           });
         }
         if (!quiet) setNotice("notices.opened", { name: info.name });
+        if (!isTauri) {
+          const backend = await import("./browser/backend");
+          await backend.activateBrowserProject(info.path);
+          setBrowserDirty(backend.isProjectDirty(info.path));
+        }
       } catch (e) {
         if (!quiet) setNotice("notices.pdfLoadFailed", { error: errorText(e) });
       } finally {
@@ -782,7 +795,7 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
     [pdf, putDoc, putIndex, putManifest, putProject, setUndoStack, setRedoStack],
   );
   useEffect(() => {
-    if (!isTauri || restorationStarted.current) return;
+    if (restorationStarted.current) return;
     restorationStarted.current = true;
     const generation = restorationGeneration.current;
     void invokeCommand("get_user_preferences")
@@ -811,8 +824,9 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
     const source = sourcePdfRef.current;
     sourcePdfRef.current = null;
     setImportSource(null);
+    if (!isTauri && importSource?.path) forgetFile(importSource.path);
     source?.destroy().catch(() => undefined);
-  }, []);
+  }, [importSource?.path]);
   const importPdf = useCallback(async () => {
     if (working.current || importActive.current) return;
     restorationGeneration.current += 1;
@@ -820,7 +834,7 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
     const session = ++importSession.current;
     let source: PDFDocumentProxy | null = null;
     try {
-      await flush();
+      if (isTauri) await flush();
       const pdfPath = await dialogOpen({
         multiple: false,
         filters: [{ name: "PDF", extensions: ["pdf"] }],
@@ -829,6 +843,7 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
         importActive.current = false;
         return;
       }
+      if (!isTauri) await flush();
       const { pdfSize } = await invokeCommand("inspect_pdf", { pdfPath });
       source = await openSourcePdf(pdfPath, pdfSize);
       if (session !== importSession.current) {
@@ -873,6 +888,7 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
           manifest: JSON.stringify(next),
           overwriteExisting: true,
         });
+        if (!isTauri) forgetFile(importSource.path);
         sourcePdfRef.current = null;
         setImportSource(null);
         importActive.current = false;
@@ -893,15 +909,17 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
     openingProject.current = true;
     restorationGeneration.current += 1;
     try {
-      await flush();
+      if (isTauri) await flush();
       const path = await dialogOpen({
         multiple: false,
         filters: [{ name: "Eduba", extensions: ["eduba"] }],
       });
-      if (typeof path === "string")
+      if (typeof path === "string") {
+        if (!isTauri) await flush();
         await openInfo(
           await invokeCommand("open_project", { projectPath: path }),
         );
+      }
     } catch (e) {
       setNotice("notices.projectOpenFailed", { error: errorText(e) });
     } finally {
@@ -1050,18 +1068,26 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
     } catch (error) { setNotice("notices.saveFailed", { error: errorText(error) }); }
     finally { historyApplying.current = false; setBusy(null); }
   }, [applyHistory, clearCompletion, redoStack, setNotice]);
-  const save = useCallback(async () => {
+  const save = useCallback(async (saveAs = false) => {
     if (!projectRef.current || busy || working.current || importActive.current || historyApplying.current) return;
     setBusy("save");
     try {
+      const browser = !isTauri ? await import("./browser/backend") : null;
+      const target = browser ? await browser.prepareProjectSave(projectRef.current!, saveAs) : null;
+      if (browser && !target) return;
       await flush();
+      await writeQueue.current.idle();
+      if (browser && target) {
+        await browser.saveBrowserProject(projectRef.current!, target);
+        putProject({ ...projectRef.current!, name: target.name });
+      }
       setNotice("notices.saved");
     } catch (error) {
       setNotice("notices.saveFailed", { error: errorText(error) });
     } finally {
       setBusy(null);
     }
-  }, [busy, flush, setNotice]);
+  }, [busy, flush, setNotice, putProject]);
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.defaultPrevented || !event.ctrlKey || event.altKey || event.metaKey || event.isComposing || event.keyCode === 229) return;
@@ -1073,7 +1099,7 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
       event.preventDefault();
       if (event.repeat || busy || document.querySelector(".modal")) return;
       if (key === "s") {
-        if (!event.shiftKey) void save();
+        if (!event.shiftKey || !isTauri) void save(event.shiftKey);
       } else if (key === "y" || event.shiftKey) {
         void redo();
       } else {
@@ -1740,6 +1766,23 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
       });
     return () => { disposed = true; unlisten?.(); };
   }, [flush]);
+  useEffect(() => {
+    if (isTauri) return;
+    let disposed = false;
+    const update = () => {
+      void import("./browser/backend").then(backend => {
+        if (!disposed) setBrowserDirty(backend.isProjectDirty(projectRef.current?.path));
+      });
+    };
+    const beforeUnload = (event: BeforeUnloadEvent) => {
+      if (!projectRef.current || (!browserDirty && !timer.current)) return;
+      event.preventDefault(); event.returnValue = "";
+    };
+    window.addEventListener("eduba-browser-save-state", update);
+    window.addEventListener("beforeunload", beforeUnload);
+    update();
+    return () => { disposed = true; window.removeEventListener("eduba-browser-save-state", update); window.removeEventListener("beforeunload", beforeUnload); };
+  }, [browserDirty]);
   useEffect(
     () => () => {
       if (timer.current) clearTimeout(timer.current);
@@ -1753,7 +1796,6 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
     [flush],
   );
   useEffect(() => {
-    if (!isTauri) return;
     invokeCommand("get_environment")
       .then((env) => {
         environmentModel.current = env.modelPath;
@@ -2255,6 +2297,7 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
               ? t("ui.logicalPageCount", { count: manifest.pages.length })
               : t("ui.projectFile")}
           </span>
+          {!isTauri && <span className="muted">{t(project ? (browserDirty ? "browser.unsavedFile" : "browser.savedFile") : "browser.localOnly")}</span>}
         </div>
         <button
           className="icon-btn"
@@ -2274,6 +2317,11 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
         <button onClick={openProject} disabled={Boolean(busy)}>
           <FolderOpen size={15} /> {t("ui.open")}
         </button>
+        {!isTauri && <>
+          <button onClick={() => void save()} disabled={!project || Boolean(busy)} title="Ctrl+S">{t("browser.save")}</button>
+          <button onClick={() => void save(true)} disabled={!project || Boolean(busy)} title="Ctrl+Shift+S">{t("browser.saveAs")}</button>
+          <button disabled={Boolean(busy)} onClick={() => { void import("./browser/backend").then(backend => backend.workingProjects()).then(setRecoveryProjects).catch(error => setNotice("notices.projectOpenFailed", { error: errorText(error) })); }}>{t("browser.recover")}</button>
+        </>}
         <span className="toolbar-divider" />
         <button onClick={undo} disabled={!undoStack.length || Boolean(busy)} title="Ctrl+Z" aria-keyshortcuts="Control+Z">
           <Undo2 size={15} /> {t("ui.undo")}
@@ -2755,6 +2803,16 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
           }}
         />
       )}
+      {recoveryProjects && <div className="modal-scrim"><div className="modal" role="dialog" aria-modal="true" aria-labelledby="recovery-title">
+        <div className="modal-head"><h2 id="recovery-title">{t("browser.recoveryTitle")}</h2><button className="icon-btn" onClick={() => setRecoveryProjects(null)} aria-label={t("ui.close")}><X size={16} /></button></div>
+        <p>{t("browser.recoveryDescription")}</p>
+        {recoveryProjects.length ? recoveryProjects.map(info => <button key={info.path} disabled={Boolean(busy)} onClick={() => {
+          void flush().then(async () => {
+            const restored = await invokeCommand("open_project", { projectPath: info.path });
+            setRecoveryProjects(null); await openInfo(restored);
+          }).catch(error => setNotice("notices.projectOpenFailed", { error: errorText(error) }));
+        }}>{info.name}</button>) : <p>{t("browser.recoveryEmpty")}</p>}
+      </div></div>}
       {bulkReplace && project && (<BulkReplaceDialog open={true} projectPath={project.path} initialSearch={bulkReplace.search} initialMatch={bulkReplace.initialMatch} getSnippet={getBulkSnippet} onApply={applyBulkReplace} onClose={() => { bulkSnippetCanvases.current.clear(); setBulkReplace(null); }} />)}
       {pendingFigure && canvasRef.current && <FigureRegionDialog source={canvasRef.current} selection={pendingFigure.selection} tight={pendingFigure.tight}
         working={Boolean(busy)} onConfirm={(kind, bbox) => void confirmFigure(kind, bbox)} onClose={() => { if (!working.current) setPendingFigure(null); }} />}
@@ -2849,6 +2907,7 @@ function SettingsModal({
 }) {
   const { t } = useTranslation();
   const [showLicenses, setShowLicenses] = useState(false);
+  const [modelError, setModelError] = useState<string | null>(null);
   if (showLicenses) return <LicenseModal back={() => setShowLicenses(false)} close={close} />;
   return (
     <div className="modal-scrim">
@@ -2864,8 +2923,14 @@ function SettingsModal({
         <label>{t("ui.model")}
           <button className="file-select" onClick={async () => {
             const path = await dialogOpen({ multiple: false, filters: [{ name: t("ui.model"), extensions: ["traineddata"] }] });
-            if (typeof path === "string") { putManifest({ ...manifest, settings: { ...manifest.settings, modelPath: path } }); scheduleSave(); }
-          }}>{manifest.settings.modelPath || t("ui.selectModel")}</button>
+            if (typeof path === "string") {
+              try {
+                const modelPath = isTauri ? path : await (await import("./browser/backend")).importBrowserModel(path);
+                putManifest({ ...manifest, settings: { ...manifest.settings, modelPath } }); scheduleSave();
+              } catch (error) { setModelError(errorText(error)); }
+            }
+          }}>{manifest.settings.modelPath ? (isTauri ? manifest.settings.modelPath : fileName(manifest.settings.modelPath)) : t("ui.selectModel")}</button>
+          {modelError && <span role="alert">{modelError}</span>}
         </label>
         <label>PSM<select value={manifest.settings.psm} onChange={(e) => { putManifest({ ...manifest, settings: { ...manifest.settings, psm: Number(e.target.value) as Settings["psm"] } }); scheduleSave(); }}><option value="3">3 — {t("ui.automatic")}</option><option value="6">6 — {t("ui.singleBlock")}</option><option value="11">11 — {t("ui.sparseText")}</option></select></label>
         <div className="modal-actions"><button onClick={() => setShowLicenses(true)}>{t("ui.licenses")}</button><button className="primary" onClick={close}>{t("ui.done")}</button></div>

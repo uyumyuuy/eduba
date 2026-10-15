@@ -1,5 +1,4 @@
 import { invoke as tauriInvoke } from "@tauri-apps/api/core";
-import { t } from "./i18n";
 import type { StoredHistory, ProjectPageUpdate } from "./editHistory";
 
 export type CorrectionMatch = {
@@ -79,6 +78,9 @@ export async function invokeCommand<K extends keyof BackendCommands>(
   command: K,
   ...args: BackendCommands[K]["args"] extends undefined ? [] : [BackendCommands[K]["args"]]
 ): Promise<BackendCommands[K]["result"]> {
-  if (!isTauri) throw new Error(t("appErrors.desktopOnly"));
+  if (!isTauri) {
+    const { browserInvoke } = await import("./browser/backend");
+    return browserInvoke(command, args[0] as BackendCommands[K]["args"]);
+  }
   return tauriInvoke(command as string, (args[0] ?? undefined) as Record<string, unknown>);
 }
