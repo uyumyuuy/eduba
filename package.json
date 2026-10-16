@@ -4,6 +4,10 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
+    "fetch:web-model": "node scripts/fetch-web-model.mjs",
+    "prepare:model-release": "node scripts/prepare-model-release.mjs",
+    "stage:web": "node scripts/stage-web-app.mjs",
+    "build:website": "node scripts/build-website.mjs",
     "prepare:web": "node scripts/prepare-web-assets.mjs",
     "dev:web": "npm run prepare:web && vite --host 127.0.0.1 --port 1421",
     "build:web": "npm run prepare:web && npm run build",

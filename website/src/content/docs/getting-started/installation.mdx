@@ -1,0 +1,23 @@
+---
+title: Windows へのインストール
+description: Eduba を Windows に導入して起動する
+---
+
+Eduba は Tauri 2 を使った Windows デスクトップアプリです。配布ファイルは現在準備中です。公開後は [GitHub のリリース](https://github.com/uyumyuuy/eduba/releases)から Windows 用インストーラーを取得できます。開発者がソースからビルドする手順は、[リポジトリの README](https://github.com/uyumyuuy/eduba/blob/main/README.md)を参照してください。
+
+インストーラーまたは portable 版がリリースされたら、Windows 上でアプリを起動します。portable 版では `models/` と `tesseract/` フォルダーを実行ファイルの隣に置いたままにします。
+
+配布版には Tesseract と OCR モデルが含まれます。別の `.traineddata` を使う場合は、アプリの設定からモデルファイルを選択できます。PSM（ページ分割モード）も設定画面で変更できます。
+
+## 画面の表示言語
+
+画面表示は英語、日本語、中国語（簡体字）、中国語（繁体字）に切り替えられます。この設定は OCR モデルの言語とは別です。OCR モデルは設定画面で `.traineddata` ファイルを指定します。
+
+## 起動できないとき
+
+Windows がアプリの実行を止めた場合は、入手元と配布ファイルが正しいことを確認してください。詳細は[トラブルシューティング](/eduba/troubleshooting/)を参照してください。
+
+
+
+
+

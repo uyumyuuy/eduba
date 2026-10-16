@@ -1,0 +1,31 @@
+---
+title: Eduba について
+description: Eduba の概要と、このガイドの読み方
+---
+
+import { LinkButton } from '@astrojs/starlight/components';
+
+Eduba は、スキャンした本や資料を OCR にかけ、原画像と認識結果を見比べながら校正するアプリです。ブラウザ版と Windows デスクトップ版があります。ページ画像とレイアウトを再現したテキストを左右に並べ、認識行を編集して成果物を書き出せます。
+
+<LinkButton href={`${import.meta.env.BASE_URL}app/`} icon="external">ブラウザ版を開く</LinkButton>
+
+プロジェクトは `.eduba` ファイルに保存できます。ブラウザ版の作業内容はブラウザ内に自動保存され、持ち運びやバックアップには「プロジェクトを保存」でファイルを書き出します。
+
+## 主な機能
+
+- PDF を取り込み、ページ画像を確認しながら OCR を実行
+- 同梱した英語向け Tesseract モデルを使った OCR（別の `.traineddata` も設定可能）
+- OCR 結果の行編集、候補確認、装飾の指定、置換、一括置換
+- 読み順を保った OCR 領域の追加、削除、結合、並べ替え
+- TXT、hOCR、SVG への書き出し
+
+まずは [ブラウザ版の使い方](/eduba/getting-started/browser/)、[Windows へのインストール](/eduba/getting-started/installation/)、[最初のプロジェクト](/eduba/getting-started/first-project/) をご覧ください。
+
+:::caution
+デスクトップ版は現在 Windows 向けです。ブラウザ版の保存方法と制限は、ブラウザ版の使い方をご覧ください。
+:::
+
+
+
+
+

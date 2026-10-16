@@ -28,6 +28,11 @@ SQLite は OPFS SAH pool、ONNX は WASM 1スレッドを使用し、COOP/COEP �
 依存コード、学習モデル、推論モデルの取得先は同一サイト内の静的資産のみ。
 この段階では Service Worker によるオフライン起動は実装していない。
 
+Starlight のドキュメントとまとめて配信する場合は `npm run build:website` を使用する。
+固定した Release の OCR モデルを取得・SHA-256 検証してからアプリをビルドし、
+`website/public/app/` を経由して `website/dist/app/` に配置する。
+初回のモデル公開、ローカルでのビルド、CI の構成は [サイト公開手順](website-deployment.md) を参照する。
+
 ## ローカルファイルと自動保存
 
 - PDF、`.eduba`、独自の `.traineddata` をユーザーが選択して読み込む。
