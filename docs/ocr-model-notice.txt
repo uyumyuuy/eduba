@@ -1,10 +1,10 @@
 Eduba default OCR model
 
-Model: eng_assyriology_scan_candidate_20260920_v1
-File: eng_assyriology_scan_candidate_20260920_v1.traineddata
+Model: eng_assyriology_cohen_kramer_r1_600x_20261015
+File: eng_assyriology_cohen_kramer_r1_600x_20261015.traineddata
 Size: 12090677 bytes
-SHA-256: 7a4a1f041ab93a83f0aa71fa29ddf90caa3ce73c903edcf277c002002a2eac71
-Release: https://github.com/uyumyuuy/eduba/releases/tag/ocr-model-20260920-v1
+SHA-256: a4daadfe9d00a65b80e793ca66aabfd5f5343aa6e67f6df32f703a6d88e76dbc
+Release: https://github.com/uyumyuuy/eduba/releases/tag/ocr-model-20261015-r1-600x
 License: Apache-2.0
 
 Upstream model:
@@ -15,15 +15,21 @@ The upstream repository distributes its model data under Apache License 2.0.
 Its license text is included as OCR-MODEL-LICENSE.txt.
 
 Changes:
-The Eduba maintainer further trained the upstream English model for English
-and Assyriological transliteration. This artifact contains modified model
+The model author further trained the upstream English model in the
+Assyrian-OCR project for English and Assyriological transliteration.
+This artifact contains modified model
 weights. The precise upstream training-start revision has not been recorded
 in this distribution.
 
 Provenance:
-Selected on 2026-09-20 for OCR candidate generation from scanned documents.
-The training project's selection report identifies this artifact as an unchanged
-copy of its v4 i5k model. The report records the same SHA-256 shown above.
+Created in Assyrian-OCR and adopted there as the training and evaluation
+baseline on 2026-10-15 (registry status: research_baseline).
+Source run: trial/cohen-kramer-600x-20261013/revision-kramer459-20261014
+Training rows: 2445 (repaired: 529, Cohen: 1462, Kramer: 454).
+This run added 600 presentations per row, totaling 1467000 presentations;
+these counts cover this run only.
+The imported file is an unchanged copy of the registered traineddata artifact.
+See OCR-MODEL-PROVENANCE.json for the original training project's record.
 
 Distribution terms:
 This fine-tuned OCR model is distributed under the Apache License,

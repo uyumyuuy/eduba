@@ -30,6 +30,18 @@ export async function verifyModel(path) {
   }
 }
 
+export async function readModelProvenance() {
+  const bytes = await readFile(join(root, manifest.provenanceFile));
+  if (createHash("sha256").update(bytes).digest("hex") !== manifest.sourceProject.provenanceSha256) {
+    throw new Error("OCR model provenance SHA-256 mismatch.");
+  }
+  const record = JSON.parse(bytes.toString("utf8"));
+  if (record.model_key !== manifest.id || record.snapshot_artifacts.traineddata.sha256 !== manifest.sha256) {
+    throw new Error("OCR model provenance does not identify the pinned model.");
+  }
+  return bytes;
+}
+
 /** Acquire exactly the pinned release asset. A local file can seed the same verified cache. */
 export async function acquireModel(source) {
   if (source) await verifyModel(resolve(source));

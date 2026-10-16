@@ -1,0 +1,87 @@
+{
+  "schema": "ocr-research-baseline-adoption-v1",
+  "model_key": "eng_assyriology_cohen_kramer_r1_600x_20261015",
+  "adopted_date_jst": "2026-10-15",
+  "authority": "User instruction: 今後の基準モデルは今回の600回モデルとします。",
+  "status": "research_baseline",
+  "production": false,
+  "source_run": "trial/cohen-kramer-600x-20261013/revision-kramer459-20261014",
+  "source_completion_record": {
+    "path": "trial/cohen-kramer-600x-20261013/revision-kramer459-20261014/training/milestones/added-600-per-row.json",
+    "sha256": "252218dd70af24e0d08f447f6a64b6e004101f90dd79e7c468b71e97f4da307b"
+  },
+  "source_artifacts": {
+    "traineddata": {
+      "path": "trial/cohen-kramer-600x-20261013/revision-kramer459-20261014/training/milestone-attempts/added-600-per-row/attempt-001/traineddata.traineddata",
+      "sha256": "a4daadfe9d00a65b80e793ca66aabfd5f5343aa6e67f6df32f703a6d88e76dbc"
+    },
+    "full_checkpoint": {
+      "path": "trial/cohen-kramer-600x-20261013/revision-kramer459-20261014/training/durable-checkpoints/milestone-added-600-per-row.checkpoint",
+      "sha256": "d860042399f7f14137845f7e754f7f14bf3247a4a339f6bab9294d5c839603e2"
+    }
+  },
+  "snapshot_artifacts": {
+    "traineddata": {
+      "path": "data/eng_assyriology_cohen_kramer_r1_600x_20261015/eng_assyriology_cohen_kramer_r1_600x_20261015.traineddata",
+      "sha256": "a4daadfe9d00a65b80e793ca66aabfd5f5343aa6e67f6df32f703a6d88e76dbc"
+    },
+    "full_checkpoint": {
+      "path": "data/eng_assyriology_cohen_kramer_r1_600x_20261015/eng_assyriology_cohen_kramer_r1_600x_20261015.checkpoint",
+      "sha256": "d860042399f7f14137845f7e754f7f14bf3247a4a339f6bab9294d5c839603e2"
+    }
+  },
+  "source_record_snapshots": {
+    "completion_record": {
+      "path": "data/eng_assyriology_cohen_kramer_r1_600x_20261015/source-completion-record.json",
+      "sha256": "252218dd70af24e0d08f447f6a64b6e004101f90dd79e7c468b71e97f4da307b"
+    },
+    "training_protocol": {
+      "path": "data/eng_assyriology_cohen_kramer_r1_600x_20261015/source-training-protocol.json",
+      "sha256": "0542ec998fb85368058b8f88529636782dac6a8a0bd841835fa6330e555393c4"
+    },
+    "frozen_contract": {
+      "path": "data/eng_assyriology_cohen_kramer_r1_600x_20261015/source-frozen-contract.json",
+      "sha256": "b21b50cc99fd846c456812736bce3774623d459990cb55f6d5e1cd092c6823de"
+    }
+  },
+  "training": {
+    "unique_rows": 2445,
+    "rows_by_source": {
+      "preserved_repaired529": 529,
+      "Cohen1981": 1462,
+      "Kramer1949": 454
+    },
+    "added_presentations_per_row": 600,
+    "added_successful_presentations": 1467000,
+    "counter_scope": "This corrected run only; not project lifetime cumulative training.",
+    "parent_model_path": "data/at-300000-actual-300000.traineddata",
+    "parent_model_sha256": "ce26728aceb2b75f2167183efe42e101fafc5fb0fbffa02421c2083a2d3ee007",
+    "parent_300000_scope": "Previous repaired529 training series only; not project lifetime cumulative training.",
+    "full_checkpoint_retained_for_resumption": true
+  },
+  "evaluation": {
+    "cohorts": {
+      "existing_dev164": 164,
+      "new_Kramer": 186,
+      "new_Cohen": 219
+    },
+    "manifest_path": "trial/cohen-kramer-600x-20261013/revision-kramer459-20261014/evaluation/evaluation-rows.jsonl",
+    "manifest_sha256": "24f7cacab69956737e584d1fd9fb8e7852a1818bc88d32e61b89b4bdebd12f32",
+    "scores_path": "trial/cohen-kramer-600x-20261013/revision-kramer459-20261014/training/milestone-attempts/added-600-per-row/attempt-001/scores.json",
+    "scores_sha256": "727fcafee2e6e923e0320dab83a5b848bedd024ed9004bc25ff98ff7e36eeb64",
+    "psm": 7,
+    "textord_noise_rejrows": 0,
+    "final119_used": false
+  },
+  "next_new_gt_training_policy": {
+    "standard_added_presentations_per_training_row": 100,
+    "evaluation_points_per_training_row": [
+      25,
+      50,
+      100
+    ],
+    "beyond_100": "Only when investigating specified residual errors or training behavior.",
+    "counter_scope": "Additional presentations in the new training series; separate from past training."
+  },
+  "application_defaults_changed": false
+}

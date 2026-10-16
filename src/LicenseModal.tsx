@@ -3,6 +3,8 @@ import { X } from "lucide-react";
 import picodetLicense from "../src-tauri/resources/figure-detection/LICENSE?raw";
 import picodetNotice from "../src-tauri/resources/figure-detection/MODEL-NOTICE.txt?raw";
 import fontLicense from "./assets/fonts/NotoSerif-OFL.txt?raw";
+import ocrModelLicense from "../licenses/ocr-model-Apache-2.0.txt?raw";
+import ocrModelNotice from "../docs/ocr-model-notice.txt?raw";
 
 /** Show the same license texts that ship with the model and fonts, fully offline. */
 export function LicenseModal({ back, close }: { back: () => void; close: () => void }) {
@@ -14,6 +16,11 @@ export function LicenseModal({ back, close }: { back: () => void; close: () => v
         <button className="icon-btn" onClick={close} aria-label={t("ui.close")}><X size={16} /></button>
       </div>
       <div className="license-content">
+        <details>
+          <summary>Assyrian-OCR — Apache License 2.0</summary>
+          <pre>{ocrModelNotice}</pre>
+          <pre>{ocrModelLicense}</pre>
+        </details>
         <details open>
           <summary>PicoDet-S_layout_3cls — Apache License 2.0</summary>
           <pre>{picodetNotice}</pre>

@@ -1,13 +1,20 @@
 {
-  "id": "eng_assyriology_scan_candidate_20260920_v1",
+  "id": "eng_assyriology_cohen_kramer_r1_600x_20261015",
   "repository": "uyumyuuy/eduba",
-  "tag": "ocr-model-20260920-v1",
-  "asset": "eng_assyriology_scan_candidate_20260920_v1.traineddata",
-  "sha256": "7a4a1f041ab93a83f0aa71fa29ddf90caa3ce73c903edcf277c002002a2eac71",
+  "tag": "ocr-model-20261015-r1-600x",
+  "asset": "eng_assyriology_cohen_kramer_r1_600x_20261015.traineddata",
+  "sha256": "a4daadfe9d00a65b80e793ca66aabfd5f5343aa6e67f6df32f703a6d88e76dbc",
   "size": 12090677,
   "license": "Apache-2.0",
   "licenseFile": "licenses/ocr-model-Apache-2.0.txt",
   "notice": "docs/ocr-model-notice.txt",
+  "provenanceFile": "docs/ocr-model-provenance.json",
+  "sourceProject": {
+    "name": "Assyrian-OCR",
+    "modelPath": "data/eng_assyriology_cohen_kramer_r1_600x_20261015/eng_assyriology_cohen_kramer_r1_600x_20261015.traineddata",
+    "registryRole": "training_baseline",
+    "provenanceSha256": "c19886b07d2275bb2a518f8b45ddd3eacce453daeb6bdcc68aa6e676f29fbcec"
+  },
   "upstream": {
     "repository": "https://github.com/tesseract-ocr/tessdata_best",
     "asset": "eng.traineddata",

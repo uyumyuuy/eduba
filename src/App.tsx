@@ -3,6 +3,7 @@ import { useVisibleOverlay } from "./useVisibleOverlay";
 import { clickedLineCaret } from "./clickCaret";
 import { inverse, multiply, type HocrPageGeometry, type HocrSource } from "./coordinates";
 import { LicenseModal } from "./LicenseModal";
+import { DEFAULT_MODEL, BROWSER_DEFAULT_MODELS } from "./ocrModel";
 import { prepareFigureOcr } from "./automaticFigures";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import { useTranslation } from "react-i18next";
@@ -765,9 +766,9 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
       if (!existing.settings.modelPath)
         existing.settings.modelPath = environmentModel.current;
       if (!isTauri && !existing.settings.modelPath.startsWith("model:")) {
-        existing.settings.modelPath = "eng_assyriology_scan_candidate_20260920_v1.traineddata";
+        existing.settings.modelPath = DEFAULT_MODEL;
       }
-      if (isTauri && (existing.settings.modelPath.startsWith("model:") || existing.settings.modelPath === "eng_assyriology_scan_candidate_20260920_v1.traineddata")) {
+      if (isTauri && (existing.settings.modelPath.startsWith("model:") || BROWSER_DEFAULT_MODELS.includes(existing.settings.modelPath))) {
         existing.settings.modelPath = environmentModel.current;
       }
       try {

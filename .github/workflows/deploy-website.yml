@@ -10,6 +10,7 @@ on:
       - 'scripts/**'
       - 'config/web-model.json'
       - 'docs/ocr-model-notice.txt'
+      - 'docs/ocr-model-provenance.json'
       - 'licenses/**'
       - 'src-tauri/resources/models/**'
       - 'src-tauri/resources/figure-detection/**'
@@ -18,6 +19,7 @@ on:
       - 'tsconfig*.json'
       - 'vite.config.ts'
       - 'index.html'
+      - '.gitattributes'
       - '.github/workflows/deploy-website.yml'
   workflow_dispatch:
 

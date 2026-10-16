@@ -1,7 +1,7 @@
 [CmdletBinding()]
 param(
   [string]$TesseractRoot = 'C:\Program Files\Tesseract-OCR',
-  [string]$ModelPath = 'D:\work\assyrian-ocr\trial\runs\eng_assyriology-scan-candidate-v1-20260920\seed\eng_assyriology_scan_candidate_20260920_v1.traineddata'
+  [string]$ModelPath = 'D:\work\assyrian-ocr\data\eng_assyriology_cohen_kramer_r1_600x_20261015\eng_assyriology_cohen_kramer_r1_600x_20261015.traineddata'
 )
 
 $ErrorActionPreference = 'Stop'

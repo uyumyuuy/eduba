@@ -10,7 +10,7 @@ Tesseract.js、ONNX Runtime Web、SQLite WASM は端末内で動く。
 モデルは Git 管理対象外なので、新しい worktree では既存のモデルを明示的に指定できる。
 
 ```powershell
-npm run prepare:web -- --model 'D:\work\eduba\src-tauri\resources\models\eng_assyriology_scan_candidate_20260920_v1.traineddata'
+npm run prepare:web -- --model 'src-tauri/resources/models/eng_assyriology_cohen_kramer_r1_600x_20261015.traineddata'
 npm run dev:web
 ```
 
@@ -60,6 +60,13 @@ OPFS では DELETE journal を使用し、外部ファイルへはSQLite本体�
 ブラウザ側のモデル識別子を含むプロジェクトをデスクトップで開いた場合も、デスクトップ側の既定モデルを使用する。
 
 ## OCR と自動判定
+
+既定モデルは Assyrian-OCR の `eng_assyriology_cohen_kramer_r1_600x_20261015`。
+モデルの識別子、SHA-256、取得先は `config/web-model.json`、学習側の記録は `docs/ocr-model-provenance.json` に保存する。
+Web 版の既定ファイル名とビルド時の配置先は manifest を共有する。
+デスクトップ版の既定モデルとセットアップ用のパスも同じモデルに更新している。
+デスクトップ版の既存プロジェクトで明示されたローカルモデルのパスは、そのまま使用する。
+校正候補の文字混同表は2026年9月20日モデル由来の参考情報を継続使用し、新モデル用の確率表としては扱わない。
 
 Tesseract.js 7.0.0 の Worker を再利用し、OEM 1、PSM、DPI、`hocr_char_boxes=1` を設定して hOCR を取得する。
 既存の浮動小数点モデルは自動選択されるSIMDコアで未実装のSSE関数を呼ぶ場合があるため、初期実装では非SIMDのLSTMコアと `dotproduct=generic` を指定する。速度の最適化は今後の課題。

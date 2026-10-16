@@ -362,7 +362,7 @@ fn get_environment_impl(app: &AppHandle) -> BackendResult<serde_json::Value> {
         .path()
         .resource_dir()
         .unwrap_or_else(|_| PathBuf::from("resources"));
-    let default_model_name = "eng_assyriology_scan_candidate_20260920_v1.traineddata";
+    let default_model_name = "eng_assyriology_cohen_kramer_r1_600x_20261015.traineddata";
     let model_candidates = [
         std::env::var_os("EDUBA_MODEL_PATH").map(PathBuf::from),
         Some(resource.join("models").join(default_model_name)),
@@ -375,7 +375,7 @@ fn get_environment_impl(app: &AppHandle) -> BackendResult<serde_json::Value> {
         Some(resource.join("models").join("eng.traineddata")),
         #[cfg(debug_assertions)]
         Some(PathBuf::from(
-            r"D:\work\assyrian-ocr\trial\runs\eng_assyriology-scan-candidate-v1-20260920\seed\eng_assyriology_scan_candidate_20260920_v1.traineddata",
+            r"D:\work\assyrian-ocr\data\eng_assyriology_cohen_kramer_r1_600x_20261015\eng_assyriology_cohen_kramer_r1_600x_20261015.traineddata",
         )),
     ];
     let model = model_candidates
@@ -1049,7 +1049,7 @@ fn model_spec(model_path: &str) -> BackendResult<(PathBuf, String)> {
                 .to_string(),
         )
     } else if requested.is_dir() {
-        let candidate = requested.join("eng_assyriology_scan_candidate_20260920_v1.traineddata");
+        let candidate = requested.join("eng_assyriology_cohen_kramer_r1_600x_20261015.traineddata");
         let model = if candidate.is_file() {
             candidate
         } else {

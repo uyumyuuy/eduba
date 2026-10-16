@@ -1,10 +1,11 @@
-import { copyFile, mkdir, access } from "node:fs/promises";
+import { copyFile, mkdir, access, readdir, rm } from "node:fs/promises";
 import { dirname, resolve, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { manifest } from "./web-model.mjs";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const output = join(root, "public/browser-assets");
-const modelName = "eng_assyriology_scan_candidate_20260920_v1.traineddata";
+const modelName = manifest.asset;
 const explicitIndex = process.argv.indexOf("--model");
 if (explicitIndex >= 0 && !process.argv[explicitIndex + 1]) throw new Error("--model requires a traineddata file path.");
 let model = process.argv[explicitIndex + 1] && explicitIndex >= 0 ? resolve(process.argv[explicitIndex + 1]) : process.env.EDUBA_WEB_MODEL;
@@ -21,6 +22,12 @@ async function copy(source, destination) {
   if (resolve(source) !== resolve(destination)) await copyFile(source, destination);
 }
 await copy(model, join(output, "models", modelName));
+// This directory contains generated assets; remove previously bundled OCR weights.
+for (const entry of await readdir(join(output, "models"), { withFileTypes: true })) {
+  if (entry.isFile() && entry.name.endsWith(".traineddata") && entry.name !== modelName) {
+    await rm(join(output, "models", entry.name));
+  }
+}
 await copy(join(root, "src-tauri/resources/models/style_word_cnn.onnx"), join(output, "models/style_word_cnn.onnx"));
 await copy(join(root, "src-tauri/resources/figure-detection/picodet-s-layout-3cls.onnx"), join(output, "models/picodet-s-layout-3cls.onnx"));
 await copy(join(root, "node_modules/tesseract.js/dist/worker.min.js"), join(output, "tesseract/worker.min.js"));

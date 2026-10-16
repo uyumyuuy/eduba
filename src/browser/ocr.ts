@@ -2,8 +2,9 @@ import type { PSM } from "tesseract.js";
 import { loadModel } from "./modelStore";
 import { decodeBase64 } from "./bytes";
 import { t } from "../i18n";
+import { DEFAULT_MODEL } from "../ocrModel";
 
-export const DEFAULT_MODEL = "eng_assyriology_scan_candidate_20260920_v1.traineddata";
+export { DEFAULT_MODEL };
 export function assetUrl(path: string): string {
   return new URL(`${import.meta.env.BASE_URL}browser-assets/${path}`, document.baseURI).href;
 }
