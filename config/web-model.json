@@ -5,5 +5,12 @@
   "asset": "eng_assyriology_scan_candidate_20260920_v1.traineddata",
   "sha256": "7a4a1f041ab93a83f0aa71fa29ddf90caa3ce73c903edcf277c002002a2eac71",
   "size": 12090677,
-  "notice": "docs/ocr-model-notice.txt"
+  "license": "Apache-2.0",
+  "licenseFile": "licenses/ocr-model-Apache-2.0.txt",
+  "notice": "docs/ocr-model-notice.txt",
+  "upstream": {
+    "repository": "https://github.com/tesseract-ocr/tessdata_best",
+    "asset": "eng.traineddata",
+    "license": "Apache-2.0"
+  }
 }

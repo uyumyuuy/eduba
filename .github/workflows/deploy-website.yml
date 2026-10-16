@@ -10,6 +10,7 @@ on:
       - 'scripts/**'
       - 'config/web-model.json'
       - 'docs/ocr-model-notice.txt'
+      - 'licenses/**'
       - 'src-tauri/resources/models/**'
       - 'src-tauri/resources/figure-detection/**'
       - 'package.json'

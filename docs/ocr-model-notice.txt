@@ -5,16 +5,39 @@ File: eng_assyriology_scan_candidate_20260920_v1.traineddata
 Size: 12090677 bytes
 SHA-256: 7a4a1f041ab93a83f0aa71fa29ddf90caa3ce73c903edcf277c002002a2eac71
 Release: https://github.com/uyumyuuy/eduba/releases/tag/ocr-model-20260920-v1
+License: Apache-2.0
+
+Upstream model:
+eng.traineddata from tesseract-ocr/tessdata_best
+https://github.com/tesseract-ocr/tessdata_best
+https://github.com/tesseract-ocr/tessdata_best/blob/main/eng.traineddata
+The upstream repository distributes its model data under Apache License 2.0.
+Its license text is included as OCR-MODEL-LICENSE.txt.
+
+Changes:
+The Eduba maintainer further trained the upstream English model for English
+and Assyriological transliteration. This artifact contains modified model
+weights. The precise upstream training-start revision has not been recorded
+in this distribution.
 
 Provenance:
 Selected on 2026-09-20 for OCR candidate generation from scanned documents.
 The training project's selection report identifies this artifact as an unchanged
 copy of its v4 i5k model. The report records the same SHA-256 shown above.
-This model is intended for English and Assyriological transliteration.
 
 Distribution terms:
-No explicit redistribution license for this custom model was found in the
-supplied files. The publisher must record the confirmed license and required
-attributions here before publishing the initial model release. This notice
-does not grant a license or imply that Tesseract's software license covers
-this trained model or its training data.
+This fine-tuned OCR model is distributed under the Apache License,
+Version 2.0. You may obtain a copy of the License at
+https://www.apache.org/licenses/LICENSE-2.0
+
+A copy accompanies the model as OCR-MODEL-LICENSE.txt. Retain that license
+and this notice when redistributing the model, and identify any further
+modifications you make. No additional use restrictions are imposed by Eduba.
+
+Unless required by applicable law or agreed to in writing, the model is
+distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+KIND, either express or implied. See the License for the specific language
+governing permissions and limitations under the License.
+
+These terms apply to the identified trained model. Other assets in Eduba
+retain their respective licenses.

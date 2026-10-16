@@ -10,6 +10,9 @@ Vite で生成したアプリを `website/public/app/` にコピーしてから 
 現在の対象は `eng_assyriology_scan_candidate_20260920_v1`（12,090,677 bytes）。
 `latest` や可変のブランチ URL は使わない。
 モデルの由来と配布条件は `docs/ocr-model-notice.txt` に記録する。
+派生元は `tesseract-ocr/tessdata_best` の `eng.traineddata`。
+追加学習モデルも Apache-2.0 で配布し、独自の用途制限は追加しない。
+ライセンス本文は `licenses/ocr-model-Apache-2.0.txt` に保存する。
 
 `npm run fetch:web-model` は GitHub CLI の `gh release download` で指定したファイルを取得する。
 取得後にサイズと SHA-256 を照合し、両方が一致したファイルだけを `.cache/ocr-models/<sha256>/` に保存する。
@@ -23,7 +26,7 @@ GitHub Actions のキャッシュは npm 用だけで、モデルはジョブご
 
 最初の Release が未公開のため、次の準備が必要。
 
-1. モデルの再配布条件と必要な帰属表示を確認し、`docs/ocr-model-notice.txt` の配布条件を確定する。現時点では明示されたライセンスを確認できていないため、推測によるライセンス名は記載していない。
+1. `docs/ocr-model-notice.txt` の派生元と追加学習の記載、Apache-2.0 での公開内容を確認する。
 2. ローカルにある対象モデルから、検証済みの公開ファイルを準備する。
 
 ```powershell
@@ -31,7 +34,7 @@ npm run prepare:model-release -- --model 'D:\work\eduba\src-tauri\resources\mode
 ```
 
 `.cache/model-release/ocr-model-20260920-v1/` に、モデル、`SHA256SUMS`、
-`web-model.json`、`OCR-MODEL-NOTICE.txt`、`RELEASE-NOTES.md` が生成される。
+`web-model.json`、`OCR-MODEL-LICENSE.txt`、`OCR-MODEL-NOTICE.txt`、`RELEASE-NOTES.md` が生成される。
 通知文を編集した場合は、公開前にこのコマンドを再実行する。
 この準備コマンドは GitHub に書き込まない。
 
@@ -43,6 +46,7 @@ gh release create ocr-model-20260920-v1 `
   "$releaseDir/eng_assyriology_scan_candidate_20260920_v1.traineddata" `
   "$releaseDir/SHA256SUMS" `
   "$releaseDir/web-model.json" `
+  "$releaseDir/OCR-MODEL-LICENSE.txt" `
   "$releaseDir/OCR-MODEL-NOTICE.txt" `
   --repo uyumyuuy/eduba --target main --latest=false `
   --title 'Eduba OCR model 20260920 v1' `

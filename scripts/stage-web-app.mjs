@@ -15,6 +15,7 @@ for (const path of ["index.html", "assets", "browser-assets/tesseract/worker.min
 }
 await verifyModel(join(source, "browser-assets/models", bundledModel));
 await readFile(join(root, manifest.notice));
+await readFile(join(root, manifest.licenseFile));
 await mkdir(parent, { recursive: true });
 // Never remove a symlink or a generated directory whose parent resolves outside this checkout.
 if (await realpath(parent) !== join(await realpath(root), "website/public")) {
@@ -30,4 +31,5 @@ await cp(source, destination, { recursive: true });
 await copyFile(join(root, "config/web-model.json"), join(destination, "browser-assets/models/web-model.json"));
 await mkdir(join(destination, "browser-assets/licenses"), { recursive: true });
 await copyFile(join(root, manifest.notice), join(destination, "browser-assets/licenses/OCR-MODEL-NOTICE.txt"));
+await copyFile(join(root, manifest.licenseFile), join(destination, "browser-assets/licenses/OCR-MODEL-LICENSE.txt"));
 console.log(`Staged the browser app in ${destination}`);
