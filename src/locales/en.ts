@@ -3,6 +3,7 @@ const en = {
   language: { auto: "Automatic (system setting)", en: "English", ja: "日本語", "zh-Hans": "简体中文", "zh-Hant": "繁體中文" },
   notice: { welcome: "Import a PDF to proofread OCR results." },
   notices: {
+    noCompletedPagesToExport: "There are no proofread OCR pages to export.",
     figureEmpty: "No non-white pixels were found in the selected area.",
     figureAdded: "Added figure/table region.",
 
@@ -20,6 +21,7 @@ const en = {
   bulkReplace: { title: "Replace all", source: "Selected text", replacement: "Replace with", results: "{{count}} results", selectPage: "Select this results page", clearPage: "Clear this results page", noResults: "No matching lines", previous: "Previous results page", next: "Next results page", cancel: "Cancel", applyFormatting: "Replace {{count}} selected (with formatting)", preserveFormatting: "Replace {{count}} selected (keep formatting)", applying: "Replacing…", close: "Close" },
   scriptCalibration: { open: "Auto script detection", title: "Automatic superscript & subscript", close: "Close", description: "Tune the size and position thresholds used to recognize raised and lowered characters. Examples update immediately and are not saved until you apply.", superscript: "Superscript", subscript: "Subscript", maxHeight: "Maximum relative character height", maxHeightHelp: "A character qualifies when its height is at most this fraction of the estimated ordinary capital height.", minRise: "Minimum normalized upward displacement", minRiseHelp: "Minimum baseline-to-character-bottom distance divided by estimated capital height.", minDrop: "Minimum normalized downward displacement", minDropHelp: "Minimum character-bottom-to-baseline distance divided by estimated capital height.", subscriptScope: "Recognize subscripts in", digitsAndX: "Digits 0–9 and x", allCharacters: "All characters", examples: "Representative examples", previewHint: "Left: image (blue baseline, orange boxes, green reference height H) · Right: detected formatting", reshuffleCurrentPage: "Reshuffle examples (from current page)", reshuffleAllPages: "Reshuffle examples (from all pages)", loading: "Finding balanced examples…", loadingProgress: "Finding examples… {{completed}} / {{total}}", noExamples: "No suitable examples were found in this project.", unsavedHint: "Changes are saved only when you apply.", cancel: "Cancel", apply: "Apply", applying: "Applying…" },
   ui: {
+    completedPagesOnly: "Proofread pages only",
     addFigureRegion: "Add figure/table region",
     finishAddFigureRegion: "Finish adding figure/table regions",
     figureSelectHint: "Drag around a figure or table · ESC to cancel",
@@ -44,6 +46,10 @@ const en = {
     regionDeleteHint: "Click to delete the smallest region, or drag to delete every intersecting region · ESC to cancel",
     addOcrRegion: "Add OCR region",
     finishAddOcrRegion: "Finish adding OCR regions",
+    regionOcrMode: "Region recognition mode",
+    singleLine: "Single line",
+    regionDisableRowNoiseRejection: "Disable row noise rejection",
+    regionDisableRowNoiseRejectionHint: "If brackets or dotted gaps are missing, select one line at a time and choose Single line.",
     regionSelectHint: "Drag to select an area · ESC to cancel", licenses: "Third-party licenses", settings: "Settings", language: "Language", imageMagnifier: "Image pane magnifier", textMagnifier: "Proofreading pane magnifier", close: "Close", model: "Model (.traineddata)", selectModel: "Select model", automatic: "Automatic", singleBlock: "Single block", sparseText: "Sparse text", done: "Done", importPdf: "Import PDF", open: "Open", save: "Save", undo: "Undo", redo: "Redo", ocrCurrent: "OCR current", ocrPending: "OCR pending", cancel: "Cancel", currentPage: "Current page", allPages: "All pages", logicalPages: "Logical pages", processedImage: "Processed image", recognitionLayout: "Recognition layout", tagline: "OCR proofreading desk", page: "Page {{page}}", recognizeAgain: "Recognize again", ocrSettings: "OCR settings", sourcePage: "Source {{page}}", runOcrHint: "Run OCR for the current page.", singleFileHint: "Saved in one .eduba file.", replaceDescription: "Corrections, formatting, manual OCR regions, and reading order on this page will be replaced.", logicalPageCount_one: "{{count}} logical page", logicalPageCount_other: "{{count}} logical pages", clickLine: "Click a line to edit", newProject: "New project", projectFile: ".eduba project", whole: "Whole", left: "Left", right: "Right", leftPage: "Left page", rightPage: "Right page", openPdf: "Open PDF", noOcr: "No OCR results yet", importToStart: "Import a PDF to begin", saving: "Saving…", autosave: "Autosave", idle: "Idle", back: "Back", replaceOcr: "Replace and OCR", replaceTitle: "Replace corrections?", pageComplete: "Proofread", pageCompleteHint: "Mark this OCR page as proofread", editCompletedConfirm: "This page is marked as proofread. Edit it and remove the mark?" },
 } as const;
 export default en;

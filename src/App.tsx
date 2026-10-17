@@ -79,6 +79,7 @@ import {
 } from "./ocrMargins";
 
 type Status = "pending" | "ocr" | "review";
+type ExportScope = "current" | "all" | "completed";
 type Entry = LogicalPageProvenance & {
   id: string;
   label: string;
@@ -365,6 +366,8 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
   const [editing, setEditing] = useState<string | null>(null);
   const [editCaret, setEditCaret] = useState<{ lineId: string; offset: number } | null>(null);
   const [regionMode, setRegionMode] = useState<"add" | "figure" | "delete" | "merge" | "order" | null>(null);
+  const [regionOcrPsm, setRegionOcrPsm] = useState<11 | 6 | 7>(11);
+  const [regionDisableRowNoiseRejection, setRegionDisableRowNoiseRejection] = useState(true);
   const [pendingFigure, setPendingFigure] = useState<{ pageId: string; selection: Rect; tight: Rect } | null>(null);
   const [figureImages, setFigureImages] = useState<Record<string, string>>({});
   const [imageRevision, setImageRevision] = useState(0);
@@ -440,7 +443,7 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
   } | null>(null);
   const [importCreating, setImportCreating] = useState(false);
   const [confirmOcr, setConfirmOcr] = useState<"current" | "all" | null>(null);
-  const [exportScope, setExportScope] = useState<"current" | "all">("all");
+  const [exportScope, setExportScope] = useState<ExportScope>("all");
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const pdfPageRef = useRef<HTMLDivElement>(null);
   const regionHintRef = useRef<HTMLDivElement>(null);
@@ -1295,10 +1298,11 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
         imageBase64,
         modelPath: manifestRef.current.settings.modelPath,
         dpi,
+        disableRowNoiseRejection: regionDisableRowNoiseRejection,
       };
       const regionId = entry.id + "--manual-" + crypto.randomUUID();
-      let psm: 11 | 6 = 11;
-      const recognize = async (mode: 11 | 6) => {
+      let psm = regionOcrPsm;
+      const recognize = async (mode: 11 | 6 | 7) => {
         if (cancelled.current) throw new Error(globalT("appErrors.ocrCancelled"));
         const hocr = await invokeCommand("run_ocr", { ...ocrArgs, psm: mode });
         if (cancelled.current) throw new Error(globalT("appErrors.ocrCancelled"));
@@ -1308,7 +1312,7 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
       };
       let recognized = await recognize(psm);
       // Sparse-text segmentation can overlook isolated digits in a column.
-      if (!allLines(recognized).some(line => line.words.some(word => word.originalText.trim()))) {
+      if (psm === 11 && !allLines(recognized).some(line => line.words.some(word => word.originalText.trim()))) {
         psm = 6;
         recognized = await recognize(psm);
       }
@@ -1318,7 +1322,7 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
           (imageBase64, samples) => invokeCommand("classify_word_styles", { imageBase64, samples }));      } catch (error) {
         console.warn("Word style classification was skipped for the added OCR region.", error);
       }
-      const result = addOcrRegion(beforePage, recognized, selection, padding, regionId, psm);
+      const result = addOcrRegion(beforePage, recognized, selection, padding, regionId, psm, regionDisableRowNoiseRejection);
       if (!result.addedWords) {
         setNotice("notices.regionEmpty");
         setRegionMode("add");
@@ -1338,7 +1342,7 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
       working.current = false;
       setBusy(null);
     }
-  }, [commitHistoryOperation, flush, putDoc, setNotice]);
+  }, [commitHistoryOperation, flush, putDoc, regionOcrPsm, regionDisableRowNoiseRejection, setNotice]);
   const deleteSelectedRegion = useCallback(async (selection: Rect | { x: number; y: number }) => {
     const entry = manifestRef.current.pages[indexRef.current];
     const beforePage = docRef.current;
@@ -1621,7 +1625,7 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
     setOrderPreviewIds(null);
   }, [stopRegionScroll]);
   const exportFile = useCallback(
-    async (type: "txt" | "hocr" | "html" | "svg", scope: "current" | "all" = "all") => {
+    async (type: "txt" | "hocr" | "html" | "svg", scope: ExportScope = "all") => {
       if (!projectRef.current || working.current || importActive.current)
         return;
       try {
@@ -1633,7 +1637,9 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
         const entries =
           scope === "current"
             ? [manifestRef.current.pages[indexRef.current]]
-            : manifestRef.current.pages;
+            : scope === "completed"
+              ? manifestRef.current.pages.filter(page => page.completed === true)
+              : manifestRef.current.pages;
         for (const entry of entries) {
           const saved = await invokeCommand("load_page", {
             projectPath: projectRef.current.path,
@@ -1645,8 +1651,13 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
             labeledPages.push({ page, label: entry.label });
           }
         }
-        if (!pages.length)
+        if (!pages.length) {
+          if (scope === "completed") {
+            setNotice("notices.noCompletedPagesToExport");
+            return;
+          }
           throw new Error(globalT("appErrors.noExport"));
+        }
         const hocrSource: HocrSource | undefined = type === "hocr" ? {
           fingerprint: pdf?.fingerprints[0] ?? "", byteLength: projectRef.current.pdfSize, pages: {}, unavailable: {},
         } : undefined;
@@ -2355,11 +2366,12 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
         <span className="toolbar-divider" />
         <select
           value={exportScope}
-          onChange={(e) => setExportScope(e.target.value as "current" | "all")}
+          onChange={(e) => setExportScope(e.target.value as ExportScope)}
           disabled={!project || Boolean(busy)}
         >
           <option value="current">{t("ui.currentPage")}</option>
           <option value="all">{t("ui.allPages")}</option>
+          <option value="completed">{t("ui.completedPagesOnly")}</option>
         </select>
         <button
           onClick={() => exportFile("txt", exportScope)}
@@ -2548,6 +2560,20 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
               </button>
             </div>
           </div>
+          {regionMode === "add" && <div className="region-ocr-options">
+            <label>
+              <span>{t("ui.regionOcrMode")}</span>
+              <select aria-label={t("ui.regionOcrMode")} value={regionOcrPsm} disabled={Boolean(busy)} onChange={event => setRegionOcrPsm(Number(event.currentTarget.value) as 11 | 6 | 7)}>
+                <option value={11}>{t("ui.automatic")}</option>
+                <option value={6}>{t("ui.singleBlock")}</option>
+                <option value={7}>{t("ui.singleLine")}</option>
+              </select>
+            </label>
+            <label title={t("ui.regionDisableRowNoiseRejectionHint")}>
+              <input type="checkbox" checked={regionDisableRowNoiseRejection} disabled={Boolean(busy)} onChange={event => setRegionDisableRowNoiseRejection(event.currentTarget.checked)} />
+              <span>{t("ui.regionDisableRowNoiseRejection")}</span>
+            </label>
+          </div>}
           <div className="proofing-grid" onPointerMove={(event) => {
               if (!regionMode || !regionHintRef.current) return;
               const box = regionHintRef.current.getBoundingClientRect();

@@ -34,7 +34,7 @@ describe("browser OCR contract", () => {
     const ocr = new BrowserOcr();
     const output = await ocr.recognize(args);
     const worker = FakeWorker.instances[0];
-    expect(worker.jobs.find(job => job.action === "setParameters")!.payload).toEqual({ params: { tessedit_pageseg_mode: "3", user_defined_dpi: "600", hocr_char_boxes: "1" } });
+    expect(worker.jobs.find(job => job.action === "setParameters")!.payload).toEqual({ params: { tessedit_pageseg_mode: "3", user_defined_dpi: "600", hocr_char_boxes: "1", textord_noise_rejrows: "1" } });
     expect(worker.jobs.find(job => job.action === "recognize")!.payload).toMatchObject({ options: { rotateAuto: false, rotateRadians: 0 }, output: { text: false, hocr: true } });
     expect(worker.jobs.find(job => job.action === "initialize")!.payload.langs).toBe("eduba");
     expect(worker.jobs.find(job => job.action === "initialize")!.payload.config).toEqual({ dotproduct: "generic" });
@@ -57,6 +57,22 @@ describe("browser OCR contract", () => {
     FakeWorker.hold = undefined;
     expect(await ocr.recognize(args)).toBe(hocr);
     expect(FakeWorker.instances).toHaveLength(2);
+    await ocr.cancel();
+  });
+
+  it("turns row noise rejection off for a region and restores it on the reused worker for normal OCR", async () => {
+    const ocr = new BrowserOcr();
+    await ocr.recognize({ ...args, psm: 7, disableRowNoiseRejection: true });
+    await ocr.recognize(args);
+    await ocr.recognize({ ...args, psm: 6, disableRowNoiseRejection: true });
+    await ocr.recognize({ ...args, psm: 7, disableRowNoiseRejection: false });
+    expect(FakeWorker.instances).toHaveLength(1);
+    expect(FakeWorker.instances[0].jobs.filter(job => job.action === "setParameters").map(job => job.payload.params)).toEqual([
+      { tessedit_pageseg_mode: "7", user_defined_dpi: "600", hocr_char_boxes: "1", textord_noise_rejrows: "0" },
+      { tessedit_pageseg_mode: "3", user_defined_dpi: "600", hocr_char_boxes: "1", textord_noise_rejrows: "1" },
+      { tessedit_pageseg_mode: "6", user_defined_dpi: "600", hocr_char_boxes: "1", textord_noise_rejrows: "0" },
+      { tessedit_pageseg_mode: "7", user_defined_dpi: "600", hocr_char_boxes: "1", textord_noise_rejrows: "1" },
+    ]);
     await ocr.cancel();
   });
 

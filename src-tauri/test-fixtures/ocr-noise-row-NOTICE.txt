@@ -1,0 +1,13 @@
+Regression fixture for Tesseract row-noise rejection.
+
+Source: SAACT 6, The Neo-Assyrian Myth of Ishtar's Descent and Resurrection
+(2017), source PDF page 49, line 126 C: an opening bracket and six dots.
+
+Prepared with the saved Eduba page settings (300 DPI extraction, 0.5 degree
+deskew with expansion). Crop in processed page pixels: 390 568 650 637.
+Existing OCR words are masked and 20 pixels of white padding are added on
+each side, using prepareRegionOcrImage. No text recognition result is edited.
+
+With the bundled model, PSM 6 and PSM 7 return no words with ordinary row
+noise rejection, and recover the bracket and dots with textord_noise_rejrows=0.
+This fixture contains only the missing punctuation, not the full page.

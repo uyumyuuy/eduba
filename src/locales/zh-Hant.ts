@@ -9,6 +9,7 @@ const zhHant = {
   },
   notice: { welcome: "匯入 PDF 以校對 OCR 結果。" },
   notices: {
+    noCompletedPagesToExport: "沒有可匯出的已校對頁面。",
     figureEmpty: "所選區域沒有非白像素。",
     figureAdded: "已新增圖表區域。",
 
@@ -64,6 +65,7 @@ const zhHant = {
   bulkReplace: { title: "全部取代", source: "已選文字", replacement: "取代為", results: "{{count}} 項結果", selectPage: "選取本頁結果", clearPage: "取消本頁選取", noResults: "沒有相符行", previous: "上一頁結果", next: "下一頁結果", cancel: "取消", applyFormatting: "取代已選 {{count}} 項（同時取代格式）", preserveFormatting: "取代已選 {{count}} 項（保留格式）", applying: "正在取代…", close: "關閉" },
   scriptCalibration: { open: "自動辨識上標與下標", title: "自動辨識上標與下標", close: "關閉", description: "調整用於辨識上移與下移字元的大小和位置閾值。範例會立即更新，套用前不會儲存。", superscript: "上標", subscript: "下標", maxHeight: "最大相對字元高度", maxHeightHelp: "字元高度不超過估計的一般大寫字母高度的此比例時才會被辨識。", minRise: "最小正規化上移量", minRiseHelp: "基線到字元下緣的向上距離，除以估計的大寫字母高度。", minDrop: "最小正規化下移量", minDropHelp: "字元下緣到基線的向下距離，除以估計的大寫字母高度。", subscriptScope: "下標辨識範圍", digitsAndX: "數字 0–9 與 x", allCharacters: "所有字元", examples: "代表性範例", previewHint: "左側：原始影像（藍線：基線；橙框：字元框；綠線：基準字元高度 H） · 右側：偵測到的格式", reshuffleCurrentPage: "重新抽取範例（目前頁面）", reshuffleAllPages: "重新抽取範例（全部頁面）", loading: "正在尋找平衡的範例…", loadingProgress: "正在尋找範例… {{completed}} / {{total}}", noExamples: "此專案中找不到適合的範例。", unsavedHint: "只會在套用時儲存變更。", cancel: "取消", apply: "套用", applying: "正在套用…" },
   ui: {
+    completedPagesOnly: "僅已校對頁面",
     addFigureRegion: "新增圖表區域",
     finishAddFigureRegion: "結束新增圖表區域",
     figureSelectHint: "拖曳框選圖片或表格 · 按 ESC 取消",
@@ -88,6 +90,10 @@ const zhHant = {
     regionDeleteHint: "點擊刪除最小區域，拖曳刪除所有相交區域 · 按 ESC 取消",
     addOcrRegion: "新增 OCR 區域",
     finishAddOcrRegion: "結束新增 OCR 區域",
+    regionOcrMode: "新增區域的辨識方式",
+    singleLine: "單行",
+    regionDisableRowNoiseRejection: "停用行雜訊過濾",
+    regionDisableRowNoiseRejectionHint: "如果括號或點列缺失，請每次選取一行，並將辨識方式設為「單行」。",
     regionSelectHint: "拖曳選取要新增的區域 · 按 ESC 取消",
     licenses: "第三方授權條款", settings: "設定", language: "語言", imageMagnifier: "影像窗格放大鏡", textMagnifier: "校對窗格放大鏡", close: "關閉", model: "模型（.traineddata）", selectModel: "選擇模型",
     automatic: "自動", singleBlock: "單一文字區塊", sparseText: "稀疏文字", done: "完成", importPdf: "匯入 PDF",

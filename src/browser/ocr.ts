@@ -8,9 +8,10 @@ export function assetUrl(path: string): string {
   return new URL(`${import.meta.env.BASE_URL}browser-assets/${path}`, document.baseURI).href;
 }
 
-export function ocrParameters(psm: number, dpi = 300) {
+export function ocrParameters(psm: number, dpi = 300, disableRowNoiseRejection = false) {
   if (!Number.isInteger(psm) || psm < 0 || psm > 13 || !Number.isInteger(dpi) || dpi < 70 || dpi > 2400) throw new Error("Invalid OCR segmentation mode or DPI.");
-  return { tessedit_pageseg_mode: String(psm) as PSM, user_defined_dpi: String(dpi), hocr_char_boxes: "1" };
+  // Reset the flag on every request because the worker is reused for full-page OCR.
+  return { tessedit_pageseg_mode: String(psm) as PSM, user_defined_dpi: String(dpi), hocr_char_boxes: "1", textord_noise_rejrows: disableRowNoiseRejection ? "0" : "1" };
 }
 
 /** Own the native worker so cancellation also interrupts model initialization.
@@ -52,8 +53,8 @@ export class BrowserOcr {
   private loaded?: { model: string; channel: TesseractChannel };
   private active?: AbortController;
   private generation = 0;
-  async recognize(args: { imageBase64: string; modelPath: string; psm: number; dpi?: number }): Promise<string> {
-    const parameters = ocrParameters(args.psm, args.dpi), image = decodeBase64(args.imageBase64);
+  async recognize(args: { imageBase64: string; modelPath: string; psm: number; dpi?: number; disableRowNoiseRejection?: boolean }): Promise<string> {
+    const parameters = ocrParameters(args.psm, args.dpi, args.disableRowNoiseRejection), image = decodeBase64(args.imageBase64);
     if (!image.length || image.length > 64 * 1024 * 1024) throw new Error("Empty or oversized OCR image.");
     if (this.active) throw new Error("An OCR operation is already running.");
     const controller = new AbortController(), generation = this.generation;

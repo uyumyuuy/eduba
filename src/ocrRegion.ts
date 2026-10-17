@@ -158,7 +158,7 @@ function insertIndependent(page: DocumentPage, addition: OcrLine, regionId: stri
 }
 
 /** Integrates region hOCR without replacing existing recognition or corrections. */
-export function addOcrRegion(page: DocumentPage, recognized: DocumentPage, selection: Rect, padding: number, regionId: string, psm: 11 | 6 = 11): { page: DocumentPage; addedLines: number; addedWords: number } {
+export function addOcrRegion(page: DocumentPage, recognized: DocumentPage, selection: Rect, padding: number, regionId: string, psm: 11 | 6 | 7 = 11, disableRowNoiseRejection = false): { page: DocumentPage; addedLines: number; addedWords: number } {
   const next: DocumentPage = JSON.parse(JSON.stringify(page));
   const oldWords = allLines(page).flatMap(line => line.words);
   const dx = selection.left - padding, dy = selection.top - padding;
@@ -187,7 +187,7 @@ export function addOcrRegion(page: DocumentPage, recognized: DocumentPage, selec
     for (const paragraph of block.paragraphs) paragraph.bbox = union(paragraph.lines.map(line => line.bbox));
     block.bbox = union(block.paragraphs.map(paragraph => paragraph.bbox));
   }
-  next.manualOcrRegions = [...(next.manualOcrRegions ?? []), { id: regionId, bbox: selection, psm, addedWordIds, addedLineIds }];
+  next.manualOcrRegions = [...(next.manualOcrRegions ?? []), { id: regionId, bbox: selection, psm, disableRowNoiseRejection, addedWordIds, addedLineIds }];
   return { page: next, addedLines: lines.length, addedWords: addedWordIds.length };
 }
 

@@ -61,7 +61,7 @@ export type BackendCommands = {
   save_manifest: { args: { projectPath: string; manifest: string }; result: void };
   load_page: { args: { projectPath: string; pageId: string }; result: string | null };
   save_page: { args: { projectPath: string; pageId: string; data: string }; result: void };
-  run_ocr: { args: { imageBase64: string; modelPath: string; psm: number; dpi?: number }; result: string };
+  run_ocr: { args: { imageBase64: string; modelPath: string; psm: number; dpi?: number; disableRowNoiseRejection?: boolean }; result: string };
   detect_figures: { args: { imageBase64: string }; result: import("./automaticFigures").FigureDetection[] };
   classify_word_styles: { args: { imageBase64: string; samples: WordStyleSample[] }; result: WordStylePrediction[] };
   cancel_ocr: { args: undefined; result: void };

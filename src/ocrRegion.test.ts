@@ -72,6 +72,22 @@ describe("manual OCR region", () => {
     expect(merged.formatting).toEqual([{ start: 3, end: 12, kind: "italic" }]);
   });
 
+  it("merges a recovered dotted gap with single-line settings and exports its original page coordinates", () => {
+    const existing = line("body", "]-ma", { left: 80, top: 100, right: 130, bottom: 120 });
+    const recovered = line("gap", "[......", { left: 22, top: 30, right: 48, bottom: 50 });
+    const initial = page([existing]);
+    const result = addOcrRegion(initial, page([recovered]), selection, 20, "region-gap", 7, true);
+    expect(allLines(result.page)[0].correctedText).toBe("[...... ]-ma");
+    expect(result.page.manualOcrRegions?.[0]).toMatchObject({ psm: 7, disableRowNoiseRejection: true });
+    const document = new DOMParser().parseFromString(exportHocr([result.page]), "application/xhtml+xml");
+    expect(document.querySelector("parsererror")).toBeNull();
+    const words = Array.from(document.querySelectorAll(".ocrx_word"));
+    expect(words.map(word => word.textContent)).toEqual(["[......", "]-ma"]);
+    expect(words[0].getAttribute("title")).toBe("bbox 52 100 78 120");
+    expect(words[1].getAttribute("title")).toBe("bbox 80 100 130 120");
+    expect(allLines(initial)[0].correctedText).toBe("]-ma");
+  });
+
   it("inserts an unconnected result before the nearest line without changing existing reading order", () => {
     const isolated = { left: 50, top: 90, right: 75, bottom: 135 };
     const result = addOcrRegion(page([body()]), page([marker()]), isolated, 20, "region-c");

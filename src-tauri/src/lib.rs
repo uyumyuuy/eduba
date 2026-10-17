@@ -188,6 +188,8 @@ pub struct OcrArgs {
     pub model_path: String,
     pub psm: u8,
     pub dpi: u16,
+    #[serde(default)]
+    pub disable_row_noise_rejection: bool,
     pub tesseract_path: PathBuf,
 }
 
@@ -1298,6 +1300,7 @@ async fn run_ocr(
     model_path: String,
     psm: u8,
     dpi: Option<u16>,
+    disable_row_noise_rejection: Option<bool>,
 ) -> Result<String, String> {
     let child_slot = state.ocr_child.clone();
     let tesseract_path = resolve_tesseract_path(&app);
@@ -1309,6 +1312,7 @@ async fn run_ocr(
                 model_path,
                 psm,
                 dpi: dpi.unwrap_or(300),
+                disable_row_noise_rejection: disable_row_noise_rejection.unwrap_or(false),
                 tesseract_path,
             },
         )
@@ -1373,6 +1377,9 @@ fn run_ocr_blocking(child_slot: Arc<Mutex<Option<Child>>>, args: OcrArgs) -> Bac
         .stdin(Stdio::null())
         .stdout(Stdio::from(stdout_file.reopen()?))
         .stderr(Stdio::from(stderr_file.reopen()?));
+    if args.disable_row_noise_rejection {
+        command.arg("-c").arg("textord_noise_rejrows=0");
+    }
     hide_console(&mut command);
     {
         let mut slot = child_slot
@@ -2110,6 +2117,7 @@ mod tests {
                     .into_owned(),
                 psm: 3,
                 dpi: 300,
+                disable_row_noise_rejection: false,
                 tesseract_path,
             },
         )
@@ -2117,5 +2125,36 @@ mod tests {
         assert!(result.contains("ocr_page"));
         assert!(result.contains("ocrx_word"));
         assert!(result.contains("ocrx_cinfo"));
+    }
+
+    #[test]
+    #[ignore = "requires the bundled Tesseract runtime and OCR model"]
+    fn region_ocr_can_recover_a_noise_rejected_dotted_gap() {
+        let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        let image = BASE64.encode(include_bytes!("../test-fixtures/ocr-noise-row.png"));
+        for psm in [6, 7] {
+            for disable_row_noise_rejection in [false, true] {
+                let hocr = run_ocr_blocking(
+                    Arc::new(Mutex::new(None)),
+                    OcrArgs {
+                        image_base64: image.clone(),
+                        model_path: root.join("resources/models/eng_assyriology_scan_candidate_20260920_v1.traineddata").to_string_lossy().into_owned(),
+                        psm,
+                        dpi: 300,
+                        disable_row_noise_rejection,
+                        tesseract_path: root.join("resources/tesseract/tesseract.exe"),
+                    },
+                ).unwrap();
+                assert!(hocr.contains("ocr_page"));
+                assert_eq!(hocr.contains("class='ocrx_word'"), disable_row_noise_rejection,
+                    "PSM {psm}: row-noise setting must control recovery of the dotted gap");
+                if disable_row_noise_rejection {
+                    assert!(hocr.contains("ocrx_cinfo"));
+                    assert!(hocr.contains("x_bboxes"));
+                    assert!(hocr.contains(">[</span>"));
+                    assert!(hocr.contains(">.</span>"));
+                }
+            }
+        }
     }
 }

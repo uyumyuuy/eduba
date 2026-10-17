@@ -93,7 +93,7 @@ async function waitFor(assertion: () => void): Promise<void> {
 const emptyRegionHocr = '<html><body><div class="ocr_page" title="bbox 0 0 80 60"></div></body></html>';
 const numberRegionHocr = '<html><body><div class="ocr_page" title="bbox 0 0 80 60"><div class="ocr_carea"><p class="ocr_par"><span class="ocr_line" title="bbox 25 25 35 35"><span class="ocrx_word" title="bbox 25 25 35 35">2</span></span></p></div></div></body></html>';
 
-async function dragOcrRegion(container: HTMLElement) {
+async function dragOcrRegion(container: HTMLElement, configure?: () => Promise<void>) {
   const canvas = container.querySelector<HTMLCanvasElement>(".rendered-page")!;
   vi.spyOn(canvas, "getBoundingClientRect").mockReturnValue({ left: 0, top: 0, right: 100, bottom: 80, width: 100, height: 80 } as DOMRect);
   const surface = container.querySelector<HTMLDivElement>(".pdf-page")!;
@@ -103,6 +103,7 @@ async function dragOcrRegion(container: HTMLElement) {
     releasePointerCapture: { configurable: true, value: vi.fn() },
   });
   await act(async () => Array.from(container.querySelectorAll<HTMLButtonElement>("button")).find(button => button.textContent?.includes("Add OCR region"))!.click());
+  await configure?.();
   const pointer = (type: string, x: number, y: number) => {
     const event = new MouseEvent(type, { bubbles: true, button: 0, clientX: x, clientY: y });
     Object.defineProperty(event, "pointerId", { value: 1 });
@@ -866,12 +867,13 @@ describe("saved project loading", () => {
     });
     expect(container.querySelector(".region-selection")).not.toBeNull();
     await act(async () => surface.dispatchEvent(pointer("pointerup", 50, 40)));
-    await waitFor(() => expect(mocks.invoke).toHaveBeenCalledWith("run_ocr", expect.objectContaining({ psm: 11 })));
+    await waitFor(() => expect(mocks.invoke).toHaveBeenCalledWith("run_ocr", expect.objectContaining({ psm: 11, disableRowNoiseRejection: true })));
     await waitFor(() => expect(JSON.parse(persistedPages.get("page-1")!).manualOcrRegions).toHaveLength(1));
     const saved = JSON.parse(persistedPages.get("page-1")!);
     expect(saved.manualOcrRegions[0].bbox).toEqual({ left: 10, top: 20, right: 50, bottom: 40 });
     expect(mocks.invoke.mock.calls.filter(([command]) => command === "run_ocr")).toHaveLength(1);
     expect(saved.manualOcrRegions[0].psm).toBe(11);
+    expect(saved.manualOcrRegions[0].disableRowNoiseRejection).toBe(true);
     expect(container.textContent).toContain("15");
     const undoButton = Array.from(container.querySelectorAll<HTMLButtonElement>("button")).find(item => item.textContent?.includes("Undo"))!;
     await act(async () => undoButton.click());
@@ -886,11 +888,46 @@ describe("saved project loading", () => {
     await waitFor(() => expect(JSON.parse(persistedPages.get("page-1")!).manualOcrRegions?.[0].psm).toBe(6));
     const calls = mocks.invoke.mock.calls.filter(([command]) => command === "run_ocr");
     expect(calls.map(([, args]) => args.psm)).toEqual([11, 6]);
+    expect(calls.every(([, args]) => args.disableRowNoiseRejection === true)).toBe(true);
     expect(calls[1][1]).toEqual({ ...calls[0][1], psm: 6 });
     expect(mocks.invoke.mock.calls.filter(([command, args]) => command === "save_project_state" && args.updates.some((update: { expectedData?: string }) => update.expectedData !== undefined))).toHaveLength(1);
     expect(container.textContent).toContain("saved page one");
     await act(async () => Array.from(container.querySelectorAll<HTMLButtonElement>("button")).find(button => button.textContent?.includes("Undo"))!.click());
     await waitFor(() => expect(JSON.parse(persistedPages.get("page-1")!).manualOcrRegions).toBeUndefined());
+  });
+
+  it.each([
+    { psm: 6, disableRowNoiseRejection: true },
+    { psm: 7, disableRowNoiseRejection: true },
+    { psm: 6, disableRowNoiseRejection: false },
+    { psm: 7, disableRowNoiseRejection: false },
+  ])("uses the selected PSM $psm and row-noise setting $disableRowNoiseRejection for added regions", async ({ psm, disableRowNoiseRejection }) => {
+    const base = mocks.invoke.getMockImplementation()!;
+    mocks.invoke.mockImplementation(async (command: string, args?: { disableRowNoiseRejection?: boolean }) =>
+      command === "run_ocr" ? (args?.disableRowNoiseRejection ? numberRegionHocr.replace(">2<", ">[......]<") : emptyRegionHocr) : base(command, args as never));
+    await openSavedProject();
+    const before = persistedPages.get("page-1");
+    expect(container.querySelector(".region-ocr-options")).toBeNull();
+    await dragOcrRegion(container, async () => {
+      const mode = container.querySelector<HTMLSelectElement>(".region-ocr-options select")!;
+      const toggle = container.querySelector<HTMLInputElement>(".region-ocr-options input")!;
+      expect(mode.value).toBe("11");
+      expect(toggle.checked).toBe(true);
+      await act(async () => {
+        mode.value = String(psm);
+        mode.dispatchEvent(new Event("change", { bubbles: true }));
+        if (!disableRowNoiseRejection) toggle.click();
+      });
+    });
+    await waitFor(() => expect(mocks.invoke).toHaveBeenCalledWith("run_ocr", expect.objectContaining({ psm, disableRowNoiseRejection })));
+    if (disableRowNoiseRejection) {
+      await waitFor(() => expect(JSON.parse(persistedPages.get("page-1")!).manualOcrRegions?.[0]).toMatchObject({ psm, disableRowNoiseRejection }));
+      expect(container.textContent).toContain("[......]");
+    } else {
+      await waitFor(() => expect(container.textContent).toContain("No new text was found"));
+      expect(persistedPages.get("page-1")).toBe(before);
+    }
+    expect(mocks.invoke.mock.calls.filter(([command]) => command === "run_ocr")).toHaveLength(1);
   });
 
   it("leaves the page unchanged when both region OCR attempts are empty", async () => {
@@ -915,6 +952,7 @@ describe("saved project loading", () => {
     await openSavedProject();
     await dragOcrRegion(container);
     await waitFor(() => expect(mocks.invoke).toHaveBeenCalledWith("run_ocr", expect.objectContaining({ psm: 11 })));
+    expect(container.querySelector(".region-ocr-options")).toBeNull();
     await act(async () => Array.from(container.querySelectorAll<HTMLButtonElement>("button")).find(button => button.textContent?.trim() === "Cancel")!.click());
     await act(async () => finish(emptyRegionHocr));
     await waitFor(() => expect(container.textContent).toContain("OCR was cancelled"));
@@ -1593,5 +1631,56 @@ describe("saved project loading", () => {
     const html = atob((call[1] as { contentBase64: string }).contentBase64);
     expect(html).toContain('class="page-label">2</header>');
     expect(html).not.toContain('class="page-label">1</header>');
+  });
+
+  it.each(["TXT", "hOCR", "HTML", "SVG"])("exports only proofread pages in %s", async format => {
+    await openSavedProject();
+    vi.spyOn(globalThis, "fetch").mockImplementation(async () => ({ ok: true, status: 200, arrayBuffer: async () => Uint8Array.of(0, 1).buffer } as Response));
+    await act(async () => container.querySelectorAll<HTMLButtonElement>(".page-item")[1].click());
+    await waitFor(() => expect(container.textContent).toContain("saved page two"));
+    await act(async () => container.querySelector<HTMLInputElement>(".page-complete-toggle input")!.click());
+    await act(async () => container.querySelectorAll<HTMLButtonElement>(".page-item")[0].click());
+    await waitFor(() => expect(container.textContent).toContain("saved page one"));
+    const scope = Array.from(container.querySelectorAll<HTMLSelectElement>("select")).find(select => Array.from(select.options).some(option => option.value === "completed"))!;
+    expect(scope.querySelector('option[value="completed"]')?.textContent).toBe("Proofread pages only");
+    await act(async () => {
+      scope.value = "completed";
+      scope.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    mocks.invoke.mockClear();
+    await act(async () => Array.from(container.querySelectorAll<HTMLButtonElement>("button")).find(button => button.textContent?.trim() === format)!.click());
+    await waitFor(() => expect(mocks.invoke.mock.calls.some(([command]) => command === "export_file")).toBe(true));
+    expect(mocks.invoke.mock.calls.filter(([command]) => command === "load_page").map(([, args]) => args.pageId)).toEqual(["page-2"]);
+    const call = mocks.invoke.mock.calls.find(([command]) => command === "export_file")!;
+    const content = atob(call[1].contentBase64);
+    expect(content).toContain("saved page two");
+    expect(content).not.toContain("saved page one");
+    if (format === "hOCR") {
+      const xml = new DOMParser().parseFromString(content, "application/xml");
+      expect(xml.querySelectorAll(".ocr_page")).toHaveLength(1);
+      const title = xml.querySelector(".ocr_page")!.getAttribute("title")!;
+      expect(title).toContain("ppageno 0;");
+      expect(title).toContain("x_edubasourcepage 2;");
+      expect(title).toContain("x_edubapagetopdf 1 0 0 -1 0 80");
+    }
+    if (format === "HTML") {
+      expect(content).toContain('class="page-label">2</header>');
+      expect(content).not.toContain('class="page-label">1</header>');
+    }
+    if (format === "SVG") expect(mocks.dialogSave).toHaveBeenLastCalledWith(expect.objectContaining({ defaultPath: "reading.svg" }));
+  });
+
+  it("does not open a save dialog or write a file when no pages are proofread", async () => {
+    await openSavedProject();
+    const scope = Array.from(container.querySelectorAll<HTMLSelectElement>("select")).find(select => Array.from(select.options).some(option => option.value === "completed"))!;
+    await act(async () => {
+      scope.value = "completed";
+      scope.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    mocks.invoke.mockClear();
+    await act(async () => Array.from(container.querySelectorAll<HTMLButtonElement>("button")).find(button => button.textContent?.trim() === "TXT")!.click());
+    await waitFor(() => expect(container.textContent).toContain("There are no proofread OCR pages to export."));
+    expect(mocks.dialogSave).not.toHaveBeenCalled();
+    expect(mocks.invoke.mock.calls.some(([command]) => command === "export_file" || command === "load_page")).toBe(false);
   });
 });

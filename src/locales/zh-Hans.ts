@@ -9,6 +9,7 @@ const zhHans = {
   },
   notice: { welcome: "导入 PDF 以校对 OCR 结果。" },
   notices: {
+    noCompletedPagesToExport: "没有可导出的已校对页面。",
     figureEmpty: "所选区域没有非白像素。",
     figureAdded: "已添加图表区域。",
 
@@ -64,6 +65,7 @@ const zhHans = {
   bulkReplace: { title: "全部替换", source: "已选文字", replacement: "替换为", results: "{{count}} 项结果", selectPage: "选择本页结果", clearPage: "取消本页选择", noResults: "没有匹配行", previous: "上一页结果", next: "下一页结果", cancel: "取消", applyFormatting: "替换已选 {{count}} 项（同时替换格式）", preserveFormatting: "替换已选 {{count}} 项（保留格式）", applying: "正在替换…", close: "关闭" },
   scriptCalibration: { open: "自动识别上标和下标", title: "自动识别上标和下标", close: "关闭", description: "调整用于识别上移和下移字符的大小与位置阈值。示例会立即更新，应用前不会保存。", superscript: "上标", subscript: "下标", maxHeight: "最大相对字符高度", maxHeightHelp: "字符高度不超过估计的普通大写字母高度的此比例时才会被识别。", minRise: "最小归一化上移量", minRiseHelp: "基线到字符下边缘的向上距离，除以估计的大写字母高度。", minDrop: "最小归一化下移量", minDropHelp: "字符下边缘到基线的向下距离，除以估计的大写字母高度。", subscriptScope: "下标识别范围", digitsAndX: "数字 0–9 和 x", allCharacters: "所有字符", examples: "代表性示例", previewHint: "左侧：原始图像（蓝线：基线；橙框：字符框；绿线：基准字符高度 H） · 右侧：检测到的格式", reshuffleCurrentPage: "重新抽取示例（当前页面）", reshuffleAllPages: "重新抽取示例（全部页面）", loading: "正在查找均衡示例…", loadingProgress: "正在查找示例… {{completed}} / {{total}}", noExamples: "此项目中未找到合适的示例。", unsavedHint: "仅在应用时保存更改。", cancel: "取消", apply: "应用", applying: "正在应用…" },
   ui: {
+    completedPagesOnly: "仅已校对页面",
     addFigureRegion: "添加图表区域",
     finishAddFigureRegion: "结束添加图表区域",
     figureSelectHint: "拖动框选图片或表格 · 按 ESC 取消",
@@ -88,6 +90,10 @@ const zhHans = {
     regionDeleteHint: "点击删除最小区域，拖动删除所有相交区域 · 按 ESC 取消",
     addOcrRegion: "添加 OCR 区域",
     finishAddOcrRegion: "结束添加 OCR 区域",
+    regionOcrMode: "新增区域的识别方式",
+    singleLine: "单行",
+    regionDisableRowNoiseRejection: "禁用行噪声过滤",
+    regionDisableRowNoiseRejectionHint: "如果括号或点列缺失，请每次选择一行，并将识别方式设为“单行”。",
     regionSelectHint: "拖动选择要添加的区域 · 按 ESC 取消",
     licenses: "第三方许可证", settings: "设置", language: "语言", imageMagnifier: "图像面板放大镜", textMagnifier: "校对面板放大镜", close: "关闭", model: "模型（.traineddata）", selectModel: "选择模型",
     automatic: "自动", singleBlock: "单一文本块", sparseText: "稀疏文本", done: "完成", importPdf: "导入 PDF",

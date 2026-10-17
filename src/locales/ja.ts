@@ -9,6 +9,7 @@ const ja = {
   },
   notice: { welcome: "PDF を読み込み、OCR 結果を校正します。" },
   notices: {
+    noCompletedPagesToExport: "書き出せる校正完了ページがありません。",
     figureEmpty: "指定範囲に非白ピクセルはありません。",
     figureAdded: "図表領域を追加しました。",
 
@@ -64,6 +65,7 @@ const ja = {
   bulkReplace: { title: "一括置換", source: "選択した文字列", replacement: "置換後の文字列", results: "{{count}} 件", selectPage: "この結果ページをすべて選択", clearPage: "この結果ページを解除", noResults: "一致する行はありません", previous: "前の結果ページ", next: "次の結果ページ", cancel: "キャンセル", applyFormatting: "選択した {{count}} 件を置換（書式も置換）", preserveFormatting: "選択した {{count}} 件を置換（書式を維持）", applying: "置換中…", close: "閉じる" },
   scriptCalibration: { open: "上付き・下付きの自動認識", title: "上付き・下付きの自動認識", close: "閉じる", description: "文字の大きさと位置のしきい値を調整します。例はすぐに更新され、適用するまで保存されません。", superscript: "上付き", subscript: "下付き", maxHeight: "文字高の最大比率", maxHeightHelp: "推定した通常の大文字高に対し、文字高がこの比率以下なら対象にします。", minRise: "上方向の最小正規化変位", minRiseHelp: "基線から文字の下端までの上方向の距離を、推定大文字高で割った値です。", minDrop: "下方向の最小正規化変位", minDropHelp: "文字の下端から基線までの下方向の距離を、推定大文字高で割った値です。", subscriptScope: "下付きとして認識する文字", digitsAndX: "数字 0–9 と x", allCharacters: "すべての文字", examples: "代表的な例", previewHint: "左：元画像（青線＝基線、橙枠＝文字矩形、緑＝基準文字高 H）　右：検出した書式", reshuffleCurrentPage: "例を入れ替える（編集中ページから）", reshuffleAllPages: "例を入れ替える（全ページから）", loading: "バランスの取れた例を探しています…", loadingProgress: "例を探しています… {{completed}} / {{total}}", noExamples: "このプロジェクトには適した例がありません。", unsavedHint: "適用するまで変更は保存されません。", cancel: "キャンセル", apply: "適用", applying: "適用中…" },
   ui: {
+    completedPagesOnly: "校正完了ページのみ",
     addFigureRegion: "図表領域を追加",
     finishAddFigureRegion: "図表領域の追加を終了",
     figureSelectHint: "図または表を囲む範囲をドラッグ・ESCキーで中止",
@@ -88,6 +90,10 @@ const ja = {
     regionDeleteHint: "クリックで最小の領域を削除、範囲指定で交差する領域をすべて削除・ESCキーで中止",
     addOcrRegion: "OCR 領域を追加",
     finishAddOcrRegion: "OCR 領域の追加を終了",
+    regionOcrMode: "追加領域の認識方法",
+    singleLine: "1行",
+    regionDisableRowNoiseRejection: "行のノイズ除去を無効にする",
+    regionDisableRowNoiseRejectionHint: "括弧や点列が欠落する場合は、1行ずつ範囲を選び、認識方法を「1行」にしてください。",
     regionSelectHint: "追加する範囲をドラッグ・ESCキーで中止",
     licenses: "第三者ライセンス", settings: "設定", language: "言語", imageMagnifier: "画像ペインの拡大鏡", textMagnifier: "校正ペインの拡大鏡", close: "閉じる", model: "モデル（.traineddata）", selectModel: "モデルを選択",
     automatic: "自動", singleBlock: "単一ブロック", sparseText: "疎なテキスト", done: "完了", importPdf: "PDF を読み込む",
