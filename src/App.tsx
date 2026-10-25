@@ -898,11 +898,15 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
       importCreatingRef.current = true;
       setImportCreating(true);
       try {
-        const projectPath = await dialogSave({
-          defaultPath: importSource.path.replace(/\.pdf$/i, ".eduba"),
-          filters: [{ name: "Eduba", extensions: ["eduba"] }],
-        });
-        if (typeof projectPath !== "string") return;
+        let projectPath = "";
+        if (isTauri) {
+          const selected = await dialogSave({
+            defaultPath: importSource.path.replace(/\.pdf$/i, ".eduba"),
+            filters: [{ name: "Eduba", extensions: ["eduba"] }],
+          });
+          if (typeof selected !== "string") return;
+          projectPath = selected;
+        }
         const next = makeImportManifest(config);
         next.pages = await prepareImportEntries(source, config);
         next.settings = {
@@ -912,12 +916,14 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
             manifestRef.current.settings.modelPath || environmentModel.current,
         };
         await flush();
-        const info = await invokeCommand("create_project", {
-          pdfPath: importSource.path,
-          projectPath,
-          manifest: JSON.stringify(next),
-          overwriteExisting: true,
-        });
+        const info = isTauri
+          ? await invokeCommand("create_project", {
+            pdfPath: importSource.path,
+            projectPath,
+            manifest: JSON.stringify(next),
+            overwriteExisting: true,
+          })
+          : await (await import("./browser/backend")).createBrowserProject(importSource.path, JSON.stringify(next));
         if (!isTauri) forgetFile(importSource.path);
         sourcePdfRef.current = null;
         setImportSource(null);

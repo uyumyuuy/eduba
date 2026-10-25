@@ -30,6 +30,15 @@ export async function activateBrowserProject(path: string): Promise<void> {
   void navigator.storage.persist().catch(() => undefined);
 }
 export function workingProjects(): Promise<ProjectInfo[]> { return database("list"); }
+export async function createBrowserProject(pdfPath: string, manifest?: string): Promise<ProjectInfo> {
+  const source = localFile(pdfPath);
+  const file = source.file ?? await source.handle!.getFile();
+  const name = `${(source.name || "project.pdf").replace(/\.pdf$/i, "")}.eduba`;
+  const info = await database<ProjectInfo>("create", { file, name, manifest });
+  // A new working copy has no external destination until the user explicitly saves it.
+  changed(info.path);
+  return info;
+}
 export async function deleteWorkingProject(path: string): Promise<void> {
   if (!/^opfs:\/[a-z0-9-]+\.eduba$/.test(path)) throw new Error("Invalid working project identifier.");
   const previous = preferences().lastProject;
@@ -91,16 +100,7 @@ const handlers: { [K in keyof BackendCommands]: CommandHandler<K> } = {
     if (![args.begin, args.end].every(Number.isSafeInteger) || args.begin < 0 || args.end <= args.begin || args.end > file.size || args.end - args.begin > 16 * 1024 * 1024) throw new Error("Invalid PDF range.");
     return encodeBase64(new Uint8Array(await file.slice(args.begin, args.end).arrayBuffer()));
   },
-  create_project: async args => {
-    const source = localFile(args.pdfPath), target = localFile(args.projectPath);
-    const file = source.file ?? await source.handle!.getFile();
-    const info = await database<ProjectInfo>("create", { file, name: target.name, manifest: args.manifest });
-    destinations.set(info.path, target);
-    changed(info.path);
-    forgetFile(args.projectPath);
-    await saveBrowserProject(info, target);
-    return info;
-  },
+  create_project: args => createBrowserProject(args.pdfPath, args.manifest),
   open_project: async args => {
     if (args.projectPath.startsWith("opfs:")) {
       const info = await database<ProjectInfo>("open_project", args);
