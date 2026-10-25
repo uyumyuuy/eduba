@@ -37,6 +37,7 @@ import { canvasToBase64, openProjectPdf, openSourcePdf } from "./pdf";
 import { LogicalPageThumbnailCache } from "./pdfThumbnail";
 import { invokeCommand, isTauri, type ProjectInfo } from "./tauri";
 import type { WorkingProjectInfo } from "./browser/backend";
+import { storageProtection, STORAGE_PROTECTION_CHANGED, type StorageProtection } from "./browser/storage";
 import { SaveQueue } from "./persistence";
 import { compactChange, historyPageUpdate, HistoryPersistence, type ProjectPageUpdate, type HistoryOperation as EditHistoryOperation } from "./editHistory";
 import { createReadableHtml } from "./readableHtml";
@@ -359,6 +360,35 @@ function LineOverlay({initialCaret,portalTarget,value,formatting,left,top,width,
   {candidates.map((candidate,index)=><EditToolbarButton className="text-candidate" key={candidate} label={candidate} shortcut={index<9?String(index+1):undefined} showShortcut={ctrl} onClick={()=>replace(candidate)}>{candidate}</EditToolbarButton>)}
 </div>}{textMagnifierEnabled&&magnifierPosition&&portalTarget&&createPortal(<ProofingTextMagnifier ref={magnifierRef} value={value} formatting={formatting} selectionStart={selection.start} selectionEnd={selection.end} caret={selection.caret} fontSize={magnifierFontSize} style={{left:magnifierPosition.left,top:magnifierPosition.top,width:magnifierPosition.width,visibility:magnifierPosition.visible?undefined:"hidden"}} />,portalTarget)}</>;
 }
+function WorkingProjectStorageNotice() {
+  const { t } = useTranslation();
+  const [protection, setProtection] = useState<StorageProtection>("unknown");
+  useEffect(() => {
+    let disposed = false, request = 0;
+    const update = () => {
+      const current = ++request;
+      void storageProtection().then(value => {
+        if (!disposed && current === request) setProtection(value);
+      });
+    };
+    update();
+    window.addEventListener("focus", update);
+    window.addEventListener(STORAGE_PROTECTION_CHANGED, update);
+    return () => {
+      disposed = true;
+      window.removeEventListener("focus", update);
+      window.removeEventListener(STORAGE_PROTECTION_CHANGED, update);
+    };
+  }, []);
+  return <div className="recovery-storage-notice">
+    <p role="status">
+      <strong>{t(`browser.storageProtection.${protection}.title`)}</strong>
+      <span>{t(`browser.storageProtection.${protection}.description`)}</span>
+    </p>
+    <p>{t("browser.privateBrowsingNotice")}</p>
+  </div>;
+}
+
 function WorkingProjectDetails({ info }: { info: WorkingProjectInfo }) {
   const { t, i18n } = useTranslation();
   const locale = i18n.resolvedLanguage || i18n.language;
@@ -3028,9 +3058,11 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
           }}
         />
       )}
-      {recoveryProjects && <div className="modal-scrim"><div className="modal recovery-modal" role="dialog" aria-modal="true" aria-labelledby="recovery-title" aria-busy={Boolean(deletingWorkingPath)}>
+      {recoveryProjects && <div className="modal-scrim"><div className="modal recovery-modal" role="dialog" aria-modal="true" aria-labelledby="recovery-title" aria-describedby="recovery-description" aria-busy={Boolean(deletingWorkingPath)}>
         <div className="modal-head"><h2 id="recovery-title">{t("browser.recoveryTitle")}</h2><button className="icon-btn" disabled={Boolean(busy)} onClick={() => setRecoveryProjects(null)} aria-label={t("ui.close")}><X size={16} /></button></div>
-        <p>{t("browser.recoveryDescription")}</p>
+        <div className="recovery-body">
+        <p id="recovery-description">{t("browser.recoveryDescription")}</p>
+        <WorkingProjectStorageNotice />
         {recoveryError && <p className="form-error" role="alert">{t("browser.workingDeleteFailed", { error: recoveryError })}</p>}
         {recoveryProjects.length ? <ul className="recovery-projects">{orderedRecoveryProjects.map(info => <li key={info.path}>
           <div className="recovery-project-info">
@@ -3044,6 +3076,7 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
             {deletingWorkingPath === info.path ? t("browser.deletingWorking") : t("browser.deleteWorking")}
           </button>
         </li>)}</ul> : <p className="recovery-empty">{t("browser.recoveryEmpty")}</p>}
+        </div>
       </div></div>}
       {bulkReplace && project && (<BulkReplaceDialog open={true} projectPath={project.path} initialSearch={bulkReplace.search} initialMatch={bulkReplace.initialMatch} getSnippet={getBulkSnippet} onApply={applyBulkReplace} onClose={() => { bulkSnippetCanvases.current.clear(); setBulkReplace(null); }} />)}
       {pendingFigure && canvasRef.current && <FigureRegionDialog source={canvasRef.current} selection={pendingFigure.selection} tight={pendingFigure.tight}

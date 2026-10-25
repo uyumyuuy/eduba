@@ -107,8 +107,11 @@ button:disabled { cursor: not-allowed; opacity: .42; }
 .modal-actions { display: flex; justify-content: flex-end; gap: 7px; margin-top: 24px; }
 .modal-head { display: flex; justify-content: space-between; align-items: flex-start; }
 .recovery-modal { width: min(660px, calc(100vw - 32px)); max-height: calc(100dvh - 32px); display: flex; flex-direction: column; }
-.recovery-modal > .modal-head, .recovery-modal > p { flex-shrink: 0; }
-.recovery-projects { min-height: 0; overflow: auto; overscroll-behavior: contain; list-style: none; padding: 0; margin: 16px 0 0; }
+.recovery-modal > .modal-head { flex-shrink: 0; }
+.recovery-body { min-height: 0; overflow: auto; overscroll-behavior: contain; }
+.recovery-storage-notice { display: grid; gap: 8px; margin-top: 14px; padding: 12px; border: 1px solid #dedbd1; border-radius: 6px; background: #f1f2ec; }
+.recovery-storage-notice strong { display: block; margin-bottom: 3px; color: #3d4e4a; font-size: 11px; }
+.recovery-projects { list-style: none; padding: 0; margin: 16px 0 0; }
 .recovery-projects li { display: flex; align-items: flex-start; gap: 10px; padding: 12px 0; border-bottom: 1px solid var(--line); }
 .recovery-projects li:last-child { border-bottom: 0; }
 .recovery-project-info { min-width: 0; flex: 1; }

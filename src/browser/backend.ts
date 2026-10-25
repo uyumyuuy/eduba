@@ -4,6 +4,7 @@ import { decodeBase64, encodeBase64 } from "./bytes";
 import { BrowserOcr, DEFAULT_MODEL, assetUrl } from "./ocr";
 import { workerRpc } from "./rpc";
 import { storeModel } from "./modelStore";
+import { requestStorageProtection } from "./storage";
 
 const database = workerRpc(() => new Worker(new URL("./database.worker.ts", import.meta.url), { type: "module" }));
 const inference = workerRpc(() => new Worker(new URL("./inference.worker.ts", import.meta.url), { type: "module" }));
@@ -28,7 +29,7 @@ export function isProjectDirty(path?: string): boolean { return path ? dirty.has
 export function markBrowserProjectDirty(path: string): void { changed(path); }
 export async function activateBrowserProject(path: string): Promise<void> {
   await database("activate", { projectPath: path });
-  void navigator.storage.persist().catch(() => undefined);
+  void requestStorageProtection();
 }
 export type WorkingProjectInfo = ProjectInfo & {
   pageCount: number | null;
