@@ -382,6 +382,7 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
   const [project, setProject] = useState<ProjectInfo | null>(null);
   const [browserDirty, setBrowserDirty] = useState(false);
   const [recoveryProjects, setRecoveryProjects] = useState<ProjectInfo[] | null>(null);
+  const [hasWorkingProjects, setHasWorkingProjects] = useState(false);
   const [deletingWorkingPath, setDeletingWorkingPath] = useState<string | null>(null);
   const [recoveryError, setRecoveryError] = useState<string | null>(null);
   const [manifest, setManifest] = useState<Manifest>(makeManifest);
@@ -1219,6 +1220,17 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
       setBusy(null);
     }
   }, [busy, flush, openInfo, setNotice]);
+  const showWorkingProjects = useCallback(async () => {
+    if (isTauri || busy || working.current || importActive.current) return;
+    setRecoveryError(null);
+    try {
+      const saved = await (await import("./browser/backend")).workingProjects();
+      setHasWorkingProjects(saved.length > 0);
+      if (!working.current && !importActive.current) setRecoveryProjects(saved);
+    } catch (error) {
+      setNotice("notices.projectOpenFailed", { error: errorText(error) });
+    }
+  }, [busy, setNotice]);
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.defaultPrevented || !event.ctrlKey || event.altKey || event.metaKey || event.isComposing || event.keyCode === 229) return;
@@ -1908,6 +1920,27 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
   useEffect(() => {
     if (isTauri) return;
     let disposed = false;
+    let request = 0;
+    const update = () => {
+      const current = ++request;
+      void import("./browser/backend").then(backend => backend.workingProjects()).then(saved => {
+        if (!disposed && current === request) setHasWorkingProjects(saved.length > 0);
+      }).catch(() => {
+        if (!disposed && current === request) setHasWorkingProjects(false);
+      });
+    };
+    window.addEventListener("eduba-browser-projects-changed", update);
+    window.addEventListener("focus", update);
+    update();
+    return () => {
+      disposed = true;
+      window.removeEventListener("eduba-browser-projects-changed", update);
+      window.removeEventListener("focus", update);
+    };
+  }, []);
+  useEffect(() => {
+    if (isTauri) return;
+    let disposed = false;
     const update = () => {
       void import("./browser/backend").then(backend => {
         if (!disposed) setBrowserDirty(backend.isProjectDirty(projectRef.current?.path));
@@ -2436,7 +2469,7 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
               ? t("ui.logicalPageCount", { count: manifest.pages.length })
               : t("ui.projectFile")}
           </span>
-          {!isTauri && <span className="muted">{t(project ? (browserDirty ? "browser.unsavedFile" : "browser.savedFile") : "browser.localOnly")}</span>}
+          {!isTauri && <span className={project ? "muted" : "muted privacy-notice"}>{t(project ? (browserDirty ? "browser.unsavedFile" : "browser.savedFile") : "browser.localOnly")}</span>}
         </div>
         <button
           className="icon-btn"
@@ -2459,7 +2492,7 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
         {!isTauri && <>
           <button onClick={() => void save()} disabled={!project || Boolean(busy)} title="Ctrl+S">{t("browser.save")}</button>
           <button onClick={() => void save(true)} disabled={!project || Boolean(busy)} title="Ctrl+Shift+S">{t("browser.saveAs")}</button>
-          <button disabled={Boolean(busy)} onClick={() => { setRecoveryError(null); void import("./browser/backend").then(backend => backend.workingProjects()).then(setRecoveryProjects).catch(error => setNotice("notices.projectOpenFailed", { error: errorText(error) })); }}>{t("browser.recover")}</button>
+          <button disabled={Boolean(busy) || !hasWorkingProjects} onClick={() => void showWorkingProjects()}>{t("browser.recover")}</button>
         </>}
         <span className="toolbar-divider" />
         <button onClick={undo} disabled={!undoStack.length || Boolean(busy)} title="Ctrl+Z" aria-keyshortcuts="Control+Z">
@@ -2758,7 +2791,13 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
                     }} />}
                   </div>
                 ) : (
-                  <Empty />
+                  <Empty
+                    busy={Boolean(busy) || importCreating}
+                    onImport={() => void importPdf()}
+                    onOpen={() => void openProject()}
+                    onRecover={isTauri ? undefined : () => void showWorkingProjects()}
+                    canRecover={hasWorkingProjects}
+                  />
                 )}
               </div>
             </article>
@@ -2912,7 +2951,7 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
                         ? t("ui.noOcr")
                         : t("ui.importToStart")}
                     </strong>
-                    {project ? (
+                    {project && (
                       <button
                         type="button"
                         className="primary"
@@ -2921,8 +2960,6 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
                       >
                         <ScanLine size={15} /> {t("ui.ocrCurrent")}
                       </button>
-                    ) : (
-                      <span>{t("ui.singleFileHint")}</span>
                     )}
                   </div>
                 )}
@@ -3037,12 +3074,25 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
     </main>
   );
 }
-function Empty() {
+function Empty({ busy, onImport, onOpen, onRecover, canRecover }: {
+  busy: boolean;
+  onImport: () => void;
+  onOpen: () => void;
+  onRecover?: () => void;
+  canRecover: boolean;
+}) {
   const { t } = useTranslation();
   return (
     <div className="empty-state">
-      <strong>Eduba</strong>
-      <span>{t("ui.importToStart")}</span>
+      <button className="primary" disabled={busy} onClick={onImport}>
+        <FilePlus2 size={17} /> {t("ui.createFromPdf")}
+      </button>
+      <button className="secondary" disabled={busy} onClick={onOpen}>
+        <FolderOpen size={17} /> {t("ui.openProjectFile")}
+      </button>
+      {onRecover && <button className="secondary" disabled={busy || !canRecover} onClick={onRecover}>
+        <FolderOpen size={17} /> {t("browser.recoveryTitle")}
+      </button>}
     </div>
   );
 }

@@ -23,6 +23,7 @@ function changed(path: string, changed = true) {
   if (changed) dirty.add(path); else dirty.delete(path);
   window.dispatchEvent(new Event("eduba-browser-save-state"));
 }
+function workingProjectsChanged() { window.dispatchEvent(new Event("eduba-browser-projects-changed")); }
 export function isProjectDirty(path?: string): boolean { return path ? dirty.has(path) : dirty.size > 0; }
 export function markBrowserProjectDirty(path: string): void { changed(path); }
 export async function activateBrowserProject(path: string): Promise<void> {
@@ -37,6 +38,7 @@ export async function createBrowserProject(pdfPath: string, manifest?: string): 
   const info = await database<ProjectInfo>("create", { file, name, manifest });
   // A new working copy has no external destination until the user explicitly saves it.
   changed(info.path);
+  workingProjectsChanged();
   return info;
 }
 export async function deleteWorkingProject(path: string): Promise<void> {
@@ -55,6 +57,7 @@ export async function deleteWorkingProject(path: string): Promise<void> {
   destinations.delete(path);
   revisions.delete(path);
   changed(path, false);
+  workingProjectsChanged();
 }
 
 /** Acquire a picker/permission during the save button's user activation, before flushing. */
@@ -113,6 +116,7 @@ const handlers: { [K in keyof BackendCommands]: CommandHandler<K> } = {
     // Importing does not write to the source file.
     changed(info.path, false);
     forgetFile(args.projectPath);
+    workingProjectsChanged();
     return info;
   },
   read_pdf_range: args => database("read_pdf_range", args),
