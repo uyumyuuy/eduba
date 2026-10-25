@@ -135,6 +135,8 @@ button:disabled { cursor: not-allowed; opacity: .42; }
 .settings-modal select, .settings-modal input[type=number], .file-select { height: 34px; padding: 0 9px; border: 1px solid #d6d8d0; border-radius: 5px; outline: 0; background: #fffefa; color: #3d4e4a; font-size: 11px; }
 .file-select { display: flex; justify-content: space-between; align-items: center; width: 100%; overflow: hidden; color: #8a938b; text-align: left; font-weight: 400; }
 .file-select svg { flex: 0 0 auto; }
+.model-reset { margin-top: 8px; padding: 7px 10px; border-radius: 5px; background: #e8efeb; color: #2a6768; font-size: 11px; }
+.model-reset:hover:not(:disabled) { background: #dbe7e2; }
 .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 11px; }
 .toggle-label { flex-direction: row !important; align-items: center; justify-content: space-between; height: 34px; margin-top: 34px !important; }
 .toggle-label input { display: none; }

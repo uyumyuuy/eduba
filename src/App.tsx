@@ -3186,6 +3186,7 @@ function SettingsModal({
   const { t } = useTranslation();
   const [showLicenses, setShowLicenses] = useState(false);
   const [modelError, setModelError] = useState<string | null>(null);
+  const [modelLoading, setModelLoading] = useState(false);
   if (showLicenses) return <LicenseModal back={() => setShowLicenses(false)} close={close} />;
   return (
     <div className="modal-scrim">
@@ -3199,17 +3200,25 @@ function SettingsModal({
         <label className="settings-checkbox"><input type="checkbox" checked={magnifierPreferences.imageMagnifierEnabled} onChange={(event) => setMagnifierPreference("imageMagnifierEnabled", event.currentTarget.checked)} />{t("ui.imageMagnifier")}</label>
         <label className="settings-checkbox"><input type="checkbox" checked={magnifierPreferences.textMagnifierEnabled} onChange={(event) => setMagnifierPreference("textMagnifierEnabled", event.currentTarget.checked)} />{t("ui.textMagnifier")}</label>
         <label>{t("ui.model")}
-          <button className="file-select" onClick={async () => {
-            const path = await dialogOpen({ multiple: false, filters: [{ name: t("ui.model"), extensions: ["traineddata"] }] });
-            if (typeof path === "string") {
-              try {
+          <button className="file-select" disabled={modelLoading} onClick={async () => {
+            setModelLoading(true);
+            setModelError(null);
+            try {
+              const path = await dialogOpen({ multiple: false, filters: [{ name: t("ui.model"), extensions: ["traineddata"] }] });
+              if (typeof path === "string") {
                 const modelPath = isTauri ? path : await (await import("./browser/backend")).importBrowserModel(path);
                 putManifest({ ...manifest, settings: { ...manifest.settings, modelPath } }); scheduleSave();
-              } catch (error) { setModelError(errorText(error)); }
-            }
+              }
+            } catch (error) { setModelError(errorText(error)); }
+            finally { setModelLoading(false); }
           }}>{manifest.settings.modelPath ? (isTauri ? manifest.settings.modelPath : fileName(manifest.settings.modelPath)) : t("ui.selectModel")}</button>
           {modelError && <span role="alert">{modelError}</span>}
         </label>
+        {!isTauri && <button className="model-reset" disabled={modelLoading || !manifest.settings.modelPath.startsWith("model:")} onClick={() => {
+          setModelError(null);
+          putManifest({ ...manifest, settings: { ...manifest.settings, modelPath: DEFAULT_MODEL } });
+          scheduleSave();
+        }}>{t("browser.resetModel")}</button>}
         <label>PSM<select value={manifest.settings.psm} onChange={(e) => { putManifest({ ...manifest, settings: { ...manifest.settings, psm: Number(e.target.value) as Settings["psm"] } }); scheduleSave(); }}><option value="3">3 — {t("ui.automatic")}</option><option value="6">6 — {t("ui.singleBlock")}</option><option value="11">11 — {t("ui.sparseText")}</option></select></label>
         <div className="modal-actions"><button onClick={() => setShowLicenses(true)}>{t("ui.licenses")}</button><button className="primary" onClick={close}>{t("ui.done")}</button></div>
       </div>

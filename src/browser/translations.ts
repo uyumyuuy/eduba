@@ -7,6 +7,7 @@ const baseBrowserResources = {
 
 const workingProjectResources = {
   en: {
+    resetModel: "Use the baseline model",
     storageProtection: {
       enabled: { title: "Stored data protection: Enabled", description: "Your work is protected from automatic deletion due to low storage space. However, clearing site data in your browser settings or elsewhere will also delete your work." },
       disabled: { title: "Stored data protection: Disabled", description: "Your work may be deleted automatically due to low storage space or your browser’s storage policy." },
@@ -19,6 +20,7 @@ const workingProjectResources = {
     workingDeleted: "Deleted “{{name}}” from this browser.", workingDeleteFailed: "Could not delete the working project: {{error}}",
   },
   ja: {
+    resetModel: "基準モデルに戻す",
     storageProtection: {
       enabled: { title: "保存データの保護：有効", description: "容量不足による自動削除から保護されています。ただし、ブラウザの設定などでサイトデータを削除すると、作業内容も削除されます。" },
       disabled: { title: "保存データの保護：無効", description: "容量不足やブラウザの保存方針により、作業内容が自動的に削除される場合があります。" },
@@ -31,6 +33,7 @@ const workingProjectResources = {
     workingDeleted: "「{{name}}」をこのブラウザから削除しました。", workingDeleteFailed: "作業コピーを削除できませんでした：{{error}}",
   },
   "zh-Hans": {
+    resetModel: "恢复基准模型",
     storageProtection: {
       enabled: { title: "存储数据保护：已启用", description: "工作内容已受到保护，不会因存储空间不足而被自动删除。但是，在浏览器设置等位置清除网站数据时，工作内容也会被删除。" },
       disabled: { title: "存储数据保护：未启用", description: "工作内容可能因存储空间不足或浏览器的存储策略而被自动删除。" },
@@ -43,6 +46,7 @@ const workingProjectResources = {
     workingDeleted: "已从此浏览器删除“{{name}}”。", workingDeleteFailed: "无法删除工作副本：{{error}}",
   },
   "zh-Hant": {
+    resetModel: "恢復基準模型",
     storageProtection: {
       enabled: { title: "儲存資料保護：已啟用", description: "工作內容已受到保護，不會因儲存空間不足而被自動刪除。但是，在瀏覽器設定等位置清除網站資料時，工作內容也會被刪除。" },
       disabled: { title: "儲存資料保護：未啟用", description: "工作內容可能因儲存空間不足或瀏覽器的儲存政策而被自動刪除。" },
