@@ -7,21 +7,25 @@ const baseBrowserResources = {
 
 const workingProjectResources = {
   en: {
+    pageCount: "Logical pages", dataSize: "Data size", lastEdited: "Last edited", unknown: "Unknown",
     deleteWorking: "Delete", deletingWorking: "Deleting…", deleteWorkingLabel: "Delete {{name}} from this browser",
     deleteWorkingConfirm: "Delete “{{name}}” from this browser?\n\nIts working PDF, OCR results, corrections, and undo history will be removed permanently. Save a .eduba file first if you need a backup.\n\nFiles already saved on your device are kept. The project will close if it is currently open.",
     workingDeleted: "Deleted “{{name}}” from this browser.", workingDeleteFailed: "Could not delete the working project: {{error}}",
   },
   ja: {
+    pageCount: "論理ページ数", dataSize: "データ容量", lastEdited: "最終編集日時", unknown: "不明",
     deleteWorking: "削除", deletingWorking: "削除中…", deleteWorkingLabel: "{{name}} をこのブラウザから削除",
     deleteWorkingConfirm: "「{{name}}」をこのブラウザから削除しますか？\n\nこの作業コピーの PDF・OCR 結果・校正内容・取り消し履歴が削除され、元に戻せません。必要な内容は先に .eduba ファイルとして保存してください。\n\n端末に保存済みのファイルは残ります。現在開いている場合はプロジェクトを閉じます。",
     workingDeleted: "「{{name}}」をこのブラウザから削除しました。", workingDeleteFailed: "作業コピーを削除できませんでした：{{error}}",
   },
   "zh-Hans": {
+    pageCount: "逻辑页数", dataSize: "数据大小", lastEdited: "最后编辑时间", unknown: "未知",
     deleteWorking: "删除", deletingWorking: "正在删除…", deleteWorkingLabel: "从此浏览器删除 {{name}}",
     deleteWorkingConfirm: "要从此浏览器删除“{{name}}”吗？\n\n此工作副本的 PDF、OCR 结果、校对内容和撤销历史将被永久删除。如需备份，请先保存为 .eduba 文件。\n\n设备上已保存的文件将保留。如果项目当前已打开，将关闭该项目。",
     workingDeleted: "已从此浏览器删除“{{name}}”。", workingDeleteFailed: "无法删除工作副本：{{error}}",
   },
   "zh-Hant": {
+    pageCount: "邏輯頁數", dataSize: "資料大小", lastEdited: "最後編輯時間", unknown: "未知",
     deleteWorking: "刪除", deletingWorking: "正在刪除…", deleteWorkingLabel: "從此瀏覽器刪除 {{name}}",
     deleteWorkingConfirm: "要從此瀏覽器刪除「{{name}}」嗎？\n\n此工作副本的 PDF、OCR 結果、校對內容和復原歷程將被永久刪除。如需備份，請先儲存為 .eduba 檔案。\n\n裝置上已儲存的檔案會保留。如果專案目前已開啟，將關閉該專案。",
     workingDeleted: "已從此瀏覽器刪除「{{name}}」。", workingDeleteFailed: "無法刪除工作副本：{{error}}",

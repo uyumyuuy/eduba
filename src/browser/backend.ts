@@ -30,7 +30,12 @@ export async function activateBrowserProject(path: string): Promise<void> {
   await database("activate", { projectPath: path });
   void navigator.storage.persist().catch(() => undefined);
 }
-export function workingProjects(): Promise<ProjectInfo[]> { return database("list"); }
+export type WorkingProjectInfo = ProjectInfo & {
+  pageCount: number | null;
+  sizeBytes: number;
+  modifiedAt: string | null;
+};
+export function workingProjects(): Promise<WorkingProjectInfo[]> { return database("list"); }
 export async function createBrowserProject(pdfPath: string, manifest?: string): Promise<ProjectInfo> {
   const source = localFile(pdfPath);
   const file = source.file ?? await source.handle!.getFile();

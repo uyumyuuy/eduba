@@ -1,5 +1,5 @@
 import sqlite3InitModule, { type SAHPoolUtil } from "@sqlite.org/sqlite-wasm";
-import { ProjectDatabase, validateManifest } from "./projectDatabase";
+import { ProjectDatabase } from "./projectDatabase";
 
 type Request = { id: number; command: string; args: Record<string, unknown> };
 const projects = new Map<string, ProjectDatabase>();
@@ -47,7 +47,10 @@ async function dispatch(command: string, args: Record<string, unknown>): Promise
   if (command === "list") {
     return pool.getFileNames().filter(name => /^\/[a-z0-9-]+\.eduba$/.test(name)).flatMap(name => {
       const path = `opfs:${name}`;
-      try { return [info(path, project(path))]; } catch { return []; }
+      try {
+        const value = project(path);
+        return [{ ...info(path, value), ...value.workingSummary() }];
+      } catch { return []; }
     });
   }
   if (command === "delete") {
@@ -97,7 +100,7 @@ async function dispatch(command: string, args: Record<string, unknown>): Promise
     case "read_pdf_range": return value.readPdf(args.begin as number, args.end as number);
     case "load_page": return value.loadPage(args.pageId as string);
     case "save_page": return value.savePage(args.pageId as string, args.data as string);
-    case "save_manifest": validateManifest(args.manifest as string); return value.setMeta("manifest", args.manifest as string);
+    case "save_manifest": return value.saveManifest(args.manifest as string);
     case "load_edit_history": return value.loadHistory();
     case "save_project_state": return value.saveState(args.manifest as string, args.updates as Parameters<ProjectDatabase["saveState"]>[1], args.history as Parameters<ProjectDatabase["saveState"]>[2]);
     case "search_corrections": return value.search(args.search as string, args.page as number, args.pageSize as number);

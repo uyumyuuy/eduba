@@ -36,6 +36,7 @@ import {
 import { canvasToBase64, openProjectPdf, openSourcePdf } from "./pdf";
 import { LogicalPageThumbnailCache } from "./pdfThumbnail";
 import { invokeCommand, isTauri, type ProjectInfo } from "./tauri";
+import type { WorkingProjectInfo } from "./browser/backend";
 import { SaveQueue } from "./persistence";
 import { compactChange, historyPageUpdate, HistoryPersistence, type ProjectPageUpdate, type HistoryOperation as EditHistoryOperation } from "./editHistory";
 import { createReadableHtml } from "./readableHtml";
@@ -358,6 +359,21 @@ function LineOverlay({initialCaret,portalTarget,value,formatting,left,top,width,
   {candidates.map((candidate,index)=><EditToolbarButton className="text-candidate" key={candidate} label={candidate} shortcut={index<9?String(index+1):undefined} showShortcut={ctrl} onClick={()=>replace(candidate)}>{candidate}</EditToolbarButton>)}
 </div>}{textMagnifierEnabled&&magnifierPosition&&portalTarget&&createPortal(<ProofingTextMagnifier ref={magnifierRef} value={value} formatting={formatting} selectionStart={selection.start} selectionEnd={selection.end} caret={selection.caret} fontSize={magnifierFontSize} style={{left:magnifierPosition.left,top:magnifierPosition.top,width:magnifierPosition.width,visibility:magnifierPosition.visible?undefined:"hidden"}} />,portalTarget)}</>;
 }
+function WorkingProjectDetails({ info }: { info: WorkingProjectInfo }) {
+  const { t, i18n } = useTranslation();
+  const locale = i18n.resolvedLanguage || i18n.language;
+  const units = ["B", "KiB", "MiB", "GiB", "TiB"];
+  const unit = Math.min(units.length - 1, Math.max(0, Math.floor(Math.log2(Math.max(1, info.sizeBytes)) / 10)));
+  const size = `${new Intl.NumberFormat(locale, { maximumFractionDigits: unit ? 1 : 0 }).format(info.sizeBytes / 1024 ** unit)} ${units[unit]}`;
+  return <dl className="recovery-project-details">
+    <div><dt>{t("browser.pageCount")}</dt><dd>{info.pageCount === null ? t("browser.unknown") : new Intl.NumberFormat(locale).format(info.pageCount)}</dd></div>
+    <div><dt>{t("browser.dataSize")}</dt><dd>{size}</dd></div>
+    <div><dt>{t("browser.lastEdited")}</dt><dd>{info.modifiedAt
+      ? <time dateTime={info.modifiedAt}>{new Intl.DateTimeFormat(locale, { dateStyle: "medium", timeStyle: "short" }).format(new Date(info.modifiedAt))}</time>
+      : t("browser.unknown")}</dd></div>
+  </dl>;
+}
+
 export default function App({ initialLanguage = "auto", initialOsLocale = null }: { initialLanguage?: LocalePreference; initialOsLocale?: string | null } = {}) {
   const { t } = useTranslation();
   const [language, setLanguage] = useState<LocalePreference>(initialLanguage);
@@ -381,7 +397,7 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
   }, []);
   const [project, setProject] = useState<ProjectInfo | null>(null);
   const [browserDirty, setBrowserDirty] = useState(false);
-  const [recoveryProjects, setRecoveryProjects] = useState<ProjectInfo[] | null>(null);
+  const [recoveryProjects, setRecoveryProjects] = useState<WorkingProjectInfo[] | null>(null);
   const [hasWorkingProjects, setHasWorkingProjects] = useState(false);
   const [deletingWorkingPath, setDeletingWorkingPath] = useState<string | null>(null);
   const [recoveryError, setRecoveryError] = useState<string | null>(null);
@@ -1224,13 +1240,16 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
     if (isTauri || busy || working.current || importActive.current) return;
     setRecoveryError(null);
     try {
+      finishLineEditRef.current();
+      if (timer.current) await flush();
+      await writeQueue.current.idle();
       const saved = await (await import("./browser/backend")).workingProjects();
       setHasWorkingProjects(saved.length > 0);
       if (!working.current && !importActive.current) setRecoveryProjects(saved);
     } catch (error) {
       setNotice("notices.projectOpenFailed", { error: errorText(error) });
     }
-  }, [busy, setNotice]);
+  }, [busy, flush, setNotice]);
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.defaultPrevented || !event.ctrlKey || event.altKey || event.metaKey || event.isComposing || event.keyCode === 229) return;
@@ -3006,7 +3025,10 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
         <p>{t("browser.recoveryDescription")}</p>
         {recoveryError && <p className="form-error" role="alert">{t("browser.workingDeleteFailed", { error: recoveryError })}</p>}
         {recoveryProjects.length ? <ul className="recovery-projects">{recoveryProjects.map(info => <li key={info.path}>
-          <button className="recovery-open" title={info.name} disabled={Boolean(busy)} onClick={() => void openWorkingProject(info)}>{info.name}</button>
+          <div className="recovery-project-info">
+            <button className="recovery-open" title={info.name} disabled={Boolean(busy)} onClick={() => void openWorkingProject(info)}>{info.name}</button>
+            <WorkingProjectDetails info={info} />
+          </div>
           <button className="recovery-delete" disabled={Boolean(busy)} aria-label={t("browser.deleteWorkingLabel", { name: info.name })} onClick={() => void deleteWorkingProject(info)}>
             {deletingWorkingPath === info.path ? t("browser.deletingWorking") : t("browser.deleteWorking")}
           </button>

@@ -41,13 +41,42 @@ export class ProjectDatabase {
     this.run("INSERT INTO meta(key,value) VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value", [key, value]);
     return true;
   }
+  workingSummary() {
+    const manifest = this.meta("manifest");
+    const pages = manifest ? validateManifest(manifest).pages : undefined;
+    const modifiedAt = this.meta("browser_modified_at");
+    return {
+      pageCount: Array.isArray(pages) ? pages.length : null,
+      sizeBytes: Number(this.value("PRAGMA page_count")) * Number(this.value("PRAGMA page_size")),
+      modifiedAt: modifiedAt && Number.isFinite(Date.parse(modifiedAt)) ? new Date(modifiedAt).toISOString() : null,
+    };
+  }
+  private markModified() { this.setMeta("browser_modified_at", new Date().toISOString()); }
+  private saveContent(write: () => boolean): boolean {
+    this.run("BEGIN IMMEDIATE");
+    try {
+      const changed = write();
+      if (changed) this.markModified();
+      this.run("COMMIT");
+      return changed;
+    } catch (error) { this.run("ROLLBACK"); throw error; }
+  }
+  saveManifest(manifest: string): boolean {
+    validateManifest(manifest);
+    return this.saveContent(() => this.setMeta("manifest", manifest));
+  }
   loadPage(id: string): string | null { return this.value("SELECT data FROM pages WHERE page_id=?", [id]) as string ?? null; }
-  savePage(id: string, data: string | null) {
+  savePage(id: string, data: string | null): boolean {
+    return this.saveContent(() => this.writePage(id, data));
+  }
+  private writePage(id: string, data: string | null): boolean {
+    if (this.loadPage(id) === data) return false;
     if (data === null) this.run("DELETE FROM pages WHERE page_id=?", [id]);
     else {
       if (JSON.parse(data).id !== id) throw new Error("Page ID does not match its data.");
       this.run("INSERT INTO pages(page_id,data) VALUES (?,?) ON CONFLICT(page_id) DO UPDATE SET data=excluded.data", [id, data]);
     }
+    return true;
   }
 
   async initialize(pdf: Blob, manifest?: string): Promise<void> {
@@ -61,6 +90,7 @@ export class ProjectDatabase {
       this.setMeta("schema_version", "1");
       this.setMeta("pdf_size", String(pdf.size));
       if (manifest) this.setMeta("manifest", manifest);
+      this.markModified();
       this.run("COMMIT");
     } catch (error) { this.run("ROLLBACK"); throw error; }
   }
@@ -142,12 +172,16 @@ export class ProjectDatabase {
         if (update.expectedData !== undefined && (actual !== update.expectedData || completed.has(update.pageId))) throw new Error("Page changed or is marked proofread.");
       }
       this.run("CREATE TABLE IF NOT EXISTS edit_history_records(id TEXT PRIMARY KEY NOT NULL,payload BLOB NOT NULL)");
+      let changed = false;
       // An imported gzip stream need not use the same compression settings.
       for (const [id, record] of records) {
         const existing = this.value("SELECT payload FROM edit_history_records WHERE id=?", [id]) as Uint8Array | undefined;
         if (existing) {
           if (await gunzip(existing) !== record.data) throw new Error("Edit history record IDs are immutable.");
-        } else this.run("INSERT INTO edit_history_records(id,payload) VALUES (?,?)", [id, record.payload]);
+        } else {
+          this.run("INSERT INTO edit_history_records(id,payload) VALUES (?,?)", [id, record.payload]);
+          changed = true;
+        }
       }
       const order = [...history.order];
       let cursor = history.cursor;
@@ -162,13 +196,17 @@ export class ProjectDatabase {
         bytes -= sizes.get(id)!;
       }
       for (const id of this.db.selectValues("SELECT id FROM edit_history_records") as string[]) {
-        if (!order.includes(id)) this.run("DELETE FROM edit_history_records WHERE id=?", [id]);
+        if (!order.includes(id)) {
+          this.run("DELETE FROM edit_history_records WHERE id=?", [id]);
+          changed = true;
+        }
       }
-      for (const update of updates) this.savePage(update.pageId, update.data);
-      this.setMeta("edit_history", JSON.stringify({ version: 1, order, cursor, records: [] }));
-      this.setMeta("manifest", manifest);
+      for (const update of updates) changed = this.writePage(update.pageId, update.data) || changed;
+      changed = this.setMeta("edit_history", JSON.stringify({ version: 1, order, cursor, records: [] })) || changed;
+      changed = this.setMeta("manifest", manifest) || changed;
+      if (changed) this.markModified();
       this.run("COMMIT");
-      return { order, cursor, changed: true };
+      return { order, cursor, changed };
     } catch (error) { this.run("ROLLBACK"); throw error; }
   }
 
@@ -215,9 +253,11 @@ export class ProjectDatabase {
       if (beforeData === null || beforeData !== update.expectedData) throw new Error("Page changed while preparing bulk replacement.");
       return { pageId: update.pageId, beforeData, afterData: update.data };
     });
-    this.run("BEGIN IMMEDIATE");
-    try { changes.forEach(change => this.savePage(change.pageId, change.afterData)); this.run("COMMIT"); }
-    catch (error) { this.run("ROLLBACK"); throw error; }
+    this.saveContent(() => {
+      let changed = false;
+      for (const change of changes) changed = this.writePage(change.pageId, change.afterData) || changed;
+      return changed;
+    });
     return changes;
   }
 }
