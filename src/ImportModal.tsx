@@ -103,7 +103,7 @@ export function ImportModal({ pdfPath, pdf, onCancel, onConfirm, busy = false }:
   };
 
   return <div className="modal-scrim">
-    <div className="modal import-modal" role="dialog" aria-label={t("importUi.dialogLabel")}>
+    <div className="modal import-modal" role="dialog" aria-modal="true" aria-label={t("importUi.dialogLabel")}>
       <div className="modal-head">
         <div><div className="eyebrow">{t("importUi.eyebrow")}</div><h2>{t("importUi.title")}</h2></div>
         <button className="icon-btn" onClick={onCancel} disabled={busy} aria-label={t("importUi.close")}><X size={16}/></button>
