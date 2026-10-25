@@ -92,7 +92,7 @@ button:disabled { cursor: not-allowed; opacity: .42; }
 .line-no { padding-top: 5px; color: #b1b4ad; font: 9px "DM Mono", monospace; }
 .line-row textarea { width: 100%; min-height: 24px; resize: none; overflow: hidden; padding: 2px 0; border: 0; outline: 0; background: transparent; color: #32413e; font: 15px/1.65 var(--ocr-font); letter-spacing: .04em; }
 .confidence { padding-top: 6px; color: #b7bdb7; font: 8px "DM Mono", monospace; }
-.ocr-empty { display: flex; flex-direction: column; align-items: center; gap: 11px; margin-top: 250px; color: #afb4ac; text-align: center; font-size: 11px; line-height: 1.7; }
+.ocr-empty { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 11px; min-height: 100%; padding: 16px; color: #afb4ac; text-align: center; font-size: 11px; line-height: 1.7; }
 .statusbar { display: flex; align-items: center; justify-content: space-between; padding: 0 18px 0 24px; background: #193e4b; color: #afc5c5; font: 9px "DM Mono", monospace; }
 .status-left, .status-right { display: flex; align-items: center; gap: 10px; }
 .status-right { gap: 15px; color: #91adaf; }

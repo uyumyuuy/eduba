@@ -98,7 +98,7 @@ const zhHans = {
     licenses: "第三方许可证", settings: "设置", language: "语言", imageMagnifier: "图像面板放大镜", textMagnifier: "校对面板放大镜", close: "关闭", model: "模型（.traineddata）", selectModel: "选择模型",
     automatic: "自动", singleBlock: "单一文本块", sparseText: "稀疏文本", done: "完成", importPdf: "导入 PDF",
     open: "打开", save: "保存", undo: "撤销", redo: "重做", ocrCurrent: "识别当前页",
-    ocrPending: "识别待处理页面", cancel: "取消", currentPage: "当前页", allPages: "所有页面", logicalPages: "逻辑页面",
+    ocrPending: "识别所有待处理页面", cancel: "取消", currentPage: "当前页", allPages: "所有页面", logicalPages: "逻辑页面",
     processedImage: "处理后的图像", recognitionLayout: "识别布局", tagline: "OCR 校对工作台", page: "第 {{page}} 页",
     recognizeAgain: "重新识别", ocrSettings: "OCR 设置", sourcePage: "源页面 {{page}}",
     runOcrHint: "对当前页面执行 OCR。",

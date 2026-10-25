@@ -98,7 +98,7 @@ const zhHant = {
     licenses: "第三方授權條款", settings: "設定", language: "語言", imageMagnifier: "影像窗格放大鏡", textMagnifier: "校對窗格放大鏡", close: "關閉", model: "模型（.traineddata）", selectModel: "選擇模型",
     automatic: "自動", singleBlock: "單一文字區塊", sparseText: "稀疏文字", done: "完成", importPdf: "匯入 PDF",
     open: "開啟", save: "儲存", undo: "復原", redo: "重做", ocrCurrent: "辨識目前頁面",
-    ocrPending: "辨識待處理頁面", cancel: "取消", currentPage: "目前頁面", allPages: "所有頁面", logicalPages: "邏輯頁面",
+    ocrPending: "辨識所有待處理頁面", cancel: "取消", currentPage: "目前頁面", allPages: "所有頁面", logicalPages: "邏輯頁面",
     processedImage: "處理後的影像", recognitionLayout: "辨識版面配置", tagline: "OCR 校對工作臺", page: "第 {{page}} 頁",
     recognizeAgain: "重新辨識", ocrSettings: "OCR 設定", sourcePage: "來源頁面 {{page}}",
     runOcrHint: "對目前頁面執行 OCR。",

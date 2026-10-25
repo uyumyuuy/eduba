@@ -2809,11 +2809,18 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
                         ? t("ui.noOcr")
                         : t("ui.importToStart")}
                     </strong>
-                    <span>
-                      {project
-                        ? t("ui.runOcrHint")
-                        : t("ui.singleFileHint")}
-                    </span>
+                    {project ? (
+                      <button
+                        type="button"
+                        className="primary"
+                        onClick={() => void askOcr("current")}
+                        disabled={Boolean(busy)}
+                      >
+                        <ScanLine size={15} /> {t("ui.ocrCurrent")}
+                      </button>
+                    ) : (
+                      <span>{t("ui.singleFileHint")}</span>
+                    )}
                   </div>
                 )}
               </div>
