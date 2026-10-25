@@ -382,6 +382,8 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
   const [project, setProject] = useState<ProjectInfo | null>(null);
   const [browserDirty, setBrowserDirty] = useState(false);
   const [recoveryProjects, setRecoveryProjects] = useState<ProjectInfo[] | null>(null);
+  const [deletingWorkingPath, setDeletingWorkingPath] = useState<string | null>(null);
+  const [recoveryError, setRecoveryError] = useState<string | null>(null);
   const [manifest, setManifest] = useState<Manifest>(makeManifest);
   const [index, setIndex] = useState(0);
   const [pdf, setPdf] = useState<PDFDocumentProxy | null>(null);
@@ -1116,6 +1118,101 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
       setBusy(null);
     }
   }, [busy, flush, setNotice, putProject]);
+  const deleteWorkingProject = useCallback(async (info: ProjectInfo) => {
+    if (isTauri || busy || working.current || importActive.current || historyApplying.current) return;
+    if (!window.confirm(t("browser.deleteWorkingConfirm", { name: info.name }))) return;
+    working.current = true;
+    restorationGeneration.current += 1;
+    setBusy("save");
+    setDeletingWorkingPath(info.path);
+    setRecoveryError(null);
+    try {
+      finishLineEditRef.current();
+      await flush();
+      await writeQueue.current.idle();
+      await lastProjectWrite.current.catch(() => undefined);
+      const backend = await import("./browser/backend");
+      await backend.deleteWorkingProject(info.path);
+      if (projectRef.current?.path === info.path) {
+        // Invalidate asynchronous page work and detach all active project state.
+        loading.current += 1;
+        documentLoading.current += 1;
+        ocrLoading.current += 1;
+        scriptScanGeneration.current += 1;
+        if (timer.current) { clearTimeout(timer.current); timer.current = null; }
+        lineEditSession.current = null;
+        editingHistoryGroup.current = null;
+        persistedHistory.current = new HistoryPersistence<Settings, Entry>();
+        bulkSnippetCanvases.current.clear();
+        scriptSnippetCanvases.current.clear();
+        scriptCandidateLines.current.clear();
+        scriptCandidateHeights.current.clear();
+        scriptHeightProfileRef.current = null;
+        scriptCandidatePool.current = [];
+        scriptCandidateBuckets.current = [[], [], []];
+        const empty = makeManifest(0);
+        empty.settings.modelPath = environmentModel.current;
+        putProject(null);
+        putDoc(null);
+        putManifest(empty);
+        putIndex(0);
+        setPdf(null);
+        setUndoStack([]);
+        setRedoStack([]);
+        setSelected(null);
+        setEditing(null);
+        setEditCaret(null);
+        setRegionMode(null);
+        setRegionSelection(null);
+        setPendingFigure(null);
+        setFigureImages({});
+        setImagePageId(null);
+        setCanvasSize({ width: 0, height: 0 });
+        setOrderVisited([]);
+        orderVisitedRef.current = [];
+        setOrderPendingVisited([]);
+        setOrderPreviewIds(null);
+        setOrderHoverId(null);
+        setBulkReplace(null);
+        setScriptCalibrationOpen(false);
+        setScriptCalibrationCandidates([]);
+        setScriptCalibrationLoading(false);
+        setScriptCalibrationProgress(null);
+        setConfirmOcr(null);
+        setBrowserDirty(false);
+        await pdf?.destroy().catch(() => undefined);
+      }
+      setRecoveryProjects(current => current?.filter(project => project.path !== info.path) ?? null);
+      setNotice("browser.workingDeleted", { name: info.name });
+    } catch (error) {
+      setRecoveryError(errorText(error));
+      setNotice("browser.workingDeleteFailed", { error: errorText(error) });
+    } finally {
+      working.current = false;
+      setDeletingWorkingPath(null);
+      setBusy(null);
+    }
+  }, [busy, flush, pdf, putDoc, putIndex, putManifest, putProject, setNotice, setRedoStack, setUndoStack, t]);
+  const openWorkingProject = useCallback(async (info: ProjectInfo) => {
+    if (busy || working.current || importActive.current || historyApplying.current) return;
+    working.current = true;
+    restorationGeneration.current += 1;
+    setBusy("open");
+    try {
+      finishLineEditRef.current();
+      await flush();
+      await writeQueue.current.idle();
+      const restored = await invokeCommand("open_project", { projectPath: info.path });
+      working.current = false;
+      setRecoveryProjects(null);
+      await openInfo(restored);
+    } catch (error) {
+      setNotice("notices.projectOpenFailed", { error: errorText(error) });
+    } finally {
+      working.current = false;
+      setBusy(null);
+    }
+  }, [busy, flush, openInfo, setNotice]);
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.defaultPrevented || !event.ctrlKey || event.altKey || event.metaKey || event.isComposing || event.keyCode === 229) return;
@@ -2356,7 +2453,7 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
         {!isTauri && <>
           <button onClick={() => void save()} disabled={!project || Boolean(busy)} title="Ctrl+S">{t("browser.save")}</button>
           <button onClick={() => void save(true)} disabled={!project || Boolean(busy)} title="Ctrl+Shift+S">{t("browser.saveAs")}</button>
-          <button disabled={Boolean(busy)} onClick={() => { void import("./browser/backend").then(backend => backend.workingProjects()).then(setRecoveryProjects).catch(error => setNotice("notices.projectOpenFailed", { error: errorText(error) })); }}>{t("browser.recover")}</button>
+          <button disabled={Boolean(busy)} onClick={() => { setRecoveryError(null); void import("./browser/backend").then(backend => backend.workingProjects()).then(setRecoveryProjects).catch(error => setNotice("notices.projectOpenFailed", { error: errorText(error) })); }}>{t("browser.recover")}</button>
         </>}
         <span className="toolbar-divider" />
         <button onClick={undo} disabled={!undoStack.length || Boolean(busy)} title="Ctrl+Z" aria-keyshortcuts="Control+Z">
@@ -2861,15 +2958,16 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
           }}
         />
       )}
-      {recoveryProjects && <div className="modal-scrim"><div className="modal" role="dialog" aria-modal="true" aria-labelledby="recovery-title">
-        <div className="modal-head"><h2 id="recovery-title">{t("browser.recoveryTitle")}</h2><button className="icon-btn" onClick={() => setRecoveryProjects(null)} aria-label={t("ui.close")}><X size={16} /></button></div>
+      {recoveryProjects && <div className="modal-scrim"><div className="modal recovery-modal" role="dialog" aria-modal="true" aria-labelledby="recovery-title" aria-busy={Boolean(deletingWorkingPath)}>
+        <div className="modal-head"><h2 id="recovery-title">{t("browser.recoveryTitle")}</h2><button className="icon-btn" disabled={Boolean(busy)} onClick={() => setRecoveryProjects(null)} aria-label={t("ui.close")}><X size={16} /></button></div>
         <p>{t("browser.recoveryDescription")}</p>
-        {recoveryProjects.length ? recoveryProjects.map(info => <button key={info.path} disabled={Boolean(busy)} onClick={() => {
-          void flush().then(async () => {
-            const restored = await invokeCommand("open_project", { projectPath: info.path });
-            setRecoveryProjects(null); await openInfo(restored);
-          }).catch(error => setNotice("notices.projectOpenFailed", { error: errorText(error) }));
-        }}>{info.name}</button>) : <p>{t("browser.recoveryEmpty")}</p>}
+        {recoveryError && <p className="form-error" role="alert">{t("browser.workingDeleteFailed", { error: recoveryError })}</p>}
+        {recoveryProjects.length ? <ul className="recovery-projects">{recoveryProjects.map(info => <li key={info.path}>
+          <button className="recovery-open" title={info.name} disabled={Boolean(busy)} onClick={() => void openWorkingProject(info)}>{info.name}</button>
+          <button className="recovery-delete" disabled={Boolean(busy)} aria-label={t("browser.deleteWorkingLabel", { name: info.name })} onClick={() => void deleteWorkingProject(info)}>
+            {deletingWorkingPath === info.path ? t("browser.deletingWorking") : t("browser.deleteWorking")}
+          </button>
+        </li>)}</ul> : <p className="recovery-empty">{t("browser.recoveryEmpty")}</p>}
       </div></div>}
       {bulkReplace && project && (<BulkReplaceDialog open={true} projectPath={project.path} initialSearch={bulkReplace.search} initialMatch={bulkReplace.initialMatch} getSnippet={getBulkSnippet} onApply={applyBulkReplace} onClose={() => { bulkSnippetCanvases.current.clear(); setBulkReplace(null); }} />)}
       {pendingFigure && canvasRef.current && <FigureRegionDialog source={canvasRef.current} selection={pendingFigure.selection} tight={pendingFigure.tight}

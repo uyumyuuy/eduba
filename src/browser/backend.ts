@@ -30,6 +30,23 @@ export async function activateBrowserProject(path: string): Promise<void> {
   void navigator.storage.persist().catch(() => undefined);
 }
 export function workingProjects(): Promise<ProjectInfo[]> { return database("list"); }
+export async function deleteWorkingProject(path: string): Promise<void> {
+  if (!/^opfs:\/[a-z0-9-]+\.eduba$/.test(path)) throw new Error("Invalid working project identifier.");
+  const previous = preferences().lastProject;
+  const clearLast = previous?.path === path;
+  if (clearLast) savePreferences({ lastProject: null });
+  try {
+    await database("delete", { projectPath: path });
+  } catch (error) {
+    if (clearLast && preferences().lastProject === null) {
+      try { savePreferences({ lastProject: previous }); } catch { /* Keep the deletion error. */ }
+    }
+    throw error;
+  }
+  destinations.delete(path);
+  revisions.delete(path);
+  changed(path, false);
+}
 
 /** Acquire a picker/permission during the save button's user activation, before flushing. */
 export async function prepareProjectSave(info: ProjectInfo, saveAs = false): Promise<LocalFile | null> {

@@ -50,6 +50,16 @@ async function dispatch(command: string, args: Record<string, unknown>): Promise
       try { return [info(path, project(path))]; } catch { return []; }
     });
   }
+  if (command === "delete") {
+    const name = filename(args.projectPath);
+    const value = projects.get(name);
+    if (value) {
+      try { value.db.close(); } finally { projects.delete(name); }
+    }
+    // The request queue drains earlier writes before closing and unlinking this DB.
+    // Later requests cannot recreate it: project() requires an existing pool file.
+    return pool.unlink(name);
+  }
   if (command === "create" || command === "import") {
     const name = `/${crypto.randomUUID()}.eduba`, path = `opfs:${name}`;
     await pool.reserveMinimumCapacity(pool.getFileCount() + 4);
