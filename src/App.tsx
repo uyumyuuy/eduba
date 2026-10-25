@@ -2562,17 +2562,17 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
         <section className="editor-area">
           <div className="canvas-toolbar">
             <div className="breadcrumb">
-              <strong>
-                {current ? t("ui.page", { page: current.label }) : t("ui.openPdf")}
-              </strong>
-              <span>
-                ／{" "}
-                {current?.split === "single"
-                  ? t("ui.whole")
-                  : current?.split === "left"
-                    ? t("ui.leftPage")
-                    : t("ui.rightPage")}
-              </span>
+              {project && current && <>
+                <strong>{t("ui.page", { page: current.label })}</strong>
+                <span>
+                  ／{" "}
+                  {current.split === "single"
+                    ? t("ui.whole")
+                    : current.split === "left"
+                      ? t("ui.leftPage")
+                      : t("ui.rightPage")}
+                </span>
+              </>}
             </div>
             <button
               className={"region-add-button" + (regionMode === "add" ? " active" : "")}
