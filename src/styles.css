@@ -112,8 +112,10 @@ button:disabled { cursor: not-allowed; opacity: .42; }
 .recovery-projects li { display: flex; align-items: flex-start; gap: 10px; padding: 12px 0; border-bottom: 1px solid var(--line); }
 .recovery-projects li:last-child { border-bottom: 0; }
 .recovery-project-info { min-width: 0; flex: 1; }
-.recovery-open { width: 100%; padding: 8px; border-radius: 5px; background: #e8efeb; color: #2a6768; text-align: left; overflow-wrap: anywhere; }
+.recovery-open { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; width: 100%; padding: 8px; border-radius: 5px; background: #e8efeb; color: #2a6768; text-align: left; overflow-wrap: anywhere; }
 .recovery-open:hover:not(:disabled) { background: #dbe7e2; }
+.recovery-project-name { min-width: 0; }
+.recovery-current { max-width: 100%; padding: 3px 6px; border-radius: 4px; background: #2a6768; color: #fff; font-size: 10px; line-height: 1.4; }
 .recovery-project-details { display: flex; flex-wrap: wrap; gap: 10px 24px; margin: 10px 8px 2px; }
 .recovery-project-details > div { min-width: 0; }
 .recovery-project-details dt { color: #77817b; font-size: 10px; }

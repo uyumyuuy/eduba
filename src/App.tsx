@@ -398,6 +398,14 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
   const [project, setProject] = useState<ProjectInfo | null>(null);
   const [browserDirty, setBrowserDirty] = useState(false);
   const [recoveryProjects, setRecoveryProjects] = useState<WorkingProjectInfo[] | null>(null);
+  const orderedRecoveryProjects = useMemo(() => [...(recoveryProjects ?? [])].sort((a, b) => {
+    const currentOrder = Number(b.path === project?.path) - Number(a.path === project?.path);
+    if (currentOrder) return currentOrder;
+    if (a.modifiedAt === null && b.modifiedAt !== null) return 1;
+    if (b.modifiedAt === null && a.modifiedAt !== null) return -1;
+    const timeOrder = a.modifiedAt && b.modifiedAt ? Date.parse(b.modifiedAt) - Date.parse(a.modifiedAt) : 0;
+    return timeOrder || a.name.localeCompare(b.name) || a.path.localeCompare(b.path);
+  }), [recoveryProjects, project?.path]);
   const [hasWorkingProjects, setHasWorkingProjects] = useState(false);
   const [deletingWorkingPath, setDeletingWorkingPath] = useState<string | null>(null);
   const [recoveryError, setRecoveryError] = useState<string | null>(null);
@@ -3024,9 +3032,12 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
         <div className="modal-head"><h2 id="recovery-title">{t("browser.recoveryTitle")}</h2><button className="icon-btn" disabled={Boolean(busy)} onClick={() => setRecoveryProjects(null)} aria-label={t("ui.close")}><X size={16} /></button></div>
         <p>{t("browser.recoveryDescription")}</p>
         {recoveryError && <p className="form-error" role="alert">{t("browser.workingDeleteFailed", { error: recoveryError })}</p>}
-        {recoveryProjects.length ? <ul className="recovery-projects">{recoveryProjects.map(info => <li key={info.path}>
+        {recoveryProjects.length ? <ul className="recovery-projects">{orderedRecoveryProjects.map(info => <li key={info.path}>
           <div className="recovery-project-info">
-            <button className="recovery-open" title={info.name} disabled={Boolean(busy)} onClick={() => void openWorkingProject(info)}>{info.name}</button>
+            <button className="recovery-open" title={info.name} disabled={Boolean(busy)} onClick={() => void openWorkingProject(info)}>
+              <span className="recovery-project-name">{info.name}</span>
+              {info.path === project?.path && <span className="recovery-current">{t("browser.currentProject")}</span>}
+            </button>
             <WorkingProjectDetails info={info} />
           </div>
           <button className="recovery-delete" disabled={Boolean(busy)} aria-label={t("browser.deleteWorkingLabel", { name: info.name })} onClick={() => void deleteWorkingProject(info)}>
