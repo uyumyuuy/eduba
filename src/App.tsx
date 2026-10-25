@@ -1,3 +1,5 @@
+import { overlayPosition } from "./overlayPosition";
+import { useVisibleOverlay } from "./useVisibleOverlay";
 import { clickedLineCaret } from "./clickCaret";
 import { inverse, multiply, type HocrPageGeometry, type HocrSource } from "./coordinates";
 import { LicenseModal } from "./LicenseModal";
@@ -290,21 +292,43 @@ function PageThumbnail({ cache, page }: { cache: LogicalPageThumbnailCache | nul
 }
 type LineOverlayProps = { initialCaret:number; portalTarget:HTMLElement|null; value:string; formatting:TextFormatRange[]; left:number; top:number; width:number; height:number; fontSize:number; onChange:(value:string)=>void; onReplaceCandidate:(start:number,end:number,text:string)=>void; onCaretChange:(offset:number)=>void; onFinish:()=>void; onUndo:()=>void; onRedo:()=>void; onFormat:(start:number,end:number,kind:TextFormatKind)=>void; onOpenBulk:(selection:string,start:number,end:number)=>void; onSplit:(caret:number)=>void; textMagnifierEnabled:boolean; };
 function LineOverlay({initialCaret,portalTarget,value,formatting,left,top,width,height,fontSize:naturalFontSize,onChange,onReplaceCandidate,onCaretChange,onFinish,onUndo,onRedo,onFormat,onOpenBulk,onSplit,textMagnifierEnabled}:LineOverlayProps) {
- const { t } = useTranslation(); const inputRef=useRef<HTMLTextAreaElement>(null); const mirrorRef=useRef<HTMLDivElement>(null); const toolbarRef=useRef<HTMLDivElement>(null); const magnifierRef=useRef<HTMLDivElement>(null); const [magnifierPosition,setMagnifierPosition]=useState<{left:number;top:number}|null>(null); const [magnifierFontSize,setMagnifierFontSize]=useState(naturalFontSize*2); const [selection,setSelection]=useState({start:initialCaret,end:initialCaret,caret:initialCaret}); const [ctrl,setCtrl]=useState(false); const pendingCaret=useRef<number|null>(initialCaret);
+ const { t } = useTranslation(); const inputRef=useRef<HTMLTextAreaElement>(null); const mirrorRef=useRef<HTMLDivElement>(null); const toolbarRef=useRef<HTMLDivElement>(null); const magnifierRef=useRef<HTMLDivElement>(null); const [magnifierPosition,setMagnifierPosition]=useState<{left:number;top:number;visible:boolean;width:number}|null>(null); const [magnifierFontSize,setMagnifierFontSize]=useState(naturalFontSize*2); const [selection,setSelection]=useState({start:initialCaret,end:initialCaret,caret:initialCaret}); const [ctrl,setCtrl]=useState(false); const pendingCaret=useRef<number|null>(initialCaret);
  const selected=value.slice(selection.start,selection.end); const candidates=selected?candidatesForSelection(selected):[];
  // Keep the normal text baseline fixed while giving raised glyphs room above it.
  const extraTop=Math.min(top,Math.max(4,naturalFontSize*.45));
  const editTop=top-extraTop;
  const editHeight=height+extraTop;
+ useVisibleOverlay(toolbarRef,left,Math.max(0,editTop-48),selected,inputRef);
  const editStyle={left,top:editTop,width,height:editHeight,paddingTop:extraTop,fontSize:naturalFontSize};
  useLayoutEffect(()=>{const input=inputRef.current;if(!input)return;input.style.fontSize=`${naturalFontSize}px`;const ratio=Math.min(1,Math.max(1,input.clientWidth-4)/Math.max(1,input.scrollWidth-4),Math.max(1,input.clientHeight-2)/Math.max(1,input.scrollHeight-2));input.style.fontSize=`${Math.max(1,naturalFontSize*(ratio<1?ratio*.98:1))}px`;setMagnifierFontSize(Math.min(36,(Number.parseFloat(input.style.fontSize)||naturalFontSize)*2));if(mirrorRef.current){mirrorRef.current.style.fontSize=input.style.fontSize;mirrorRef.current.scrollLeft=input.scrollLeft;mirrorRef.current.scrollTop=input.scrollTop;}},[height,naturalFontSize,value,width,formatting]);
  useEffect(()=>{const up=(event:KeyboardEvent)=>{if(event.key==='Control'||!event.ctrlKey)setCtrl(false)};const blur=()=>setCtrl(false);document.addEventListener('keyup',up);window.addEventListener('blur',blur);return()=>{document.removeEventListener('keyup',up);window.removeEventListener('blur',blur)}},[]);
  const capture=()=>{const input=inputRef.current;if(input){const caret=input.selectionDirection==="backward"?input.selectionStart:input.selectionEnd;setSelection({start:input.selectionStart,end:input.selectionEnd,caret});onCaretChange(caret)}};
  useEffect(()=>{const input=inputRef.current;if(!input)return;const syncSelection=()=>capture();input.addEventListener("select",syncSelection);document.addEventListener("selectionchange",syncSelection);return()=>{input.removeEventListener("select",syncSelection);document.removeEventListener("selectionchange",syncSelection)}},[]);
  useEffect(()=>{const timer=window.setTimeout(()=>{if(inputRef.current===document.activeElement)capture()},0);return()=>window.clearTimeout(timer)},[]);
- useLayoutEffect(()=>{const place=()=>{const toolbar=toolbarRef.current,stage=portalTarget;if(!toolbar||!stage)return;const rect=toolbar.getBoundingClientRect(),stageRect=stage.getBoundingClientRect();const panelWidth=Math.min(250,Math.max(120,stage.clientWidth-16));const minLeft=stageRect.left+8,maxLeft=Math.max(minLeft,stageRect.left+stage.clientWidth-panelWidth-8);const viewportLeft=Math.max(minLeft,Math.min(maxLeft,rect.left));
-// Keep the 60px panel above the toolbar; near the scroll viewport top, place it below the toolbar.
-const viewportTop=rect.top-stageRect.top>=70?rect.top-68:rect.bottom+8;setMagnifierPosition({left:viewportLeft-stageRect.left+stage.scrollLeft,top:viewportTop-stageRect.top+stage.scrollTop});};place();window.addEventListener("resize",place);document.addEventListener("scroll",place,true);return()=>{window.removeEventListener("resize",place);document.removeEventListener("scroll",place,true)}},[portalTarget,left,top,selection.start,selection.end,value]);
+ useLayoutEffect(() => {
+   const stage = portalTarget;
+   if (!stage) return;
+   const place = () => {
+     const toolbar = toolbarRef.current, input = inputRef.current;
+     if (!toolbar || !input) return;
+     const stageRect = stage.getBoundingClientRect(), rect = toolbar.getBoundingClientRect();
+     const bounds = { left: Math.max(0, stageRect.left + stage.clientLeft) + 8,
+       top: Math.max(0, stageRect.top + stage.clientTop) + 8,
+       right: Math.min(window.innerWidth, stageRect.left + stage.clientLeft + stage.clientWidth) - 8,
+       bottom: Math.min(window.innerHeight, stageRect.top + stage.clientTop + stage.clientHeight) - 8 };
+     const panelWidth = Math.min(250, Math.max(0, bounds.right - bounds.left));
+     const position = overlayPosition(bounds, { left: rect.left, top: rect.top - 68 }, panelWidth, 60,
+       [input.getBoundingClientRect(), ...(toolbar.style.visibility === "hidden" ? [] : [rect])]);
+     setMagnifierPosition({ left: (position?.left ?? bounds.left) - stageRect.left - stage.clientLeft + stage.scrollLeft,
+       top: (position?.top ?? bounds.top) - stageRect.top - stage.clientTop + stage.scrollTop, visible: position !== null, width: panelWidth });
+   };
+   place();
+   window.addEventListener("resize", place);
+   document.addEventListener("scroll", place, true);
+   const observer = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(place);
+   observer?.observe(stage);
+   return () => { window.removeEventListener("resize", place); document.removeEventListener("scroll", place, true); observer?.disconnect(); };
+ }, [portalTarget,left,top,width,height,selection.start,selection.end,value,textMagnifierEnabled]);
 
  const format=(kind:TextFormatKind)=>{if(selection.start<selection.end)onFormat(selection.start,selection.end,kind)};
  // Restore after React writes the controlled value, which can move the native caret to the end.
@@ -331,7 +355,7 @@ const viewportTop=rect.top-stageRect.top>=70?rect.top-68:rect.bottom+8;setMagnif
   <EditToolbarButton label={t("toolbar.subscript")} shortcut="↓" showShortcut={ctrl} onClick={()=>format("subscript")}>{t("toolbar.subscript")}</EditToolbarButton>
   <EditToolbarButton label={t("toolbar.bulkReplace")} shortcut="G" showShortcut={ctrl} onClick={()=>onOpenBulk(selected,selection.start,selection.end)}>{t("toolbar.bulkReplace")}</EditToolbarButton>
   {candidates.map((candidate,index)=><EditToolbarButton className="text-candidate" key={candidate} label={candidate} shortcut={index<9?String(index+1):undefined} showShortcut={ctrl} onClick={()=>replace(candidate)}>{candidate}</EditToolbarButton>)}
-</div>}{textMagnifierEnabled&&magnifierPosition&&portalTarget&&createPortal(<ProofingTextMagnifier ref={magnifierRef} value={value} formatting={formatting} selectionStart={selection.start} selectionEnd={selection.end} caret={selection.caret} fontSize={magnifierFontSize} style={{left:magnifierPosition.left,top:magnifierPosition.top}} />,portalTarget)}</>;
+</div>}{textMagnifierEnabled&&magnifierPosition&&portalTarget&&createPortal(<ProofingTextMagnifier ref={magnifierRef} value={value} formatting={formatting} selectionStart={selection.start} selectionEnd={selection.end} caret={selection.caret} fontSize={magnifierFontSize} style={{left:magnifierPosition.left,top:magnifierPosition.top,width:magnifierPosition.width,visibility:magnifierPosition.visible?undefined:"hidden"}} />,portalTarget)}</>;
 }
 export default function App({ initialLanguage = "auto", initialOsLocale = null }: { initialLanguage?: LocalePreference; initialOsLocale?: string | null } = {}) {
   const { t } = useTranslation();
