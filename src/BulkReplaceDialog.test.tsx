@@ -32,6 +32,23 @@ describe("BulkReplaceDialog", () => {
     vi.restoreAllMocks();
   });
 
+  it("offers the original selection's OCR alternatives in the replacement editor", async () => {
+    await act(async () => root.render(<BulkReplaceDialog open projectPath="project" initialSearch="m"
+      initialMatch={{ pageId: "page", pageLabel: "1", lineId: "line", lineText: "m", matchOrdinal: 0,
+        ocrChoices: [{ text: "m", confidence: 90 }, { text: "rn", confidence: 30 }, { text: "n", confidence: 40 }] }}
+      onApply={vi.fn()} onClose={vi.fn()} />));
+    const editor = container.querySelector<HTMLInputElement>(".bulk-replace-editor input")!;
+    await act(async () => {
+      editor.focus(); editor.setSelectionRange(0, 1);
+      editor.dispatchEvent(new Event("select", { bubbles: true }));
+      document.dispatchEvent(new Event("selectionchange"));
+    });
+    const alternatives = [...container.querySelectorAll<HTMLButtonElement>(".text-candidate")];
+    expect(alternatives.map(button => button.getAttribute("aria-label"))).toEqual(["n", "rn"]);
+    await act(async () => alternatives[0].click());
+    expect(editor.value).toBe("n");
+  });
+
   it("shows shortcut keys above the unchanged button labels", async () => {
     await act(async () => root.render(<BulkReplaceDialog open projectPath="project" initialSearch="c" onApply={vi.fn()} onClose={vi.fn()} />));
     const editor = container.querySelector<HTMLInputElement>(".bulk-replace-editor input")!;

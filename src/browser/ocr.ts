@@ -12,7 +12,7 @@ export function assetUrl(path: string): string {
 export function ocrParameters(psm: number, dpi = 300, disableRowNoiseRejection = false) {
   if (!Number.isInteger(psm) || psm < 0 || psm > 13 || !Number.isInteger(dpi) || dpi < 70 || dpi > 2400) throw new Error("Invalid OCR segmentation mode or DPI.");
   // Reset the flag on every request because the worker is reused for full-page OCR.
-  return { tessedit_pageseg_mode: String(psm) as PSM, user_defined_dpi: String(dpi), hocr_char_boxes: "1", textord_noise_rejrows: disableRowNoiseRejection ? "0" : "1" };
+  return { tessedit_pageseg_mode: String(psm) as PSM, user_defined_dpi: String(dpi), hocr_char_boxes: "1", lstm_choice_mode: "2", textord_noise_rejrows: disableRowNoiseRejection ? "0" : "1" };
 }
 
 /** Own the native worker so cancellation also interrupts model initialization.

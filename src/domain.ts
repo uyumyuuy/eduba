@@ -26,6 +26,12 @@ export interface Baseline {
 export type CharacterSource = "ocr" | "inserted";
 export type HocrLineClass = "ocr_line" | "ocr_header" | "ocr_textfloat" | "ocr_caption";
 
+export interface OcrChoice {
+  text: string;
+  /** Tesseract's x_confs score; not a calibrated probability. */
+  confidence: number;
+}
+
 export interface OcrChar {
   index: number;
   originalText: string;
@@ -33,6 +39,7 @@ export interface OcrChar {
   /** Missing for inserted characters and any hOCR character without a box. */
   bbox?: Rect;
   confidence?: number;
+  choices?: OcrChoice[];
   source: CharacterSource;
 }
 
@@ -204,12 +211,36 @@ function classElements(root: ParentNode, className: string): Element[] {
   return Array.from(root.querySelectorAll(`.${className}`));
 }
 
+const CHOICE_GROUP = '[id^="lstm_choices_"], .ocr_symbol';
+
 function normalizedText(element: Element): string {
-  return (element.textContent || "").replace(/\s+/g, " ").trim();
+  const recognized = element.cloneNode(true) as Element;
+  recognized.querySelectorAll(CHOICE_GROUP).forEach(group => group.remove());
+  return (recognized.textContent || "").replace(/\s+/g, " ").trim();
+}
+
+function characterElements(word: Element): Element[] {
+  return classElements(word, CLASS_NAMES.char).filter(element =>
+    !element.closest(CHOICE_GROUP) && titleValue(element, "x_confs") === undefined &&
+    element.closest(`.${CLASS_NAMES.word}`) === word &&
+    !element.parentElement?.closest(`.${CLASS_NAMES.char}`));
+}
+
+function parseChoices(character: Element): OcrChoice[] | undefined {
+  const nested = character.querySelector('[id^="lstm_choices_"]');
+  const next = character.nextElementSibling;
+  const group = nested ?? (next?.id.startsWith("lstm_choices_") ? next : undefined);
+  if (!group) return undefined;
+  const choices = Array.from(group.querySelectorAll(".ocrx_cinfo, .ocr_glyph")).flatMap(element => {
+    const score = confidence(element, "x_confs");
+    const text = element.textContent ?? "";
+    return score !== undefined && Number.isFinite(score) && text.trim() ? [{ text, confidence: score }] : [];
+  });
+  return choices.length ? choices : undefined;
 }
 
 function parseChars(wordElement: Element, original: string): OcrChar[] {
-  const charElements = childrenOf(wordElement, CLASS_NAMES.char);
+  const charElements = characterElements(wordElement);
   if (!charElements.length) {
     return Array.from(original).map((text, index) => ({
       index,
@@ -236,13 +267,14 @@ function parseChars(wordElement: Element, original: string): OcrChar[] {
           }
         : {}),
       confidence: confidence(element, "x_conf"),
+      choices: parseChoices(element),
       source: "ocr" as const,
     };
   });
 }
 
 function parseWord(element: Element): OcrWord {
-  const charElements = childrenOf(element, CLASS_NAMES.char);
+  const charElements = characterElements(element);
   const displayedText = normalizedText(element);
   const chars = parseChars(element, displayedText);
   // XHTML indentation between cinfo spans is formatting, not OCR text. The

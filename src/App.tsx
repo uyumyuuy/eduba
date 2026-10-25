@@ -76,6 +76,7 @@ import { pageItems, type PageItem } from "./pageContent";
 import { addFigureRegion, cropFigure, nonWhiteBounds, preserveFiguresAfterOcr, removePageRegions } from "./figureRegions";
 import { FigureRegionDialog } from "./FigureRegionDialog";
 import { candidatesForSelection } from "./correctionCandidates";
+import { choicesForSelection } from "./ocrChoices";
 import { importEntries, prepareImportEntries, type ImportConfig } from "./importConfig";
 import { loadPageImage, type ImportMode } from "./pageImage";
 import {
@@ -293,10 +294,10 @@ function PageThumbnail({ cache, page }: { cache: LogicalPageThumbnailCache | nul
 
   return <span ref={frameRef} className="thumb" aria-hidden="true"><canvas ref={canvasRef} /></span>;
 }
-type LineOverlayProps = { initialCaret:number; portalTarget:HTMLElement|null; value:string; formatting:TextFormatRange[]; left:number; top:number; width:number; height:number; fontSize:number; onChange:(value:string)=>void; onReplaceCandidate:(start:number,end:number,text:string)=>void; onCaretChange:(offset:number)=>void; onFinish:()=>void; onUndo:()=>void; onRedo:()=>void; onFormat:(start:number,end:number,kind:TextFormatKind)=>void; onOpenBulk:(selection:string,start:number,end:number)=>void; onSplit:(caret:number)=>void; textMagnifierEnabled:boolean; };
-function LineOverlay({initialCaret,portalTarget,value,formatting,left,top,width,height,fontSize:naturalFontSize,onChange,onReplaceCandidate,onCaretChange,onFinish,onUndo,onRedo,onFormat,onOpenBulk,onSplit,textMagnifierEnabled}:LineOverlayProps) {
+type LineOverlayProps = { initialCaret:number; portalTarget:HTMLElement|null; value:string; ocrLine:OcrLine; formatting:TextFormatRange[]; left:number; top:number; width:number; height:number; fontSize:number; onChange:(value:string)=>void; onReplaceCandidate:(start:number,end:number,text:string)=>void; onCaretChange:(offset:number)=>void; onFinish:()=>void; onUndo:()=>void; onRedo:()=>void; onFormat:(start:number,end:number,kind:TextFormatKind)=>void; onOpenBulk:(selection:string,start:number,end:number)=>void; onSplit:(caret:number)=>void; textMagnifierEnabled:boolean; };
+function LineOverlay({initialCaret,portalTarget,value,ocrLine,formatting,left,top,width,height,fontSize:naturalFontSize,onChange,onReplaceCandidate,onCaretChange,onFinish,onUndo,onRedo,onFormat,onOpenBulk,onSplit,textMagnifierEnabled}:LineOverlayProps) {
  const { t } = useTranslation(); const inputRef=useRef<HTMLTextAreaElement>(null); const mirrorRef=useRef<HTMLDivElement>(null); const toolbarRef=useRef<HTMLDivElement>(null); const magnifierRef=useRef<HTMLDivElement>(null); const [magnifierPosition,setMagnifierPosition]=useState<{left:number;top:number;visible:boolean;width:number}|null>(null); const [magnifierFontSize,setMagnifierFontSize]=useState(naturalFontSize*2); const [selection,setSelection]=useState({start:initialCaret,end:initialCaret,caret:initialCaret}); const [ctrl,setCtrl]=useState(false); const pendingCaret=useRef<number|null>(initialCaret);
- const selected=value.slice(selection.start,selection.end); const candidates=selected?candidatesForSelection(selected):[];
+ const selected=value.slice(selection.start,selection.end); const candidates=useMemo(()=>selected?candidatesForSelection(selected,choicesForSelection(ocrLine,selection.start,selection.end)):[],[selected,ocrLine,selection.start,selection.end]);
  // Keep the normal text baseline fixed while giving raised glyphs room above it.
  const extraTop=Math.min(top,Math.max(4,naturalFontSize*.45));
  const editTop=top-extraTop;
@@ -2066,7 +2067,7 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
           const start = line.correctedText.indexOf(search, cursor);
           if (start < 0 || start > selectionStart) break;
           if (start === selectionStart) {
-            initialMatch = { pageId: page.id, pageLabel: manifestRef.current.pages.find(entry => entry.id === page.id)?.label ?? "", lineId, lineText: line.correctedText, matchOrdinal: ordinal };
+            initialMatch = { pageId: page.id, pageLabel: manifestRef.current.pages.find(entry => entry.id === page.id)?.label ?? "", lineId, lineText: line.correctedText, matchOrdinal: ordinal, ocrChoices: choicesForSelection(line, start, start + search.length) };
             break;
           }
           cursor = start + search.length;
@@ -2981,6 +2982,7 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
                             initialCaret={editCaret?.lineId === line.id ? editCaret.offset : 0}
                             portalTarget={ocrStageRef.current}
                             value={line.correctedText}
+                            ocrLine={line}
                             formatting={effectiveFormatting(line)}
                             onChange={(value) => editLine(line.id, value)}
                             onReplaceCandidate={(start, end, text) => commitLineEdit(line.id, before => replaceLineSelection(before, line.id, start, end, text))}

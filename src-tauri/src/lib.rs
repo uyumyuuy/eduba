@@ -1374,6 +1374,8 @@ fn run_ocr_blocking(child_slot: Arc<Mutex<Option<Child>>>, args: OcrArgs) -> Bac
         .arg("tessedit_create_hocr=1")
         .arg("-c")
         .arg("hocr_char_boxes=1")
+        .arg("-c")
+        .arg("lstm_choice_mode=2")
         .stdin(Stdio::null())
         .stdout(Stdio::from(stdout_file.reopen()?))
         .stderr(Stdio::from(stderr_file.reopen()?));
