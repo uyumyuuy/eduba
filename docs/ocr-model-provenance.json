@@ -1,87 +1,126 @@
 {
   "schema": "ocr-research-baseline-adoption-v1",
-  "model_key": "eng_assyriology_cohen_kramer_r1_600x_20261015",
-  "adopted_date_jst": "2026-10-15",
-  "authority": "User instruction: 今後の基準モデルは今回の600回モデルとします。",
+  "model_key": "eng_assyriology_charset_expanded_250x_20261023",
+  "adopted_date_jst": "2026-10-24",
+  "authority": "User explicitly instructed: 「250回を基準モデルとしてください」.",
   "status": "research_baseline",
   "production": false,
-  "source_run": "trial/cohen-kramer-600x-20261013/revision-kramer459-20261014",
+  "source_run": "trial/charset-expanded-300x-20261023",
+  "selection": "250 successful presentations per training row. The 300-per-row final checkpoint was not selected.",
   "source_completion_record": {
-    "path": "trial/cohen-kramer-600x-20261013/revision-kramer459-20261014/training/milestones/added-600-per-row.json",
-    "sha256": "252218dd70af24e0d08f447f6a64b6e004101f90dd79e7c468b71e97f4da307b"
+    "path": "trial/charset-expanded-300x-20261023/training/milestones/added-250-per-row.json",
+    "sha256": "8fda6031fd466561fff6cd50e2cbe4128a0eea1480c3afed4e253104434193db"
   },
   "source_artifacts": {
     "traineddata": {
-      "path": "trial/cohen-kramer-600x-20261013/revision-kramer459-20261014/training/milestone-attempts/added-600-per-row/attempt-001/traineddata.traineddata",
-      "sha256": "a4daadfe9d00a65b80e793ca66aabfd5f5343aa6e67f6df32f703a6d88e76dbc"
+      "path": "trial/charset-expanded-300x-20261023/training/milestone-attempts/added-250-per-row/traineddata.traineddata",
+      "sha256": "d0bfef2846675b0405d59cd4a7603b10624da872fc056ebb84728789327b0a41"
     },
     "full_checkpoint": {
-      "path": "trial/cohen-kramer-600x-20261013/revision-kramer459-20261014/training/durable-checkpoints/milestone-added-600-per-row.checkpoint",
-      "sha256": "d860042399f7f14137845f7e754f7f14bf3247a4a339f6bab9294d5c839603e2"
+      "path": "trial/charset-expanded-300x-20261023/training/durable-checkpoints/milestone-added-250-per-row.checkpoint",
+      "sha256": "3126cb6ba7775031176b219980ccb48a1dc0bc739c810394876632a2b127b64b"
+    },
+    "scores": {
+      "path": "trial/charset-expanded-300x-20261023/training/milestone-attempts/added-250-per-row/scores.json",
+      "sha256": "a318aaf3993814e9baf875a1c65ac0b54f529ea5d6db287333640cdf66c73b26"
     }
   },
   "snapshot_artifacts": {
     "traineddata": {
-      "path": "data/eng_assyriology_cohen_kramer_r1_600x_20261015/eng_assyriology_cohen_kramer_r1_600x_20261015.traineddata",
-      "sha256": "a4daadfe9d00a65b80e793ca66aabfd5f5343aa6e67f6df32f703a6d88e76dbc"
+      "path": "data/eng_assyriology_charset_expanded_250x_20261023/eng_assyriology_charset_expanded_250x_20261023.traineddata",
+      "sha256": "d0bfef2846675b0405d59cd4a7603b10624da872fc056ebb84728789327b0a41"
     },
     "full_checkpoint": {
-      "path": "data/eng_assyriology_cohen_kramer_r1_600x_20261015/eng_assyriology_cohen_kramer_r1_600x_20261015.checkpoint",
-      "sha256": "d860042399f7f14137845f7e754f7f14bf3247a4a339f6bab9294d5c839603e2"
-    }
-  },
-  "source_record_snapshots": {
-    "completion_record": {
-      "path": "data/eng_assyriology_cohen_kramer_r1_600x_20261015/source-completion-record.json",
-      "sha256": "252218dd70af24e0d08f447f6a64b6e004101f90dd79e7c468b71e97f4da307b"
+      "path": "data/eng_assyriology_charset_expanded_250x_20261023/eng_assyriology_charset_expanded_250x_20261023.checkpoint",
+      "sha256": "3126cb6ba7775031176b219980ccb48a1dc0bc739c810394876632a2b127b64b"
+    },
+    "source_completion_record": {
+      "path": "data/eng_assyriology_charset_expanded_250x_20261023/source-completion-record.json",
+      "sha256": "8fda6031fd466561fff6cd50e2cbe4128a0eea1480c3afed4e253104434193db"
     },
     "training_protocol": {
-      "path": "data/eng_assyriology_cohen_kramer_r1_600x_20261015/source-training-protocol.json",
-      "sha256": "0542ec998fb85368058b8f88529636782dac6a8a0bd841835fa6330e555393c4"
+      "path": "data/eng_assyriology_charset_expanded_250x_20261023/source-training-protocol.json",
+      "sha256": "96169da90c23439c7dd09051687c400568f313c78423d0fef3e15f6a7688c85e"
     },
     "frozen_contract": {
-      "path": "data/eng_assyriology_cohen_kramer_r1_600x_20261015/source-frozen-contract.json",
-      "sha256": "b21b50cc99fd846c456812736bce3774623d459990cb55f6d5e1cd092c6823de"
+      "path": "data/eng_assyriology_charset_expanded_250x_20261023/source-frozen-contract.json",
+      "sha256": "30dc3bc85b044bd47f2eae18da3eb432b2cd33827f6f13cd1d5328e4a9bb0726"
     }
   },
   "training": {
-    "unique_rows": 2445,
-    "rows_by_source": {
-      "preserved_repaired529": 529,
-      "Cohen1981": 1462,
-      "Kramer1949": 454
-    },
-    "added_presentations_per_row": 600,
-    "added_successful_presentations": 1467000,
-    "counter_scope": "This corrected run only; not project lifetime cumulative training.",
-    "parent_model_path": "data/at-300000-actual-300000.traineddata",
-    "parent_model_sha256": "ce26728aceb2b75f2167183efe42e101fafc5fb0fbffa02421c2083a2d3ee007",
-    "parent_300000_scope": "Previous repaired529 training series only; not project lifetime cumulative training.",
-    "full_checkpoint_retained_for_resumption": true
+    "unique_rows": 4267,
+    "added_presentations_per_row": 250,
+    "added_successful_presentations": 1066750,
+    "counter_scope": "this experiment only; preceding-series counters are not included",
+    "parent_model_key": "eng_assyriology_saact6_george_100x_20261018",
+    "parent_model_path": "data/eng_assyriology_saact6_george_100x_20261018/eng_assyriology_saact6_george_100x_20261018.traineddata",
+    "parent_model_sha256": "1789184b8815a501e994b651ea039851a25b8468323e4cf73589f7b2d3fcc29e",
+    "parent_full_checkpoint_path": "data/eng_assyriology_saact6_george_100x_20261018/eng_assyriology_saact6_george_100x_20261018.checkpoint",
+    "parent_full_checkpoint_sha256": "d2d7b0d33672ed5af5be34e8870b0dae4ea1fe17492e45de275c4ab32627f901",
+    "full_checkpoint_retained_for_resumption": true,
+    "automatic_model_promotion": false
   },
   "evaluation": {
-    "cohorts": {
-      "existing_dev164": 164,
-      "new_Kramer": 186,
-      "new_Cohen": 219
+    "train_rows": 4267,
+    "dev_rows": 1082,
+    "manifest_sha256": {
+      "train": "522a018d29b5c3c9bb8ca2e967f1ee9d741469ffd849dd99c66726ce6193e7ef",
+      "dev": "3c7dfb40c0bff673d4b912fd17d5f51c52756167cff02b06b5a7d9777c965e97"
     },
-    "manifest_path": "trial/cohen-kramer-600x-20261013/revision-kramer459-20261014/evaluation/evaluation-rows.jsonl",
-    "manifest_sha256": "24f7cacab69956737e584d1fd9fb8e7852a1818bc88d32e61b89b4bdebd12f32",
-    "scores_path": "trial/cohen-kramer-600x-20261013/revision-kramer459-20261014/training/milestone-attempts/added-600-per-row/attempt-001/scores.json",
-    "scores_sha256": "727fcafee2e6e923e0320dab83a5b848bedd024ed9004bc25ff98ff7e36eeb64",
+    "score_path": "trial/charset-expanded-300x-20261023/training/milestone-attempts/added-250-per-row/scores.json",
+    "score_sha256": "a318aaf3993814e9baf875a1c65ac0b54f529ea5d6db287333640cdf66c73b26",
+    "normalization": "frozen scorer NFC after stripping CR/LF",
+    "tesseract_version": "tesseract 5.5.3",
     "psm": 7,
     "textord_noise_rejrows": 0,
-    "final119_used": false
+    "metrics_250": {
+      "train": {
+        "cer_rate": 0.005185397624246013,
+        "wer_rate": 0.0327100226156986,
+        "strict_exact_match_rate": 0.8254042652917741,
+        "severe_omissions": 0,
+        "rows": 4267
+      },
+      "dev": {
+        "cer_rate": 0.0077796503413172634,
+        "wer_rate": 0.04703350753150937,
+        "strict_exact_match_rate": 0.7476894639556377,
+        "severe_omissions": 0,
+        "rows": 1082
+      }
+    },
+    "metrics_0_before_training": {
+      "train": {
+        "cer_rate": 0.00657310439255449,
+        "wer_rate": 0.039522312317281705,
+        "strict_exact_match_rate": 0.7928286852589641,
+        "severe_omissions": 0,
+        "rows": 4267
+      },
+      "dev": {
+        "cer_rate": 0.008732955415964456,
+        "wer_rate": 0.05102981862895788,
+        "strict_exact_match_rate": 0.7347504621072088,
+        "severe_omissions": 0,
+        "rows": 1082
+      }
+    },
+    "selection_context": "250-per-row had the lowest frozen dev CER among 0/50/100/150/200/250/300 points (0.777965%); 300-per-row was 0.806905%.",
+    "report_path": "trial/charset-expanded-300x-20261023/reports/final-report.html"
   },
-  "next_new_gt_training_policy": {
-    "standard_added_presentations_per_training_row": 100,
-    "evaluation_points_per_training_row": [
-      25,
-      50,
-      100
-    ],
-    "beyond_100": "Only when investigating specified residual errors or training behavior.",
-    "counter_scope": "Additional presentations in the new training series; separate from past training."
+  "adoption": {
+    "date_jst": "2026-10-24",
+    "reason": "User explicitly selected the 250-per-row checkpoint as the project baseline."
   },
-  "application_defaults_changed": false
+  "rollback": {
+    "previous_training_baseline_key": "eng_assyriology_saact6_george_100x_20261018",
+    "previous_evaluation_baseline_key": "eng_assyriology_saact6_george_100x_20261018",
+    "previous_registry_entry_sha256": "5188cec41f91e34a45ebc6db70275b4a563ba375903ff58d52832cc7dfc38063",
+    "previous_model_path": "data/eng_assyriology_saact6_george_100x_20261018/eng_assyriology_saact6_george_100x_20261018.traineddata",
+    "previous_model_sha256": "1789184b8815a501e994b651ea039851a25b8468323e4cf73589f7b2d3fcc29e",
+    "previous_checkpoint_path": "data/eng_assyriology_saact6_george_100x_20261018/eng_assyriology_saact6_george_100x_20261018.checkpoint",
+    "previous_checkpoint_sha256": "d2d7b0d33672ed5af5be34e8870b0dae4ea1fe17492e45de275c4ab32627f901",
+    "previous_artifacts_retained": true,
+    "rollback_action": "Set both config/ocr-models.json defaults back to the previous keys recorded here; restore the previous entry metadata from this record if needed."
+  }
 }

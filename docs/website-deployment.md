@@ -7,8 +7,9 @@ Vite で生成したアプリを `website/public/app/` にコピーしてから 
 ## 固定する OCR モデル
 
 `config/web-model.json` に Release のリポジトリ・タグ・ファイル名・SHA-256・サイズを記録する。
-現在の対象は `eng_assyriology_cohen_kramer_r1_600x_20261015`（12,090,677 bytes）。
-Assyrian-OCR が2026年10月15日に採用した学習・評価用の基準モデルを取り込んでいる。
+現在の対象は `eng_assyriology_charset_expanded_250x_20261023`（12,091,049 bytes）。
+Assyrian-OCR が2026年10月24日に採用した学習・評価用の基準モデルを取り込んでいる。
+文字集合拡張実験の250回/行チェックポイントで、モデル名の日付は実験開始日（10月23日）。最終300回/行チェックポイントは使用しない。
 元の登録情報は `docs/ocr-model-provenance.json` にそのまま保存する。
 配信・Release 用の準備時には、この記録の SHA-256 とモデル ID・モデルハッシュの対応も確認する。
 学習側の `scan_candidate_generation` の既定値は別のモデルであり、この取り込みでは変更しない。
@@ -34,10 +35,10 @@ GitHub Actions のキャッシュは npm 用だけで、モデルはジョブご
 2. ローカルにある対象モデルから、検証済みの公開ファイルを準備する。
 
 ```powershell
-npm run prepare:model-release -- --model 'src-tauri/resources/models/eng_assyriology_cohen_kramer_r1_600x_20261015.traineddata'
+npm run prepare:model-release -- --model 'src-tauri/resources/models/eng_assyriology_charset_expanded_250x_20261023.traineddata'
 ```
 
-`.cache/model-release/ocr-model-20261015-r1-600x/` に、モデル、`SHA256SUMS`、
+`.cache/model-release/ocr-model-20261023-charset-expanded-250x/` に、モデル、`SHA256SUMS`、
 `web-model.json`、`OCR-MODEL-LICENSE.txt`、`OCR-MODEL-NOTICE.txt`、`OCR-MODEL-PROVENANCE.json`、`RELEASE-NOTES.md` が生成される。
 通知文を編集した場合は、公開前にこのコマンドを再実行する。
 この準備コマンドは GitHub に書き込まない。
@@ -45,16 +46,16 @@ npm run prepare:model-release -- --model 'src-tauri/resources/models/eng_assyrio
 3. 配布条件と生成物を確認後、リポジトリのルートから Release を作成する。
 
 ```powershell
-$releaseDir = '.cache/model-release/ocr-model-20261015-r1-600x'
-gh release create ocr-model-20261015-r1-600x `
-  "$releaseDir/eng_assyriology_cohen_kramer_r1_600x_20261015.traineddata" `
+$releaseDir = '.cache/model-release/ocr-model-20261023-charset-expanded-250x'
+gh release create ocr-model-20261023-charset-expanded-250x `
+  "$releaseDir/eng_assyriology_charset_expanded_250x_20261023.traineddata" `
   "$releaseDir/SHA256SUMS" `
   "$releaseDir/web-model.json" `
   "$releaseDir/OCR-MODEL-LICENSE.txt" `
   "$releaseDir/OCR-MODEL-NOTICE.txt" `
   "$releaseDir/OCR-MODEL-PROVENANCE.json" `
   --repo uyumyuuy/eduba --target main --latest=false `
-  --title 'Assyrian-OCR model 20261015 r1 600x for Eduba' `
+  --title 'Assyrian-OCR model 20261023 charset-expanded 250x for Eduba' `
   --notes-file "$releaseDir/RELEASE-NOTES.md"
 ```
 
@@ -79,7 +80,7 @@ Release の公開前でも、次のコマンドで手元のモデルをキャッ
 サイズと SHA-256 の検証はダウンロード時と同じ。
 
 ```powershell
-npm run fetch:web-model -- --model 'src-tauri/resources/models/eng_assyriology_cohen_kramer_r1_600x_20261015.traineddata'
+npm run fetch:web-model -- --model 'src-tauri/resources/models/eng_assyriology_charset_expanded_250x_20261023.traineddata'
 npm run build:website
 ```
 

@@ -10,7 +10,7 @@ Tesseract.js、ONNX Runtime Web、SQLite WASM は端末内で動く。
 モデルは Git 管理対象外なので、新しい worktree では既存のモデルを明示的に指定できる。
 
 ```powershell
-npm run prepare:web -- --model 'src-tauri/resources/models/eng_assyriology_cohen_kramer_r1_600x_20261015.traineddata'
+npm run prepare:web -- --model 'src-tauri/resources/models/eng_assyriology_charset_expanded_250x_20261023.traineddata'
 npm run dev:web
 ```
 
@@ -68,11 +68,14 @@ OPFS では DELETE journal を使用し、外部ファイルへはSQLite本体�
 
 ## OCR と自動判定
 
-既定モデルは Assyrian-OCR の `eng_assyriology_cohen_kramer_r1_600x_20261015`。
+既定モデルは Assyrian-OCR の `eng_assyriology_charset_expanded_250x_20261023`。
+2026年10月24日に学習・評価の基準として採用された、文字集合拡張実験の250回/行モデルを取り込む（学習4,267行、dev評価1,082行）。
+モデル名の日付は実験開始日で、採用日はその翌日。最終300回/行チェックポイントではなく、登録された250回/行の成果物を使用する。
 モデルの識別子、SHA-256、取得先は `config/web-model.json`、学習側の記録は `docs/ocr-model-provenance.json` に保存する。
 Web 版の既定ファイル名とビルド時の配置先は manifest を共有する。
 デスクトップ版の既定モデルとセットアップ用のパスも同じモデルに更新している。
 デスクトップ版の既存プロジェクトで明示されたローカルモデルのパスは、そのまま使用する。
+旧ブラウザ版の2026年10月15日モデルのファイル名も、ブラウザ既定モデルの識別子として読み込める。
 校正候補の文字混同表は2026年9月20日モデル由来の参考情報を継続使用し、新モデル用の確率表としては扱わない。
 
 Tesseract.js 7.0.0 の Worker を再利用し、OEM 1、PSM、DPI、`hocr_char_boxes=1` を設定して hOCR を取得する。
