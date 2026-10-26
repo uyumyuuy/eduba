@@ -15,6 +15,8 @@ Assyrian-OCR が2026年10月24日に採用した学習・評価用の基準モ�
 学習側の `scan_candidate_generation` の既定値は別のモデルであり、この取り込みでは変更しない。
 `latest` や可変のブランチ URL は使わない。
 モデルの由来と配布条件は `docs/ocr-model-notice.txt` に記録する。
+モデル専用の校正候補表も `src/assets/scan-candidate-character-confusions.json` に取り込む。Assyrian-OCR の現在の取り込み元は `data/eng_assyriology_charset_expanded_250x_20261023/scan-candidate-character-confusions.json`（173,482 bytes、SHA-256 `bd6b3836ccbf05313fdb9559f35fd23189087f63cca18c0cfd984d453ead0737`）。共通の `artifacts/scan-candidate-character-confusions.json` は別のモデル用なので使用しない。
+`config/web-model.json` の `correctionCandidates` に保存先・取り込み元・サイズ・ハッシュを固定する。`npm run verify:model-pair` は候補表のバイト列・スキーマ・モデル key/SHA と、モデル出典の対応を確認する。モデルの取得時、アプリのビルド時、配布準備時にも照合し、不一致なら停止する。モデル本体のバイト列は取得・キャッシュ利用時に別途照合する。
 派生元は `tesseract-ocr/tessdata_best` の `eng.traineddata`。
 追加学習モデルも Apache-2.0 で配布し、独自の用途制限は追加しない。
 ライセンス本文は `licenses/ocr-model-Apache-2.0.txt` に保存する。
@@ -38,24 +40,25 @@ GitHub Actions のキャッシュは npm 用だけで、モデルはジョブご
 npm run prepare:model-release -- --model 'src-tauri/resources/models/eng_assyriology_charset_expanded_250x_20261023.traineddata'
 ```
 
-`.cache/model-release/ocr-model-20261023-charset-expanded-250x/` に、モデル、`SHA256SUMS`、
-`web-model.json`、`OCR-MODEL-LICENSE.txt`、`OCR-MODEL-NOTICE.txt`、`OCR-MODEL-PROVENANCE.json`、`RELEASE-NOTES.md` が生成される。
+`.cache/model-release/ocr-model-20261023-charset-expanded-250x-candidates-20261027/` に、モデル、`SHA256SUMS`、
+`web-model.json`、`OCR-MODEL-LICENSE.txt`、`OCR-MODEL-NOTICE.txt`、`OCR-MODEL-PROVENANCE.json`、`OCR-MODEL-CANDIDATES.json`、`RELEASE-NOTES.md` が生成される。`SHA256SUMS` にモデル本体と候補表の両方を記録する。
 通知文を編集した場合は、公開前にこのコマンドを再実行する。
 この準備コマンドは GitHub に書き込まない。
 
 3. 配布条件と生成物を確認後、リポジトリのルートから Release を作成する。
 
 ```powershell
-$releaseDir = '.cache/model-release/ocr-model-20261023-charset-expanded-250x'
-gh release create ocr-model-20261023-charset-expanded-250x `
+$releaseDir = '.cache/model-release/ocr-model-20261023-charset-expanded-250x-candidates-20261027'
+gh release create ocr-model-20261023-charset-expanded-250x-candidates-20261027 `
   "$releaseDir/eng_assyriology_charset_expanded_250x_20261023.traineddata" `
   "$releaseDir/SHA256SUMS" `
   "$releaseDir/web-model.json" `
   "$releaseDir/OCR-MODEL-LICENSE.txt" `
   "$releaseDir/OCR-MODEL-NOTICE.txt" `
   "$releaseDir/OCR-MODEL-PROVENANCE.json" `
+  "$releaseDir/OCR-MODEL-CANDIDATES.json" `
   --repo uyumyuuy/eduba --target main --latest=false `
-  --title 'Assyrian-OCR model 20261023 charset-expanded 250x for Eduba' `
+  --title 'Assyrian-OCR model 20261023 charset-expanded 250x with candidates 20261027' `
   --notes-file "$releaseDir/RELEASE-NOTES.md"
 ```
 
@@ -112,9 +115,11 @@ Pages の書き込みと OIDC の権限はデプロイジョブにだけ与え�
 
 ## モデルの更新と再現
 
-モデルを変更する場合は別のタグ・ファイルで Release を作り、manifest の対象とハッシュ、サイズ、通知文を同じ変更で更新する。
+基準モデルの更新では traineddata・元の provenance・そのモデル専用の候補表を必ずセットで取り込む。Assyrian-OCR の `config/ocr-models.json` の `training_baseline` と `evaluation_baseline` を確認し、対応する `data/<model-key>/` から取得する。モデル key とハッシュを照合してから、manifest のモデル情報・出典ハッシュ・`correctionCandidates` の取り込み元とハッシュ/サイズ、通知文を同じ変更で更新する。デスクトップ版の既定モデル名とセットアップ用パスも合わせて更新する。
+`npm run verify:model-pair`、ローカル traineddata を指定した `npm run fetch:web-model -- --model <path>`、`npm run prepare:model-release -- --model <path>` の順に対応を確認し、配信用ビルドを行う。
+モデルまたは候補表を変更して公開する場合は別の Release タグを使用する。候補表だけを更新する場合も同様。
 過去の Release と資産は残す。同じタグのファイルを差し替えると、既存の期待ハッシュと一致せずビルドが失敗する。
-旧モデルへ戻す場合は、manifest と通知文を以前の内容へ戻して再公開する。
+旧モデルへ戻す場合は、モデル・候補表・出典・manifest・通知文を対応する以前の組み合わせへ戻して再公開する。
 
 モデル専用 Release は `--latest=false` で作成し、アプリの最新 Release と区別する。
 アプリがブラウザで取得するモデルは、Release の URL ではなく同じサイトの静的資産である。

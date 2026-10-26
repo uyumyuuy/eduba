@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "fetch:web-model": "node scripts/fetch-web-model.mjs",
+    "verify:model-pair": "node scripts/verify-model-pair.mjs",
     "prepare:model-release": "node scripts/prepare-model-release.mjs",
     "stage:web": "node scripts/stage-web-app.mjs",
     "build:website": "node scripts/build-website.mjs",
@@ -14,7 +15,7 @@
     "preview:web": "vite preview --host 127.0.0.1 --port 1421",
     "test:browser": "playwright test",
     "dev": "vite --host 127.0.0.1 --port 1420",
-    "build": "tsc -b && vite build",
+    "build": "node scripts/verify-model-pair.mjs && tsc -b && vite build",
     "test": "vitest run",
     "tauri": "tauri",
     "preview": "vite preview --host 127.0.0.1 --port 1420"

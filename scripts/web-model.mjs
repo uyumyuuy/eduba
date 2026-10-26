@@ -15,6 +15,14 @@ if (!/^[a-zA-Z0-9_.-]+\/[a-zA-Z0-9_.-]+$/.test(manifest.repository)
   || !Number.isSafeInteger(manifest.size) || manifest.size <= 0) {
   throw new Error("Invalid config/web-model.json.");
 }
+const candidates = manifest.correctionCandidates;
+if (!candidates || candidates.file !== "src/assets/scan-candidate-character-confusions.json"
+  || typeof candidates.sourcePath !== "string" || !candidates.sourcePath.startsWith(`data/${manifest.id}/`)
+  || candidates.sourcePath.split(/[\\/]/).includes("..") || !candidates.sourcePath.endsWith(".json")
+  || !/^[a-f0-9]{64}$/.test(candidates.sha256)
+  || !Number.isSafeInteger(candidates.size) || candidates.size <= 0) {
+  throw new Error("Invalid paired correction candidate table in config/web-model.json.");
+}
 
 export const modelPath = join(root, ".cache/ocr-models", manifest.sha256, manifest.asset);
 
@@ -42,8 +50,30 @@ export async function readModelProvenance() {
   return bytes;
 }
 
+/** The table is versioned with its baseline, including its original provenance bytes. */
+export async function readModelCandidates() {
+  const bytes = await readFile(join(root, candidates.file));
+  if (bytes.length !== candidates.size || createHash("sha256").update(bytes).digest("hex") !== candidates.sha256) {
+    throw new Error("OCR correction candidate table hash/size mismatch. Import the model and its table together.");
+  }
+  const table = JSON.parse(bytes.toString("utf8"));
+  if (table.schema_version !== 1 || table.model?.key !== manifest.id || table.model?.sha256 !== manifest.sha256
+    || table.unit?.kind !== "unicode_code_point" || table.unit?.input_normalization !== "NFC"
+    || !table.output_to_gt || typeof table.output_to_gt !== "object" || Array.isArray(table.output_to_gt)) {
+    throw new Error("OCR correction candidate table does not match the pinned baseline or supported schema.");
+  }
+  for (const entry of Object.values(table.output_to_gt)) {
+    if (!entry || !Array.isArray(entry.gt_candidates) || entry.gt_candidates.some(choice =>
+      !choice || typeof choice.gt_character !== "string" || !Number.isSafeInteger(choice.count) || choice.count < 0)) {
+      throw new Error("OCR correction candidate table contains invalid candidates.");
+    }
+  }
+  return bytes;
+}
+
 /** Acquire exactly the pinned release asset. A local file can seed the same verified cache. */
 export async function acquireModel(source) {
+  await Promise.all([readModelProvenance(), readModelCandidates()]);
   if (source) await verifyModel(resolve(source));
   try {
     await verifyModel(modelPath);

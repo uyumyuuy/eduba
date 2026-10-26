@@ -1,6 +1,6 @@
 import { cp, lstat, mkdir, readFile, realpath, rm, stat, copyFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { root, manifest, verifyModel, readModelProvenance } from "./web-model.mjs";
+import { root, manifest, verifyModel, readModelProvenance, readModelCandidates } from "./web-model.mjs";
 
 const source = join(root, "dist");
 const parent = join(root, "website/public");
@@ -17,6 +17,7 @@ await verifyModel(join(source, "browser-assets/models", bundledModel));
 await readFile(join(root, manifest.notice));
 await readFile(join(root, manifest.licenseFile));
 const provenance = await readModelProvenance();
+const candidates = await readModelCandidates();
 await mkdir(parent, { recursive: true });
 // Never remove a symlink or a generated directory whose parent resolves outside this checkout.
 if (await realpath(parent) !== join(await realpath(root), "website/public")) {
@@ -34,4 +35,5 @@ await mkdir(join(destination, "browser-assets/licenses"), { recursive: true });
 await copyFile(join(root, manifest.notice), join(destination, "browser-assets/licenses/OCR-MODEL-NOTICE.txt"));
 await copyFile(join(root, manifest.licenseFile), join(destination, "browser-assets/licenses/OCR-MODEL-LICENSE.txt"));
 await writeFile(join(destination, "browser-assets/models/OCR-MODEL-PROVENANCE.json"), provenance);
+await writeFile(join(destination, "browser-assets/models/OCR-MODEL-CANDIDATES.json"), candidates);
 console.log(`Staged the browser app in ${destination}`);

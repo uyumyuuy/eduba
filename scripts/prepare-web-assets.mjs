@@ -1,7 +1,9 @@
 import { copyFile, mkdir, access, readdir, rm } from "node:fs/promises";
 import { dirname, resolve, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { manifest } from "./web-model.mjs";
+import { manifest, readModelCandidates } from "./web-model.mjs";
+
+await readModelCandidates();
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const output = join(root, "public/browser-assets");

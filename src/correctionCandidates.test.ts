@@ -1,15 +1,21 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { candidatesForSelection, convert, convertIndexToAccent } from "./correctionCandidates";
 import { choicesForSelection } from "./ocrChoices";
 import { allLines, parseHocr, updateLineText } from "./domain";
 import { exportFixtureHocr } from "./testSupport/hocr";
 
+vi.mock("./assets/scan-candidate-character-confusions.json", () => ({ default: { output_to_gt: {
+  g: { gt_candidates: [{ gt_character: "g", count: 999 }, { gt_character: "q", count: 6 }] },
+  m: { gt_candidates: [{ gt_character: "n", count: 500 }, { gt_character: "é", count: 100 }, { gt_character: "z", count: 4 }] },
+  c: { gt_candidates: [{ gt_character: "C", count: 500 }, { gt_character: "e", count: 8 }, { gt_character: "š", count: 4 }] },
+} } }));
+
 describe("correction candidate sources", () => {
-  it("retains transliteration without using the static confusion table", () => {
+  it("retains transliteration and supplements missing LSTM data from the paired table", () => {
     expect(convert("s, t_ g^ a~ '")).toBe("ṣ ṯ ĝ ā ʿ");
     expect(convertIndexToAccent("ama2 e3 gu4")).toBe("áma è gu₄");
     expect(candidatesForSelection("[[k, sz]]")).toEqual(["⸢ḳ š⸣"]);
-    expect(candidatesForSelection("g")).toEqual([]);
+    expect(candidatesForSelection("g")).toEqual(["q"]);
   });
   it.each([["k,", "ḳ"], ["K,", "Ḳ"], ["[[", "⸢"], ["]]", "⸣"]])("converts %s to %s", (selection, expected) => {
     expect(candidatesForSelection(selection)).toEqual([expected]);
@@ -18,12 +24,12 @@ describe("correction candidate sources", () => {
     const choices = [
       { text: "m", confidence: 99 }, { text: "rn", confidence: 5 },
       { text: "n", confidence: 20 }, { text: "r", confidence: 20 },
-      { text: "n", confidence: 2 }, { text: " ", confidence: 30 },
+      { text: "n", confidence: 2 }, { text: " ", confidence: 30 }, { text: "e\u0301", confidence: 10 },
       { text: "?", confidence: NaN },
     ];
-    expect(candidatesForSelection("m", choices)).toEqual(["n", "r", "rn"]);
+    expect(candidatesForSelection("m", choices)).toEqual(["n", "r", "e\u0301", "rn", "z"]);
     expect(choices[1].text).toBe("rn");
-    expect(candidatesForSelection("c", [{ text: "š", confidence: 10 }, { text: "C", confidence: 20 }])).toEqual(["š", "C"]);
+    expect(candidatesForSelection("c", [{ text: "š", confidence: 10 }, { text: "C", confidence: 20 }])).toEqual(["C", "š", "e"]);
     expect(candidatesForSelection("a2", choices)).toEqual(["á"]);
   });
 });

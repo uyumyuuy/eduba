@@ -1,7 +1,7 @@
 {
   "id": "eng_assyriology_charset_expanded_250x_20261023",
   "repository": "uyumyuuy/eduba",
-  "tag": "ocr-model-20261023-charset-expanded-250x",
+  "tag": "ocr-model-20261023-charset-expanded-250x-candidates-20261027",
   "asset": "eng_assyriology_charset_expanded_250x_20261023.traineddata",
   "sha256": "d0bfef2846675b0405d59cd4a7603b10624da872fc056ebb84728789327b0a41",
   "size": 12091049,
@@ -9,6 +9,12 @@
   "licenseFile": "licenses/ocr-model-Apache-2.0.txt",
   "notice": "docs/ocr-model-notice.txt",
   "provenanceFile": "docs/ocr-model-provenance.json",
+  "correctionCandidates": {
+    "file": "src/assets/scan-candidate-character-confusions.json",
+    "sourcePath": "data/eng_assyriology_charset_expanded_250x_20261023/scan-candidate-character-confusions.json",
+    "sha256": "bd6b3836ccbf05313fdb9559f35fd23189087f63cca18c0cfd984d453ead0737",
+    "size": 173482
+  },
   "sourceProject": {
     "name": "Assyrian-OCR",
     "modelPath": "data/eng_assyriology_charset_expanded_250x_20261023/eng_assyriology_charset_expanded_250x_20261023.traineddata",

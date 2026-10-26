@@ -4,7 +4,7 @@ Model: eng_assyriology_charset_expanded_250x_20261023
 File: eng_assyriology_charset_expanded_250x_20261023.traineddata
 Size: 12091049 bytes
 SHA-256: d0bfef2846675b0405d59cd4a7603b10624da872fc056ebb84728789327b0a41
-Release: https://github.com/uyumyuuy/eduba/releases/tag/ocr-model-20261023-charset-expanded-250x
+Release: https://github.com/uyumyuuy/eduba/releases/tag/ocr-model-20261023-charset-expanded-250x-candidates-20261027
 License: Apache-2.0
 
 Upstream model:
@@ -32,6 +32,12 @@ This run added 250 presentations per row, totaling 1066750 presentations;
 these counts cover this run only.
 The imported file is an unchanged copy of the registered traineddata artifact.
 See OCR-MODEL-PROVENANCE.json for the original training project's record.
+
+Paired correction table:
+OCR-MODEL-CANDIDATES.json was generated for this same model in Assyrian-OCR.
+Source: data/eng_assyriology_charset_expanded_250x_20261023/scan-candidate-character-confusions.json
+SHA-256: bd6b3836ccbf05313fdb9559f35fd23189087f63cca18c0cfd984d453ead0737
+The original table includes its model key/hash, OCR settings and cohort provenance.
 
 Distribution terms:
 This fine-tuned OCR model is distributed under the Apache License,

@@ -7,6 +7,10 @@ import i18n from "./i18n";
 
 const invoke = vi.hoisted(() => vi.fn());
 vi.mock("./tauri", () => ({ invokeCommand: invoke }));
+vi.mock("./assets/scan-candidate-character-confusions.json", () => ({ default: { output_to_gt: {
+  c: { gt_candidates: [{ gt_character: "C", count: 8 }, { gt_character: "š", count: 1 }] },
+  m: { gt_candidates: [{ gt_character: "M", count: 2 }, { gt_character: "n", count: 1 }] },
+} } }));
 
 describe("BulkReplaceDialog", () => {
   let container: HTMLDivElement;
@@ -44,7 +48,7 @@ describe("BulkReplaceDialog", () => {
       document.dispatchEvent(new Event("selectionchange"));
     });
     const alternatives = [...container.querySelectorAll<HTMLButtonElement>(".text-candidate")];
-    expect(alternatives.map(button => button.getAttribute("aria-label"))).toEqual(["n", "rn"]);
+    expect(alternatives.map(button => button.getAttribute("aria-label"))).toEqual(["n", "rn", "M"]);
     await act(async () => alternatives[0].click());
     expect(editor.value).toBe("n");
   });
@@ -74,9 +78,9 @@ describe("BulkReplaceDialog", () => {
     expect(reservedShortcut.textContent).toBe("B");
     expect(bold.querySelector(".edit-toolbar-label")?.textContent).toBe("Bold");
     expect(bold.textContent).not.toContain("Ctrl+");
-    const candidate = toolbar.querySelector<HTMLButtonElement>('button[aria-label="š"]')!;
+    const candidate = toolbar.querySelector<HTMLButtonElement>('button[aria-label="C"]')!;
     expect(candidate.querySelector(".edit-toolbar-shortcut")?.textContent).toBe("1");
-    expect(candidate.querySelector(".edit-toolbar-label")?.textContent).toBe("š");
+    expect(candidate.querySelector(".edit-toolbar-label")?.textContent).toBe("C");
     await act(async () => bold.click());
     const decoration = container.querySelector<HTMLElement>(".bulk-edit-mirror .formatted-edit-decoration")!;
     expect(decoration.textContent).toBe("c");
