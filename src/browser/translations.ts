@@ -8,6 +8,7 @@ const baseBrowserResources = {
 const workingProjectResources = {
   en: {
     familyLinks: "Kurnugia family",
+    help: "Help",
     openInNewTab: "Opens in a new tab",
     resetModel: "Use the baseline model",
     storageProtection: {
@@ -23,6 +24,7 @@ const workingProjectResources = {
   },
   ja: {
     familyLinks: "Kurnugiaファミリー",
+    help: "ヘルプ",
     openInNewTab: "新しいタブで開きます",
     resetModel: "基準モデルに戻す",
     storageProtection: {
@@ -38,6 +40,7 @@ const workingProjectResources = {
   },
   "zh-Hans": {
     familyLinks: "Kurnugia 系列",
+    help: "帮助",
     openInNewTab: "在新标签页中打开",
     resetModel: "恢复基准模型",
     storageProtection: {
@@ -53,6 +56,7 @@ const workingProjectResources = {
   },
   "zh-Hant": {
     familyLinks: "Kurnugia 系列",
+    help: "說明",
     openInNewTab: "在新分頁中開啟",
     resetModel: "恢復基準模型",
     storageProtection: {

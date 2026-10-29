@@ -21,6 +21,7 @@ import JSZip from "jszip";
 import {
   ChevronLeft,
   ChevronRight,
+  CircleHelp,
   FileDown,
   FilePlus2,
   FolderOpen,
@@ -2531,6 +2532,10 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
           {!isTauri && <span className={project ? "muted" : "muted privacy-notice"}>{t(project ? (browserDirty ? "browser.unsavedFile" : "browser.savedFile") : "browser.localOnly")}</span>}
         </div>
         {!isTauri && <KurnugiaLinks />}
+        {!isTauri && <a className="header-help" href="../getting-started/browser/" target="_blank" rel="noopener noreferrer" title={t("browser.openInNewTab")}>
+          <CircleHelp size={16} aria-hidden="true" />
+          {t("browser.help")}
+        </a>}
         <button
           className="icon-btn"
           disabled={Boolean(busy)}
