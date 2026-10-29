@@ -15,3 +15,4 @@ tmp/
 *.sqlite-wal
 *.sqlite-shm
 .eduba/
+data/
