@@ -2,8 +2,7 @@ import { defineConfig } from 'astro/config';
 import starlight from '@astrojs/starlight';
 
 export default defineConfig({
-  site: 'https://uyumyuuy.github.io',
-  base: '/eduba',
+  site: 'https://eduba.kurnugia.com',
   trailingSlash: 'always',
   integrations: [
     starlight({

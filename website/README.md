@@ -1,7 +1,7 @@
 # Eduba Website
 
 日本語ドキュメントサイトは Astro Starlight で構成しています。
-`/eduba/` にドキュメント、`/eduba/app/` にブラウザ版を配信します。
+`https://eduba.kurnugia.com/` にドキュメント、`/app/` にブラウザ版を配信します。
 
 ## サイト全体のビルド
 

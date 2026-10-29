@@ -1,6 +1,6 @@
 # Starlight とブラウザ版の公開
 
-ドキュメントを `/eduba/`、ブラウザ版を `/eduba/app/` で配信する。
+独自ドメイン `https://eduba.kurnugia.com/` の `/` にドキュメント、`/app/` にブラウザ版を配信する。
 Vite で生成したアプリを `website/public/app/` にコピーしてから Astro をビルドし、
 `website/dist/` 全体を GitHub Pages に公開する。アプリは Starlight のレイアウトに埋め込まず、独立したページとして開く。
 
@@ -76,7 +76,7 @@ npm run build:website
 npm --prefix website run preview -- --host 127.0.0.1
 ```
 
-`http://127.0.0.1:4321/eduba/` がドキュメント、`/eduba/app/` がアプリ。
+`http://127.0.0.1:4321/` がドキュメント、`/app/` がアプリ。
 `app/` の末尾のスラッシュを含む URL で開く。アプリの相対アセット URL は、この場所を基準に解決される。
 
 Release の公開前でも、次のコマンドで手元のモデルをキャッシュに取り込める。
@@ -109,6 +109,10 @@ npm run build:website
 個人用トークンや Release への書き込み権限は不要。
 Pages の書き込みと OIDC の権限はデプロイジョブにだけ与える。
 リポジトリの Settings → Pages → Source は GitHub Actions に設定する。
+
+独自ドメインは Settings → Pages → Custom domain に `eduba.kurnugia.com` を登録し、DNS の CNAME レコードを `eduba.kurnugia.com` → `uyumyuuy.github.io` に設定する。HTTPS を有効にする。Actions による配信では `CNAME` ファイルは不要。
+`website/astro.config.mjs` の `site` は `https://eduba.kurnugia.com` とし、`base` は指定しない。ドキュメント内のリンクも `/guides/ocr/` のようにルートから記述する。
+ドメインを変更するとブラウザ保存領域も別になる。旧ドメインの作業内容は変更前に `.eduba` ファイルへ保存し、新ドメインで開き直す。独自 OCR モデルとブラウザ設定も新ドメインで再設定する。
 
 アプリ、ビルドスクリプト、モデル情報、モデル通知文、ONNX 資産、サイトの変更を main に push すると実行する。
 モデルの取得・検証・ビルドに失敗した場合はデプロイせず、公開済みのサイトを保持する。
