@@ -1,8 +1,8 @@
+import { exportFixtureHocr as exportHocr } from "./testSupport/hocr";
 import { describe, expect, it } from "vitest";
 import {
   escapeXml,
   effectiveFormatting,
-  exportHocr,
   exportSvg,
   exportText,
   parseCandidateMap,

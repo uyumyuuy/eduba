@@ -1,0 +1,57 @@
+Eduba default OCR model
+
+Model: eng_assyriology_charset_expanded_250x_20261023
+File: eng_assyriology_charset_expanded_250x_20261023.traineddata
+Size: 12091049 bytes
+SHA-256: d0bfef2846675b0405d59cd4a7603b10624da872fc056ebb84728789327b0a41
+Release: https://github.com/uyumyuuy/eduba/releases/tag/ocr-model-20261023-charset-expanded-250x-candidates-20261027
+License: Apache-2.0
+
+Upstream model:
+eng.traineddata from tesseract-ocr/tessdata_best
+https://github.com/tesseract-ocr/tessdata_best
+https://github.com/tesseract-ocr/tessdata_best/blob/main/eng.traineddata
+The upstream repository distributes its model data under Apache License 2.0.
+Its license text is included as OCR-MODEL-LICENSE.txt.
+
+Changes:
+The model author further trained the upstream English model in the
+Assyrian-OCR project for English and Assyriological transliteration.
+This artifact contains modified model
+weights. The precise upstream training-start revision has not been recorded
+in this distribution.
+
+Provenance:
+Created in Assyrian-OCR and adopted there as the training and evaluation
+baseline on 2026-10-24 (registry status: research_baseline).
+Source run: trial/charset-expanded-300x-20261023
+Selected milestone: added-250-per-row (not the final 300-per-row checkpoint).
+Parent model: eng_assyriology_saact6_george_100x_20261018.
+Training rows: 4267; evaluation dev rows: 1082.
+This run added 250 presentations per row, totaling 1066750 presentations;
+these counts cover this run only.
+The imported file is an unchanged copy of the registered traineddata artifact.
+See OCR-MODEL-PROVENANCE.json for the original training project's record.
+
+Paired correction table:
+OCR-MODEL-CANDIDATES.json was generated for this same model in Assyrian-OCR.
+Source: data/eng_assyriology_charset_expanded_250x_20261023/scan-candidate-character-confusions.json
+SHA-256: bd6b3836ccbf05313fdb9559f35fd23189087f63cca18c0cfd984d453ead0737
+The original table includes its model key/hash, OCR settings and cohort provenance.
+
+Distribution terms:
+This fine-tuned OCR model is distributed under the Apache License,
+Version 2.0. You may obtain a copy of the License at
+https://www.apache.org/licenses/LICENSE-2.0
+
+A copy accompanies the model as OCR-MODEL-LICENSE.txt. Retain that license
+and this notice when redistributing the model, and identify any further
+modifications you make. No additional use restrictions are imposed by Eduba.
+
+Unless required by applicable law or agreed to in writing, the model is
+distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+KIND, either express or implied. See the License for the specific language
+governing permissions and limitations under the License.
+
+These terms apply to the identified trained model. Other assets in Eduba
+retain their respective licenses.

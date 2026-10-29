@@ -1,3 +1,4 @@
+import type { Affine } from "./coordinates";
 import { ImageKind, OPS, type PDFPageProxy } from "pdfjs-dist";
 import { t } from "./i18n";
 
@@ -5,6 +6,7 @@ export type ImportMode = "extract" | "render";
 export type PageImageResult = {
   canvas: HTMLCanvasElement;
   modeUsed: ImportMode;
+  pdfToSource: Affine;
   dpiX: number;
   dpiY: number;
   sourceWidth?: number;
@@ -77,7 +79,7 @@ async function fallback(
     x = c.getContext("2d");
   if (!x) throw new Error(t("errors.canvasContext"));
   await page.render({ canvasContext: x, viewport: v }).promise;
-  return { canvas: c, modeUsed: "render", dpiX: dpi, dpiY: dpi, reason };
+  return { canvas: c, modeUsed: "render", dpiX: dpi, dpiY: dpi, reason, pdfToSource: v.transform as Affine };
 }
 function source(i: ImageObject): CanvasImageSource | null {
   if (i.bitmap) return i.bitmap;
@@ -245,146 +247,118 @@ export async function loadPageImage(
     view = page.getViewport({ scale: 1 }),
     vm = view.transform as M,
     pageBox: Box = { left: 0, bottom: 0, right: view.width, top: view.height };
-  let m = I,
-    clip: Box | undefined,
-    pending: Box | undefined,
-    candidate: { image: ImageObject; src: CanvasImageSource; m: M; clip?: Box } | undefined;
-  const stack: Array<{ m: M; clip?: Box }> = [];
-  for (let n = 0; n < ops.fnArray.length; n++) {
-    const op = ops.fnArray[n],
-      args = ops.argsArray[n] ?? [];
-    if (op === OPS.save) {
-      stack.push({ m, clip });
+  let m = I, clip: Box | undefined, unsafeClip = false;
+  let pending: Box | null | undefined;
+  let annotationDepth = 0, sawImage = false, visibleImages = 0;
+  type Patch = { x: number; y: number; w: number; h: number };
+  let candidate: { id: unknown; m: M; clip?: Box; patch?: Patch } | undefined;
+  const stack: Array<{ m: M; clip?: Box; unsafeClip: boolean }> = [];
+  const applyClip = (box: Box | null) => {
+    if (!box) { unsafeClip = true; return; }
+    const cm = mul(vm, mul(m, [box.right-box.left,0,0,box.top-box.bottom,box.left,box.bottom]));
+    if (!orthogonal(cm) || !cm.every(Number.isFinite)) { unsafeClip = true; return; }
+    const b = bounds(cm);
+    clip = clip ? (hit(clip,b) ?? {left:0,bottom:0,right:0,top:0}) : b;
+  };
+  const consider = (id: unknown, matrix: M, patch?: Patch): string | undefined => {
+    sawImage = true;
+    const im = mul(vm,matrix);
+    if (!im.every(Number.isFinite)) return t("errors.imageTransform");
+    const imageBounds = hit(bounds(im),pageBox);
+    const visible = imageBounds && (clip ? hit(imageBounds,clip) : imageBounds);
+    // Any additional image could hold content missing from the page-covering scan.
+    // Only placements outside the page or fully removed by clipping are ignored.
+    if (!visible) return;
+    if (unsafeClip) return t("errors.unsupportedClip");
+    if (++visibleImages > 1) return t("errors.multipleImages");
+    if (area(visible)/area(pageBox) < 0.95) return;
+    if (!orthogonal(im)) return t("errors.imageRestore");
+    candidate = {id,m:matrix,clip,patch};
+  };
+  for (let n=0; n<ops.fnArray.length; n++) {
+    const op=ops.fnArray[n], args=ops.argsArray[n] ?? [];
+    // Annotation appearances are unrelated overlays; their coordinate systems are ignored too.
+    if (op===OPS.beginAnnotation) { annotationDepth++; continue; }
+    if (op===OPS.endAnnotation) { annotationDepth=Math.max(0,annotationDepth-1); continue; }
+    if (annotationDepth) continue;
+    if (op===OPS.save || op===OPS.paintFormXObjectBegin || op===OPS.beginGroup) {
+      stack.push({m,clip,unsafeClip});
+      if (op!==OPS.save) {
+        const matrix = op===OPS.beginGroup ? args[0]?.matrix : args[0];
+        const box = op===OPS.beginGroup ? args[0]?.bbox : args[1];
+        if (matrix) {
+          if (matrix.length!==6 || !Array.from(matrix as number[]).every(Number.isFinite))
+            return fallback(page,fallbackDpi,t("errors.imageTransform"));
+          m=mul(m,matrix as M);
+        }
+        if (box) applyClip({left:box[0],bottom:box[1],right:box[2],top:box[3]});
+        // PDF.js uses a group's matrix for its buffer bounds; child drawing retains the parent transform.
+        if (op===OPS.beginGroup) m=stack[stack.length-1].m;
+      }
       continue;
     }
-    if (op === OPS.restore) {
-      const s = stack.pop();
-      if (!s) return fallback(page, fallbackDpi, t("errors.pdfState"));
-      m = s.m;
-      clip = s.clip;
+    if (op===OPS.restore || op===OPS.paintFormXObjectEnd || op===OPS.endGroup) {
+      const state=stack.pop();
+      if (!state) return fallback(page,fallbackDpi,t("errors.pdfState"));
+      ({m,clip,unsafeClip}=state);
       continue;
     }
-    if (op === OPS.transform) {
-      if (!(args as number[]).every(Number.isFinite))
-        return fallback(page, fallbackDpi, t("errors.imageTransform"));
-      m = mul(m, args as M);
+    if (op===OPS.transform) {
+      if (args.length!==6 || !(args as number[]).every(Number.isFinite))
+        return fallback(page,fallbackDpi,t("errors.imageTransform"));
+      m=mul(m,args as M);
       continue;
     }
-    if (op === OPS.constructPath) {
-      const r = rectFromPath(
-        args[0] as number[],
-        args[1] as number[],
-        args[2] as number[],
-      );
-      if (!r)
-        return fallback(
-          page,
-          fallbackDpi,
-          t("errors.unsupportedClip"),
-        );
-      pending = r;
+    if (op===OPS.constructPath) {
+      pending=rectFromPath(args[0] as number[],args[1] as number[],args[2] as number[]);
       continue;
     }
-    if (op === OPS.clip || op === OPS.eoClip) {
-      if (!pending)
-        return fallback(page, fallbackDpi, t("errors.pdfState"));
-      const cm = mul(
-        vm,
-        mul(m, [
-          pending.right - pending.left,
-          0,
-          0,
-          pending.top - pending.bottom,
-          pending.left,
-          pending.bottom,
-        ]),
-      );
-      if (!orthogonal(cm))
-        return fallback(
-          page,
-          fallbackDpi,
-          t("errors.clippedRotation"),
-        );
-      const b = bounds(cm);
-      clip = clip
-        ? (hit(clip, b) ?? { left: 0, bottom: 0, right: 0, top: 0 })
-        : b;
-      pending = undefined;
+    if (op===OPS.clip || op===OPS.eoClip) { applyClip(pending ?? null); continue; }
+    if ([OPS.endPath,OPS.stroke,OPS.closeStroke,OPS.fill,OPS.eoFill,OPS.fillStroke,OPS.eoFillStroke,OPS.closeFillStroke,OPS.closeEOFillStroke].includes(op)) {
+      pending=undefined;
       continue;
     }
-    // Structure tags (for example /Part) do not paint or change image geometry.
-    // Optional-content groups (/OC) can change visibility, so keep rendering
-    // those pages rather than extracting an image from a possibly hidden layer.
-    if (
-      op === OPS.beginMarkedContent ||
-      op === OPS.endMarkedContent ||
-      (op === OPS.beginMarkedContentProps && args[0] !== "OC")
-    ) continue;
-    if (op === OPS.endPath || op === OPS.dependency) continue;
-    if (op === OPS.paintImageXObject || op === OPS.paintInlineImageXObject) {
-      const image = await object(page, args[0]),
-        src = image && source(image),
-        im = mul(vm, m);
-      if (
-        !image?.width ||
-        !image.height ||
-        !src ||
-        !finite(image.width) ||
-        !finite(image.height) ||
-        !orthogonal(im)
-      )
-        return fallback(
-          page,
-          fallbackDpi,
-          t("errors.imageRestore"),
-        );
-      const imageBounds = hit(bounds(im), pageBox);
-      const visible =
-        imageBounds && (clip ? hit(imageBounds, clip) : imageBounds);
-      if (!visible || area(visible) / area(pageBox) < 0.95)
-        return fallback(
-          page,
-          fallbackDpi,
-          t("errors.pageCoverage"),
-        );
-      if (candidate)
-        return fallback(
-          page,
-          fallbackDpi,
-          t("errors.multipleImages"),
-        );
-      candidate = { image, src, m, clip };
+    if (op===OPS.paintImageXObject || op===OPS.paintInlineImageXObject) {
+      const reason=consider(args[0],m);
+      if (reason) return fallback(page,fallbackDpi,reason);
       continue;
     }
-    if (
-      [
-        OPS.showText,
-        OPS.showSpacedText,
-        OPS.nextLineShowText,
-        OPS.nextLineSetSpacingShowText,
-        OPS.fill,
-        OPS.stroke,
-        OPS.fillStroke,
-        OPS.eoFill,
-        OPS.shadingFill,
-      ].includes(op)
-    )
-      return fallback(
-        page,
-        fallbackDpi,
-        t("errors.visibleElements"),
-      );
-    return fallback(
-      page,
-      fallbackDpi,
-      t("errors.unsupportedOperator"),
-    );
+    if (op===OPS.paintImageXObjectRepeat) {
+      const positions=args[3] as number[];
+      for (let i=0;i<positions.length;i+=2) {
+        const reason=consider(args[0],mul(m,[args[1],0,0,args[2],positions[i],positions[i+1]]));
+        if (reason) return fallback(page,fallbackDpi,reason);
+      }
+      continue;
+    }
+    if (op===OPS.paintInlineImageXObjectGroup) {
+      for (const entry of args[1] ?? []) {
+        const reason=consider(args[0],mul(m,entry.transform as M),entry);
+        if (reason) return fallback(page,fallbackDpi,reason);
+      }
+      continue;
+    }
+    // Extraction deliberately ignores text (visible or invisible), vector drawings,
+    // colors, transparency, marked content and optional-content visibility.
   }
-  if (!candidate)
-    return fallback(page, fallbackDpi, t("errors.noEmbeddedImage"));
+  if (!candidate) return fallback(page,fallbackDpi,t(sawImage ? "errors.pageCoverage" : "errors.noEmbeddedImage"));
+  let image=await object(page,candidate.id);
+  let src: CanvasImageSource | null | undefined;
+  try { src=image && source(image); } catch { src=null; }
+  if (!image?.width || !image.height || !src || !finite(image.width) || !finite(image.height))
+    return fallback(page,fallbackDpi,t("errors.imageRestore"));
+  if (candidate.patch) {
+    const {x,y,w,h}=candidate.patch;
+    if (![x,y,w,h].every(Number.isInteger) || x<0 || y<0 || w<=0 || h<=0 || x+w>image.width || y+h>image.height)
+      return fallback(page,fallbackDpi,t("errors.imageRestore"));
+    const patch=canvas(w,h);
+    patch.getContext("2d")!.drawImage(src,x,y,w,h,0,0,w,h);
+    src=patch;
+    image={...image,width:w,height:h};
+  }
   const im = mul(vm, candidate.m),
-    w = candidate.image.width!,
-    h = candidate.image.height!,
+    w = image.width!,
+    h = image.height!,
     xAxis = length(im[0], im[1]),
     yAxis = length(im[2], im[3]);
   if (!finite(xAxis) || !finite(yAxis))
@@ -422,10 +396,11 @@ export async function loadPageImage(
   ctx.setTransform(
     ...mul(mul(mul(scale, vm), candidate.m), [1 / w, 0, 0, -1 / h, 0, 1]),
   );
-  ctx.drawImage(candidate.src, 0, 0);
+  ctx.drawImage(src, 0, 0);
   if (candidate.clip) ctx.restore();
   return {
     canvas: out,
+    pdfToSource: mul(scale, vm),
     modeUsed: "extract",
     dpiX: 72 * sx,
     dpiY: 72 * sy,

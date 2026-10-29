@@ -55,6 +55,18 @@ describe("ImportModal validation", () => {
     await vi.waitFor(() => expect(mocks.processCanvas.mock.calls.length).toBeGreaterThan(baseline));
   });
 
+  it("defaults figure detection on and persists an explicit off choice", async () => {
+    const confirm = vi.fn();
+    await act(async () => root.render(<ImportModal pdfPath="book.pdf" pdf={pdf()} onCancel={vi.fn()} onConfirm={confirm}/>));
+    const toggle = input("Automatically detect figures");
+    expect(toggle.checked).toBe(true);
+    await act(async () => container.querySelector<HTMLButtonElement>(".modal-actions .primary")!.click());
+    expect(confirm).toHaveBeenLastCalledWith(expect.objectContaining({ autoFigureDetection: true }));
+    await act(async () => toggle.click());
+    await act(async () => container.querySelector<HTMLButtonElement>(".modal-actions .primary")!.click());
+    expect(confirm).toHaveBeenLastCalledWith(expect.objectContaining({ autoFigureDetection: false }));
+  });
+
   it("defaults deskew on, refreshes the preview when disabled, and submits the choice", async () => {
     const confirm = vi.fn();
     await act(async () => root.render(<ImportModal pdfPath="book.pdf" pdf={pdf()} onCancel={vi.fn()} onConfirm={confirm}/>));

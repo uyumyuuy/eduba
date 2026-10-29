@@ -1,3 +1,5 @@
+import { identity, inverse, multiply, rotationTransform, type Affine, type HocrSource } from "./coordinates";
+import { contentRuns } from "./pageContent";
 import { estimateSkew, type DeskewEstimate } from "./deskew";
 import type { OcrMargins } from "./ocrMargins";
 /**
@@ -24,6 +26,12 @@ export interface Baseline {
 export type CharacterSource = "ocr" | "inserted";
 export type HocrLineClass = "ocr_line" | "ocr_header" | "ocr_textfloat" | "ocr_caption";
 
+export interface OcrChoice {
+  text: string;
+  /** Tesseract's x_confs score; not a calibrated probability. */
+  confidence: number;
+}
+
 export interface OcrChar {
   index: number;
   originalText: string;
@@ -31,6 +39,7 @@ export interface OcrChar {
   /** Missing for inserted characters and any hOCR character without a box. */
   bbox?: Rect;
   confidence?: number;
+  choices?: OcrChoice[];
   source: CharacterSource;
 }
 
@@ -115,6 +124,14 @@ export interface LogicalPageProvenance {
   /** Missing on legacy projects, whose deskew preceded spread splitting. */
   preprocessOrder?: "split-deskew" | "deskew-split";
   ocrMargins?: OcrMargins;
+  /** Absent on older projects: automatic detection is disabled. */
+  autoFigureDetection?: boolean;
+}
+
+export interface FigureRegion {
+  id: string;
+  kind: "figure" | "table";
+  bbox: Rect;
 }
 
 export interface DocumentPage extends LogicalPageProvenance {
@@ -127,8 +144,11 @@ export interface DocumentPage extends LogicalPageProvenance {
   sourceDpiX?: number;
   sourceDpiY?: number;
   blocks: PageBlock[];
+  figureRegions?: FigureRegion[];
+  /** Stable IDs of OCR lines and figures in their shared reading order. */
+  readingOrderIds?: string[];
   /** One-shot manually selected OCR regions. Full-page OCR replaces this list. */
-  manualOcrRegions?: { id: string; bbox: Rect; psm: 11 | 6; addedWordIds: string[]; addedLineIds: string[] }[];
+  manualOcrRegions?: { id: string; bbox: Rect; psm: 11 | 6 | 7; disableRowNoiseRejection?: boolean; addedWordIds: string[]; addedLineIds: string[] }[];
   /** Removed OCR lines are retained only as a manual-change marker until full-page OCR. */
   deletedOcrLineIds?: string[];
   /** A user has changed the line reading order on this page. */
@@ -191,12 +211,36 @@ function classElements(root: ParentNode, className: string): Element[] {
   return Array.from(root.querySelectorAll(`.${className}`));
 }
 
+const CHOICE_GROUP = '[id^="lstm_choices_"], .ocr_symbol';
+
 function normalizedText(element: Element): string {
-  return (element.textContent || "").replace(/\s+/g, " ").trim();
+  const recognized = element.cloneNode(true) as Element;
+  recognized.querySelectorAll(CHOICE_GROUP).forEach(group => group.remove());
+  return (recognized.textContent || "").replace(/\s+/g, " ").trim();
+}
+
+function characterElements(word: Element): Element[] {
+  return classElements(word, CLASS_NAMES.char).filter(element =>
+    !element.closest(CHOICE_GROUP) && titleValue(element, "x_confs") === undefined &&
+    element.closest(`.${CLASS_NAMES.word}`) === word &&
+    !element.parentElement?.closest(`.${CLASS_NAMES.char}`));
+}
+
+function parseChoices(character: Element): OcrChoice[] | undefined {
+  const nested = character.querySelector('[id^="lstm_choices_"]');
+  const next = character.nextElementSibling;
+  const group = nested ?? (next?.id.startsWith("lstm_choices_") ? next : undefined);
+  if (!group) return undefined;
+  const choices = Array.from(group.querySelectorAll(".ocrx_cinfo, .ocr_glyph")).flatMap(element => {
+    const score = confidence(element, "x_confs");
+    const text = element.textContent ?? "";
+    return score !== undefined && Number.isFinite(score) && text.trim() ? [{ text, confidence: score }] : [];
+  });
+  return choices.length ? choices : undefined;
 }
 
 function parseChars(wordElement: Element, original: string): OcrChar[] {
-  const charElements = childrenOf(wordElement, CLASS_NAMES.char);
+  const charElements = characterElements(wordElement);
   if (!charElements.length) {
     return Array.from(original).map((text, index) => ({
       index,
@@ -223,13 +267,14 @@ function parseChars(wordElement: Element, original: string): OcrChar[] {
           }
         : {}),
       confidence: confidence(element, "x_conf"),
+      choices: parseChoices(element),
       source: "ocr" as const,
     };
   });
 }
 
 function parseWord(element: Element): OcrWord {
-  const charElements = childrenOf(element, CLASS_NAMES.char);
+  const charElements = characterElements(element);
   const displayedText = normalizedText(element);
   const chars = parseChars(element, displayedText);
   // XHTML indentation between cinfo spans is formatting, not OCR text. The
@@ -689,6 +734,40 @@ export function updateLineText(
   return copy;
 }
 
+/** Replace a selected candidate and inherit each decoration by non-whitespace grapheme majority.
+ * Ties stay undecorated. Formatting outside the exact selection is preserved.
+ */
+export function replaceLineSelection(page: DocumentPage, lineId: string, start: number, end: number, replacement: string): DocumentPage {
+  const before = allLines(page).find(line => line.id === lineId);
+  if (!before) throw new Error(t("errors.unknownLine", { id: lineId }));
+  if (!Number.isInteger(start) || !Number.isInteger(end) || start < 0 || end > before.correctedText.length || start >= end)
+    return page;
+  const rendered = effectiveFormatting(before);
+  const graphemes = [...new Intl.Segmenter(undefined, { granularity: "grapheme" }).segment(before.correctedText.slice(start, end))]
+    .filter(item => !/^\s+$/u.test(item.segment));
+  const kinds = (["bold", "italic", "superscript", "subscript"] as const).filter(kind => {
+    const decorated = graphemes.filter(item => rendered.some(range => range.kind === kind &&
+      range.start < start + item.index + item.segment.length && range.end > start + item.index)).length;
+    return decorated > graphemes.length / 2;
+  });
+  const delta = replacement.length - (end - start);
+  const ranges = rendered.flatMap(range => {
+    if (range.end <= start) return [range];
+    if (range.start >= end) return [{ ...range, start: range.start + delta, end: range.end + delta }];
+    return [
+      ...(range.start < start ? [{ ...range, end: start }] : []),
+      ...(range.end > end ? [{ ...range, start: start + replacement.length, end: range.end + delta }] : []),
+    ];
+  });
+  for (const match of replacement.matchAll(/\S+/gu)) {
+    for (const kind of kinds) ranges.push({start: start + match.index!, end: start + match.index! + match[0].length, kind});
+  }
+  const next = updateLineText(page, lineId, before.correctedText.slice(0, start) + replacement + before.correctedText.slice(end));
+  const line = allLines(next).find(line => line.id === lineId)!;
+  line.formatting = ranges.length ? ranges : undefined;
+  return next;
+}
+
 export function escapeXml(value: string): string {
   return value.replace(
     /[&<>"']/g,
@@ -749,10 +828,8 @@ function formatHocrRange(line: OcrLine, start: number, end: number): string {
     return text;
   }).join("");
 }
-export function exportHocr(pages: DocumentPage[]): string {
-  const body = pages
-    .map((page) => {
-      const blocks = page.blocks
+function exportHocrBlocks(blocks: PageBlock[]): string {
+  return blocks
         .map((block) => {
           const paragraphs = block.paragraphs
             .map((paragraph) => {
@@ -809,13 +886,61 @@ export function exportHocr(pages: DocumentPage[]): string {
           return `<div class="ocr_carea" id="${escapeXml(block.id)}" title="${escapeXml(titleBbox(block.bbox))}">${paragraphs}</div>`;
         })
         .join("\n");
-      return `<div class="ocr_page" id="${escapeXml(page.id)}" title="${escapeXml(titleBbox({ left: 0, top: 0, right: page.width, bottom: page.height }))}">${blocks}</div>`;
-    })
-    .join("\n");
-  return `<?xml version="1.0" encoding="UTF-8"?>\n<html xmlns="http://www.w3.org/1999/xhtml"><body>${body}</body></html>`;
 }
 
-export function exportSvg(page: DocumentPage): string {
+/** Output contract: docs/hocr-output-spec.md. Update it whenever this format changes. */
+export function exportHocr(pages: DocumentPage[], source: HocrSource): string {
+  const validFingerprint = !!source && /^[a-zA-Z0-9-]+$/.test(source.fingerprint);
+  const validBytes = !!source && Number.isSafeInteger(source.byteLength) && source.byteLength > 0;
+  let incomplete = false;
+  const body = pages.map((page, index) => {
+    const properties = [titleBbox({ left: 0, top: 0, right: page.width, bottom: page.height }), `ppageno ${index}`];
+    const validPage = Number.isInteger(page.sourcePage) && page.sourcePage > 0;
+    if (validFingerprint) properties.push(`x_edubapdffingerprint "${source.fingerprint}"`);
+    if (validBytes) properties.push(`x_edubapdfbytes ${source.byteLength}`);
+    if (validPage) properties.push(`x_edubasourcepage ${page.sourcePage}`);
+    if (validPage && validFingerprint) properties.push(`x_source "pdf:${source.fingerprint}" "${page.sourcePage}"`);
+    if (["single", "left", "right"].includes(page.split)) properties.push(`x_edubasplit ${page.split}`);
+    if (Number.isFinite(page.rotation)) properties.push(`x_edubarotation ${page.rotation}`);
+    if (Number.isFinite(page.angle)) properties.push(`x_edubadeskew ${page.angle}`);
+    properties.push(`x_edubapreprocessorder ${page.preprocessOrder ?? "deskew-split"}`);
+    if (!page.crop || Object.values(page.crop).every(Number.isFinite))
+      properties.push(`x_edubacrop ${page.crop ? [page.crop.left, page.crop.top, page.crop.right, page.crop.bottom].join(" ") : "none"}`);
+
+    const geometry = source?.pages[page.id];
+    let reason = source?.unavailable?.[page.id];
+    if (!reason && (!validFingerprint || !validBytes || !validPage)) reason = "missing-source";
+    if (!reason && !geometry) reason = "missing-geometry";
+    if (!reason && geometry) {
+      try {
+        const { pageToPdf, pdfBox, pdfRotation, pdfUserUnit, sourceWidth, sourceHeight, dpiX, dpiY, mode } = geometry;
+        if (pageToPdf.length !== 6 || pdfBox.length !== 4 ||
+          ![...pageToPdf, ...pdfBox, pdfRotation, pdfUserUnit, sourceWidth, sourceHeight, dpiX, dpiY].every(Number.isFinite) ||
+          pdfUserUnit <= 0 || sourceWidth <= 0 || sourceHeight <= 0 || dpiX <= 0 || dpiY <= 0 ||
+          !["extract", "render"].includes(mode)) throw new Error("Invalid geometry");
+        inverse(pageToPdf);
+      } catch { reason = "invalid-geometry"; }
+    }
+    if (reason || !geometry) {
+      incomplete = true;
+      properties.push("x_edubacoordinates unavailable", `x_edubacoordinatereason ${reason ?? "missing-geometry"}`);
+    } else {
+      const { pageToPdf, pdfBox, pdfRotation, pdfUserUnit, sourceWidth, sourceHeight, dpiX, dpiY, mode } = geometry;
+      properties.push("x_edubacoordinates complete", `x_edubapdfbox ${pdfBox.join(" ")}`,
+        `x_edubapdfrotation ${pdfRotation}`, `x_edubapdfuserunit ${pdfUserUnit}`,
+        `x_edubasourcesize ${sourceWidth} ${sourceHeight}`, `x_edubasourcedpi ${dpiX} ${dpiY}`,
+        `x_edubaimportmode ${mode}`, `x_edubapagetopdf ${pageToPdf.join(" ")}`);
+    }
+    const content = contentRuns(page).map(run => run.kind === "text"
+      ? exportHocrBlocks(run.blocks)
+      : `<div class="${run.figure.kind === "table" ? "ocr_table" : "ocr_image"}" id="${escapeXml(run.figure.id)}" title="${escapeXml(titleBbox(run.figure.bbox))}"></div>`).join("\n");
+    return `<div class="ocr_page" id="${escapeXml(page.id)}" title="${escapeXml(properties.join("; "))}">${content}</div>`;
+  }).join("\n");
+  const propertyNames = ["bbox", "ppageno", "baseline", "x_size", "x_wconf", "x_bboxes", "x_conf", "x_source", "x_edubapdffingerprint", "x_edubapdfbytes", "x_edubasourcepage", "x_edubapdfbox", "x_edubapdfrotation", "x_edubapdfuserunit", "x_edubasourcesize", "x_edubasourcedpi", "x_edubaimportmode", "x_edubasplit", "x_edubarotation", "x_edubadeskew", "x_edubapreprocessorder", "x_edubacrop", "x_edubapagetopdf", "x_edubacoordinates", "x_edubacoordinatereason"];
+  return `<?xml version="1.0" encoding="UTF-8"?>\n<html xmlns="http://www.w3.org/1999/xhtml"><head><meta name="eduba-hocr-version" content="1" /><meta name="eduba-hocr-coordinates" content="${incomplete ? "incomplete" : "complete"}" /><meta name="ocr-capabilities" content="ocr_page ocr_carea ocr_par ocr_line ocrx_word ocrx_cinfo ocr_image ocr_table ${propertyNames.map(name => `ocrp_${name}`).join(" ")}" /></head><body>${body}</body></html>`;
+}
+
+export function exportSvg(page: DocumentPage, images: Record<string, string> = {}): string {
   const lines = paragraphLines(page)
     .map((line) => {
       const size =
@@ -826,7 +951,13 @@ export function exportSvg(page: DocumentPage): string {
       return `<text x="${x}" y="${baseline}" font-family="Noto Serif" font-size="${size}" textLength="${Math.max(0, line.bbox.right - line.bbox.left)}" lengthAdjust="spacingAndGlyphs" data-line-id="${escapeXml(line.id)}" data-original="${escapeXml(line.originalText)}">${formattedSegments(line, true)}</text>`;
     })
     .join("\n");
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="${page.width}" height="${page.height}" viewBox="0 0 ${page.width} ${page.height}">${lines}</svg>`;
+  const figures = (page.figureRegions ?? []).map(figure => {
+    const image = images[figure.id];
+    if (!image) throw new Error(`Missing image for region ${figure.id}.`);
+    const box = figure.bbox;
+    return `<image data-region-id="${escapeXml(figure.id)}" data-region-kind="${figure.kind}" x="${box.left}" y="${box.top}" width="${box.right - box.left}" height="${box.bottom - box.top}" href="${escapeXml(image)}" />`;
+  }).join("\n");
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${page.width}" height="${page.height}" viewBox="0 0 ${page.width} ${page.height}">${figures}${lines}</svg>`;
 }
 
 export interface Candidate {
@@ -940,6 +1071,7 @@ export interface PreprocessOptions {
 }
 
 export interface ProcessedPage {
+  sourceToPage: Affine;
   deskew?: DeskewEstimate;
   canvas: HTMLCanvasElement;
   provenance: LogicalPageProvenance;
@@ -1052,10 +1184,14 @@ export function processCanvas(
       : canvas };
   };
   let working = rotateCanvas(source, sourceWidth, sourceHeight, rotation);
+  let workingTransform = rotationTransform(sourceWidth, sourceHeight, working.width, working.height, rotation);
   let legacyAngle = 0;
   let legacyDeskew: DeskewEstimate = { angle: 0, status: "disabled" };
-  if (order === "deskew-split")
+  if (order === "deskew-split") {
+    const before = working;
     ({ canvas: working, angle: legacyAngle, deskew: legacyDeskew } = correction(working));
+    workingTransform = multiply(rotationTransform(before.width, before.height, working.width, working.height, legacyAngle), workingTransform);
+  }
   const split = options.split ?? "none";
   const sides: Array<LogicalPageProvenance["split"]> = split === "none"
     ? ["single"] : split === "both" ? ["left", "right"] : [split];
@@ -1065,11 +1201,19 @@ export function processCanvas(
       left: side === "left" ? 0 : half, top: 0,
       right: side === "left" ? half : working.width, bottom: working.height,
     });
+    let sourceToPage = multiply(side === "right" ? [1, 0, 0, 1, -half, 0] : identity, workingTransform);
     let angle = legacyAngle;
     let deskew = legacyDeskew;
-    if (order === "split-deskew") ({ canvas, angle, deskew } = correction(canvas));
-    if (options.crop) canvas = cropCanvas(canvas, options.crop);
-    return { canvas, deskew, provenance: {
+    if (order === "split-deskew") {
+      const before = canvas;
+      ({ canvas, angle, deskew } = correction(canvas));
+      sourceToPage = multiply(rotationTransform(before.width, before.height, canvas.width, canvas.height, angle), sourceToPage);
+    }
+    if (options.crop) {
+      canvas = cropCanvas(canvas, options.crop);
+      sourceToPage = multiply([1, 0, 0, 1, -Math.max(0, Math.floor(options.crop.left)), -Math.max(0, Math.floor(options.crop.top))], sourceToPage);
+    }
+    return { canvas, deskew, sourceToPage, provenance: {
       sourcePage: options.sourcePage ?? 0, split: side, crop: options.crop,
       rotation, angle, preprocessOrder: order,
     } };

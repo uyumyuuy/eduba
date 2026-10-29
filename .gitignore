@@ -1,7 +1,11 @@
 node_modules/
+.cache/
 .tmp-npm-cache/
 *.tsbuildinfo
 dist/
+public/browser-assets/
+test-results/
+playwright-report/
 target/
 src-tauri/gen/
 src-tauri/resources/tesseract/*.exe
@@ -11,3 +15,4 @@ tmp/
 *.sqlite-wal
 *.sqlite-shm
 .eduba/
+data/

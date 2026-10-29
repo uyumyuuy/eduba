@@ -16,12 +16,10 @@ async function initializeLanguage(): Promise<{ preference: LocalePreference; osL
   let preference: LocalePreference = isTauri ? "en" : "auto";
   let osLocale: string | null = typeof navigator === "undefined" ? null : navigator.language;
   try {
-    if (isTauri) {
-      const prefs = await invokeCommand("get_user_preferences");
-      preference = prefs.language === "auto" || supportedLocales.includes(prefs.language as typeof supportedLocales[number])
-        ? prefs.language as LocalePreference : "en";
-      osLocale = prefs.osLocale;
-    }
+    const prefs = await invokeCommand("get_user_preferences");
+    preference = prefs.language === "auto" || supportedLocales.includes(prefs.language as typeof supportedLocales[number])
+      ? prefs.language as LocalePreference : "en";
+    osLocale = prefs.osLocale;
   } catch (error) {
     rememberLanguageError("load", error);
   }

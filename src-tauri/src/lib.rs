@@ -14,6 +14,8 @@ use std::{
 use tauri::{menu::MenuBuilder, AppHandle, Emitter, Manager, State};
 use thiserror::Error;
 mod preferences;
+mod figure_detector;
+mod text_alignment;
 mod edit_history;
 use edit_history::{load_edit_history, save_project_state};
 #[path = "style_classifier_runtime/lib.rs"]
@@ -186,6 +188,8 @@ pub struct OcrArgs {
     pub model_path: String,
     pub psm: u8,
     pub dpi: u16,
+    #[serde(default)]
+    pub disable_row_noise_rejection: bool,
     pub tesseract_path: PathBuf,
 }
 
@@ -215,6 +219,7 @@ pub struct ExportArgs {
 }
 
 pub struct AppState {
+    figure_detector: Arc<Mutex<Option<figure_detector::Detector>>>,
     ocr_child: Arc<Mutex<Option<Child>>>,
     preferences_lock: Arc<Mutex<()>>,
     style_classifier: Arc<Mutex<Option<style_classifier_runtime::Classifier>>>,
@@ -223,6 +228,7 @@ pub struct AppState {
 impl Default for AppState {
     fn default() -> Self {
         Self {
+            figure_detector: Arc::new(Mutex::new(None)),
             ocr_child: Arc::new(Mutex::new(None)),
             preferences_lock: Arc::new(Mutex::new(())),
             style_classifier: Arc::new(Mutex::new(None)),
@@ -356,7 +362,7 @@ fn get_environment_impl(app: &AppHandle) -> BackendResult<serde_json::Value> {
         .path()
         .resource_dir()
         .unwrap_or_else(|_| PathBuf::from("resources"));
-    let default_model_name = "eng_assyriology_scan_candidate_20260920_v1.traineddata";
+    let default_model_name = "eng_assyriology_charset_expanded_250x_20261023.traineddata";
     let model_candidates = [
         std::env::var_os("EDUBA_MODEL_PATH").map(PathBuf::from),
         Some(resource.join("models").join(default_model_name)),
@@ -369,7 +375,7 @@ fn get_environment_impl(app: &AppHandle) -> BackendResult<serde_json::Value> {
         Some(resource.join("models").join("eng.traineddata")),
         #[cfg(debug_assertions)]
         Some(PathBuf::from(
-            r"D:\work\assyrian-ocr\trial\runs\eng_assyriology-scan-candidate-v1-20260920\seed\eng_assyriology_scan_candidate_20260920_v1.traineddata",
+            r"D:\work\assyrian-ocr\data\eng_assyriology_charset_expanded_250x_20261023\eng_assyriology_charset_expanded_250x_20261023.traineddata",
         )),
     ];
     let model = model_candidates
@@ -793,22 +799,33 @@ fn correction_match_bbox(line: &serde_json::Value, text: &str, byte_start: usize
             && rect.3 > line_bounds.1 && rect.1 < line_bounds.3
     };
     let mut bounds: Option<(f64, f64, f64, f64)> = None;
-    if let Some(chars) = line.get("chars").and_then(serde_json::Value::as_array).filter(|chars| chars.len() == count) {
-        let mut boxes: Vec<_> = chars.iter()
-            .map(|character| character.get("bbox").and_then(rect_components).filter(&valid_rect))
-            .collect();
+    {
+        let mut boxes = vec![None; count];
+        let corrected_chars: Vec<_> = text.chars().collect();
+        if let Some(chars) = line.get("chars").and_then(serde_json::Value::as_array).filter(|chars| chars.len() == count) {
+            for (index, character) in chars.iter().enumerate() {
+                if character.get("correctedText").or_else(|| character.get("originalText"))
+                    .and_then(serde_json::Value::as_str).map_or(true, |value| value == corrected_chars[index].to_string()) {
+                    boxes[index] = character.get("bbox").and_then(rect_components).filter(&valid_rect);
+                }
+            }
+        }
         // Older edits can replace all line characters with inserted entries,
         // while the original word characters still retain their coordinates.
-        // Recover anchors only in the unchanged prefix/suffix of the text.
-        if let (Some(original), Some(words)) = (
-            line.get("originalText").and_then(serde_json::Value::as_str),
-            line.get("words").and_then(serde_json::Value::as_array),
-        ) {
+        // Recover unambiguous unchanged runs throughout the edited text.
+        if let Some(original) = line.get("originalText").and_then(serde_json::Value::as_str) {
             let original_chars: Vec<_> = original.chars().collect();
-            let corrected_chars: Vec<_> = text.chars().collect();
             let mut original_boxes = vec![None; original_chars.len()];
+            if let Some(chars) = line.get("chars").and_then(serde_json::Value::as_array).filter(|chars| chars.len() == original_chars.len()) {
+                for (index, character) in chars.iter().enumerate() {
+                    if character.get("originalText").and_then(serde_json::Value::as_str)
+                        == Some(original_chars[index].to_string().as_str()) {
+                        original_boxes[index] = character.get("bbox").and_then(rect_components).filter(&valid_rect);
+                    }
+                }
+            }
             let mut cursor = 0;
-            for word in words {
+            for word in line.get("words").and_then(serde_json::Value::as_array).into_iter().flatten() {
                 let Some(word_text) = word.get("originalText").and_then(serde_json::Value::as_str).filter(|text| !text.is_empty()) else { continue; };
                 let Some(offset) = original[cursor..].find(word_text) else { continue; };
                 let byte_start = cursor + offset;
@@ -820,18 +837,15 @@ fn correction_match_bbox(line: &serde_json::Value, text: &str, byte_start: usize
                     // original text position, even when the lengths match.
                     if character.get("originalText").and_then(serde_json::Value::as_str)
                         != original_chars.get(char_start + index).map(|value| value.to_string()).as_deref() { continue; }
-                    original_boxes[char_start + index] = character.get("bbox").and_then(rect_components).filter(&valid_rect);
+                    if let Some(rect) = character.get("bbox").and_then(rect_components).filter(&valid_rect) {
+                        original_boxes[char_start + index] = Some(rect);
+                    }
                 }
             }
-            let prefix = original_chars.iter().zip(&corrected_chars).take_while(|(before, after)| before == after).count();
-            let suffix = original_chars[prefix..].iter().rev().zip(corrected_chars[prefix..].iter().rev())
-                .take_while(|(before, after)| before == after).count();
-            for index in 0..prefix {
-                if boxes[index].is_none() { boxes[index] = original_boxes[index]; }
-            }
-            for offset in 0..suffix {
-                let index = count - 1 - offset;
-                if boxes[index].is_none() { boxes[index] = original_boxes[original_chars.len() - 1 - offset]; }
+            for (index, original_index) in text_alignment::unchanged_positions(&original_chars, &corrected_chars).into_iter().enumerate() {
+                if boxes[index].is_none() {
+                    boxes[index] = original_index.and_then(|original_index| original_boxes[original_index]);
+                }
             }
         }
         let horizontal = line_bounds.2 - line_bounds.0 >= line_bounds.3 - line_bounds.1;
@@ -1035,7 +1049,7 @@ fn model_spec(model_path: &str) -> BackendResult<(PathBuf, String)> {
                 .to_string(),
         )
     } else if requested.is_dir() {
-        let candidate = requested.join("eng_assyriology_scan_candidate_20260920_v1.traineddata");
+        let candidate = requested.join("eng_assyriology_charset_expanded_250x_20261023.traineddata");
         let model = if candidate.is_file() {
             candidate
         } else {
@@ -1064,6 +1078,44 @@ fn hide_console(command: &mut Command) {
 
 #[cfg(not(windows))]
 fn hide_console(_command: &mut Command) {}
+
+#[tauri::command]
+async fn detect_figures(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    image_base64: String,
+) -> Result<Vec<figure_detector::Detection>, String> {
+    let detector = state.figure_detector.clone();
+    tauri::async_runtime::spawn_blocking(move || -> anyhow::Result<Vec<figure_detector::Detection>> {
+        if image_base64.len() > MAX_OCR_IMAGE * 4 / 3 + 256 {
+            anyhow::bail!("figure image exceeds 64 MiB");
+        }
+        let data = image_base64.split_once(',').map(|(_, data)| data).unwrap_or(&image_base64);
+        let bytes = BASE64.decode(data)?;
+        if bytes.is_empty() || bytes.len() > MAX_OCR_IMAGE {
+            anyhow::bail!("empty or oversized figure image");
+        }
+        let mut reader = image::ImageReader::new(std::io::Cursor::new(bytes)).with_guessed_format()?;
+        let mut limits = image::Limits::default();
+        limits.max_image_width = Some(20000);
+        limits.max_image_height = Some(20000);
+        limits.max_alloc = Some(256 * 1024 * 1024);
+        reader.limits(limits);
+        let image = reader.decode()?.to_rgb8();
+        let mut model = detector.lock().map_err(|_| anyhow::anyhow!("figure detector lock poisoned"))?;
+        if model.is_none() {
+            let resource = app.path().resource_dir()?.join("figure-detection/picodet-s-layout-3cls.onnx");
+            let dev = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                .join("resources/figure-detection/picodet-s-layout-3cls.onnx");
+            let path = if resource.is_file() { resource } else { dev };
+            *model = Some(figure_detector::Detector::load(&process_path(path))?);
+        }
+        model.as_mut().unwrap().predict(&image)
+    })
+    .await
+    .map_err(|e| format!("figure detection worker failed: {e}"))?
+    .map_err(|e| e.to_string())
+}
 
 #[tauri::command]
 async fn classify_word_styles(
@@ -1248,6 +1300,7 @@ async fn run_ocr(
     model_path: String,
     psm: u8,
     dpi: Option<u16>,
+    disable_row_noise_rejection: Option<bool>,
 ) -> Result<String, String> {
     let child_slot = state.ocr_child.clone();
     let tesseract_path = resolve_tesseract_path(&app);
@@ -1259,6 +1312,7 @@ async fn run_ocr(
                 model_path,
                 psm,
                 dpi: dpi.unwrap_or(300),
+                disable_row_noise_rejection: disable_row_noise_rejection.unwrap_or(false),
                 tesseract_path,
             },
         )
@@ -1320,9 +1374,14 @@ fn run_ocr_blocking(child_slot: Arc<Mutex<Option<Child>>>, args: OcrArgs) -> Bac
         .arg("tessedit_create_hocr=1")
         .arg("-c")
         .arg("hocr_char_boxes=1")
+        .arg("-c")
+        .arg("lstm_choice_mode=2")
         .stdin(Stdio::null())
         .stdout(Stdio::from(stdout_file.reopen()?))
         .stderr(Stdio::from(stderr_file.reopen()?));
+    if args.disable_row_noise_rejection {
+        command.arg("-c").arg("textord_noise_rejrows=0");
+    }
     hide_console(&mut command);
     {
         let mut slot = child_slot
@@ -1578,6 +1637,7 @@ pub fn run() {
             apply_bulk_corrections,
             run_ocr,
             classify_word_styles,
+            detect_figures,
             cancel_ocr,
             export_file
         ])
@@ -1882,6 +1942,52 @@ mod tests {
         assert_eq!(edited["right"], 270.0);
     }
     #[test]
+    fn correction_match_bbox_recovers_internal_anchors_after_multiple_edits() {
+        let original = "aAšṭBxCz";
+        let text = "QAšṭByyCW";
+        let original_chars: Vec<_> = original.chars().enumerate().map(|(index, character)| serde_json::json!({
+            "originalText": character.to_string(),
+            "bbox": {"left": index * 10, "top": 2, "right": index * 10 + 8, "bottom": 18}
+        })).collect();
+        // Legacy edits may discard line coordinates, or retain an original array
+        // whose length no longer agrees with the corrected text.
+        for chars in [serde_json::json!(vec![serde_json::json!({}); text.chars().count()]), serde_json::Value::Null] {
+            let line = serde_json::json!({
+                "bbox": {"left": 0, "top": 0, "right": 200, "bottom": 20},
+                "originalText": original, "chars": chars,
+                "words": [{"originalText": original, "chars": original_chars}]
+            });
+            let exact = correction_match_bbox(&line, text, "QA".len(), "QAšṭ".len()).unwrap();
+            assert_eq!(exact, serde_json::json!({"left": 20.0, "top": 2.0, "right": 38.0, "bottom": 18.0}));
+            let inferred = correction_match_bbox(&line, text, "QAšṭB".len(), "QAšṭByy".len()).unwrap();
+            assert_eq!(inferred, serde_json::json!({"left": 48.0, "top": 0.0, "right": 60.0, "bottom": 20.0}));
+        }
+        let line = serde_json::json!({
+            "bbox": {"left": 0, "top": 0, "right": 200, "bottom": 20},
+            "originalText": original, "chars": original_chars
+        });
+        let bbox = correction_match_bbox(&line, text, "QA".len(), "QAšṭ".len()).unwrap();
+        assert_eq!(bbox["left"], 20.0);
+        assert_eq!(bbox["right"], 38.0);
+    }
+
+    #[test]
+    fn correction_match_bbox_does_not_choose_an_ambiguous_repeated_word() {
+        let original = "AB AB";
+        let chars: Vec<_> = original.chars().enumerate().map(|(index, character)| serde_json::json!({
+            "originalText": character.to_string(),
+            "bbox": {"left": index * 10, "top": 2, "right": index * 10 + 8, "bottom": 18}
+        })).collect();
+        let line = serde_json::json!({
+            "bbox": {"left": 0, "top": 0, "right": 200, "bottom": 20},
+            "originalText": original, "chars": [{}, {}],
+            "words": [{"originalText": original, "chars": chars}]
+        });
+        assert_eq!(correction_match_bbox(&line, "AB", 0, 2).unwrap(),
+            serde_json::json!({"left": 0.0, "top": 0.0, "right": 200.0, "bottom": 20.0}));
+    }
+
+    #[test]
     fn bulk_search_uses_manifest_order_and_corrected_text() {
         let (_dir, pdf, project) = fixture();
         create_project_impl(&CreateProjectArgs {
@@ -2013,6 +2119,7 @@ mod tests {
                     .into_owned(),
                 psm: 3,
                 dpi: 300,
+                disable_row_noise_rejection: false,
                 tesseract_path,
             },
         )
@@ -2020,5 +2127,36 @@ mod tests {
         assert!(result.contains("ocr_page"));
         assert!(result.contains("ocrx_word"));
         assert!(result.contains("ocrx_cinfo"));
+    }
+
+    #[test]
+    #[ignore = "requires the bundled Tesseract runtime and OCR model"]
+    fn region_ocr_can_recover_a_noise_rejected_dotted_gap() {
+        let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        let image = BASE64.encode(include_bytes!("../test-fixtures/ocr-noise-row.png"));
+        for psm in [6, 7] {
+            for disable_row_noise_rejection in [false, true] {
+                let hocr = run_ocr_blocking(
+                    Arc::new(Mutex::new(None)),
+                    OcrArgs {
+                        image_base64: image.clone(),
+                        model_path: root.join("resources/models/eng_assyriology_scan_candidate_20260920_v1.traineddata").to_string_lossy().into_owned(),
+                        psm,
+                        dpi: 300,
+                        disable_row_noise_rejection,
+                        tesseract_path: root.join("resources/tesseract/tesseract.exe"),
+                    },
+                ).unwrap();
+                assert!(hocr.contains("ocr_page"));
+                assert_eq!(hocr.contains("class='ocrx_word'"), disable_row_noise_rejection,
+                    "PSM {psm}: row-noise setting must control recovery of the dotted gap");
+                if disable_row_noise_rejection {
+                    assert!(hocr.contains("ocrx_cinfo"));
+                    assert!(hocr.contains("x_bboxes"));
+                    assert!(hocr.contains(">[</span>"));
+                    assert!(hocr.contains(">.</span>"));
+                }
+            }
+        }
     }
 }

@@ -1,6 +1,7 @@
+import { exportFixtureHocr as exportHocr } from "./testSupport/hocr";
 // @vitest-environment jsdom
 import { describe, expect, it, vi } from "vitest";
-import { allLines, exportHocr, exportText, type DocumentPage, type OcrChar, type OcrLine, type OcrWord, type Rect } from "./domain";
+import { allLines, exportText, type DocumentPage, type OcrChar, type OcrLine, type OcrWord, type Rect } from "./domain";
 import { addOcrRegion, prepareRegionOcrImage, removeOcrLineAtPoint, removeOcrLinesInRegion, mergeOcrLinesInRegion } from "./ocrRegion";
 
 function word(id: string, text: string, bbox: Rect): OcrWord {
@@ -33,6 +34,18 @@ describe("manual OCR region", () => {
     vi.restoreAllMocks();
   });
 
+  it("masks figure regions and import exclusions during manual region OCR", () => {
+    const context={fillRect:vi.fn(),drawImage:vi.fn(),fillStyle:""};
+    vi.spyOn(HTMLCanvasElement.prototype,"getContext").mockReturnValue(context as never);
+    const source=document.createElement("canvas");source.width=300;source.height=300;
+    const initial=page([]);initial.figureRegions=[{id:"fig",kind:"figure",bbox:{left:70,top:100,right:90,bottom:120}}];
+    initial.ocrMargins={top:0,bottom:0,left:20,right:0,inner:0,outer:0};
+    prepareRegionOcrImage(source,selection,initial,20);
+    expect(context.fillRect).toHaveBeenCalledWith(40,30,20,20);
+    expect(context.fillRect).toHaveBeenCalledWith(20,20,10,45);
+    vi.restoreAllMocks();
+  });
+
   it("attaches a recognized margin number to the matching existing line and preserves page coordinates", () => {
     const initial = page([body()]);
     const result = addOcrRegion(initial, page([marker()]), selection, 20, "region-a");
@@ -57,6 +70,22 @@ describe("manual OCR region", () => {
     expect(merged.originalText).toBe("15 Dies");
     expect(merged.correctedText).toBe("15 Corrected");
     expect(merged.formatting).toEqual([{ start: 3, end: 12, kind: "italic" }]);
+  });
+
+  it("merges a recovered dotted gap with single-line settings and exports its original page coordinates", () => {
+    const existing = line("body", "]-ma", { left: 80, top: 100, right: 130, bottom: 120 });
+    const recovered = line("gap", "[......", { left: 22, top: 30, right: 48, bottom: 50 });
+    const initial = page([existing]);
+    const result = addOcrRegion(initial, page([recovered]), selection, 20, "region-gap", 7, true);
+    expect(allLines(result.page)[0].correctedText).toBe("[...... ]-ma");
+    expect(result.page.manualOcrRegions?.[0]).toMatchObject({ psm: 7, disableRowNoiseRejection: true });
+    const document = new DOMParser().parseFromString(exportHocr([result.page]), "application/xhtml+xml");
+    expect(document.querySelector("parsererror")).toBeNull();
+    const words = Array.from(document.querySelectorAll(".ocrx_word"));
+    expect(words.map(word => word.textContent)).toEqual(["[......", "]-ma"]);
+    expect(words[0].getAttribute("title")).toBe("bbox 52 100 78 120");
+    expect(words[1].getAttribute("title")).toBe("bbox 80 100 130 120");
+    expect(allLines(initial)[0].correctedText).toBe("]-ma");
   });
 
   it("inserts an unconnected result before the nearest line without changing existing reading order", () => {

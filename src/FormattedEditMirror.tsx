@@ -16,16 +16,26 @@ function segments(value: string, formatting: TextFormatRange[]) {
   });
 }
 
-export function FormattedEditMirror({ value, formatting, className, style, mirrorRef }: {
+export function FormattedEditMirror({ value, formatting, className, style, mirrorRef, caret }: {
   value: string;
   formatting: TextFormatRange[];
   className: string;
   style?: CSSProperties;
   mirrorRef?: Ref<HTMLDivElement>;
+  caret?: number;
 }) {
+  const visibleCaret = caret === undefined ? undefined : Math.max(0, Math.min(value.length, caret));
+  const content = (text: string, start: number) => {
+    if (visibleCaret === undefined || visibleCaret < start
+      || visibleCaret > start + text.length
+      || (visibleCaret === start && start !== 0)) return text;
+    const offset = visibleCaret - start;
+    return <>{text.slice(0, offset)}<span className="formatted-edit-caret" />{text.slice(offset)}</>;
+  };
   return <div ref={mirrorRef} aria-hidden="true" className={`formatted-edit-mirror ${className}`} style={style}>
+    {value.length === 0 && visibleCaret === 0 && <span className="formatted-edit-caret" />}
     {segments(value, formatting).map(({ start, text, kinds }) => {
-      if (!kinds.size) return <span key={start}>{text}</span>;
+      if (!kinds.size) return <span key={start}>{content(text, start)}</span>;
       const decoration: CSSProperties = {
         fontWeight: kinds.has("bold") ? 700 : undefined,
         fontStyle: kinds.has("italic") ? "italic" : undefined,
@@ -50,7 +60,7 @@ export function FormattedEditMirror({ value, formatting, className, style, mirro
       }
       return <span key={start} className="formatted-edit-advance">
         {text}
-        <span className="formatted-edit-decoration" style={decoration}>{text}</span>
+        <span className="formatted-edit-decoration" style={decoration}>{content(text, start)}</span>
       </span>;
     })}
   </div>;

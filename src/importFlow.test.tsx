@@ -5,6 +5,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import App from "./App";
 
 const mocks = vi.hoisted(() => ({
+  isTauri: true,
+  forgetFile: vi.fn(),
+  createBrowserProject: vi.fn(),
   dialogOpen: vi.fn(),
   dialogSave: vi.fn(),
   invoke: vi.fn(),
@@ -29,7 +32,14 @@ vi.mock("@tauri-apps/api/window", () => ({
     destroy: vi.fn(),
   })),
 }));
-vi.mock("./tauri", () => ({ isTauri: true, invokeCommand: mocks.invoke }));
+vi.mock("./tauri", () => ({ get isTauri() { return mocks.isTauri; }, invokeCommand: mocks.invoke }));
+vi.mock("./browser/files", async (importOriginal) => ({
+  ...await importOriginal<typeof import("./browser/files")>(),
+  dialogOpen: mocks.dialogOpen,
+  dialogSave: mocks.dialogSave,
+  forgetFile: mocks.forgetFile,
+}));
+vi.mock("./browser/backend", () => ({ createBrowserProject: mocks.createBrowserProject }));
 vi.mock("./pdf", () => ({
   openSourcePdf: mocks.openSourcePdf,
   openProjectPdf: mocks.openProjectPdf,
@@ -46,9 +56,10 @@ const projectPath = "D:/projects/book.eduba";
 
 function pdf() {
   return {
-    numPages: 4,
+    numPages: 4, fingerprints: ["test-pdf"],
     destroy: mocks.destroy,
     getPage: vi.fn(async (_page: number) => ({
+      view: [0, 0, 100, 80], rotate: 0, userUnit: 1,
       getViewport: () => ({ width: 100, height: 80 }),
       render: () => ({ promise: Promise.resolve() }),
       cleanup: vi.fn(),
@@ -101,17 +112,21 @@ describe("PDF import configuration", () => {
       translate: vi.fn(),
       rotate: vi.fn(),
     } as unknown as CanvasRenderingContext2D);
+    mocks.isTauri = true;
+    mocks.createBrowserProject.mockImplementation(async (_path: string, manifest: string) => ({
+      path: projectPath, name: "book.eduba", pdfSize: 1234, manifest,
+    }));
     mocks.dialogOpen.mockResolvedValue(sourcePath);
     mocks.dialogSave.mockResolvedValue(projectPath);
     mocks.openSourcePdf.mockResolvedValue(pdf());
     mocks.openProjectPdf.mockResolvedValue(pdf());
-    mocks.loadPageImage.mockImplementation(async (_page: unknown, mode: string, dpi: number) => { const canvas = document.createElement("canvas"); canvas.width = 100; canvas.height = 80; return { canvas, modeUsed: mode, dpiX: dpi, dpiY: dpi }; });
+    mocks.loadPageImage.mockImplementation(async (_page: unknown, mode: string, dpi: number) => { const canvas = document.createElement("canvas"); canvas.width = 100; canvas.height = 80; return { canvas, modeUsed: mode, dpiX: dpi, dpiY: dpi, pdfToSource: [1, 0, 0, -1, 0, 80] }; });
     mocks.processCanvas.mockImplementation((_source, options) => {
       const sides = options.split === "both" ? ["left", "right"] : [options.split === "none" ? "single" : options.split];
       return { pages: sides.map(split => {
         const canvas = document.createElement("canvas");
         canvas.width = 100; canvas.height = 80;
-        return { canvas, provenance: {
+        return { canvas, sourceToPage: [1, 0, 0, 1, 0, 0], provenance: {
           sourcePage: options.sourcePage, rotation: options.rotation, split,
           angle: options.deskewAngle ?? (options.deskew ? (split === "right" ? 0.4 : -1.2) : 0),
           preprocessOrder: options.preprocessOrder ?? "split-deskew",
@@ -220,6 +235,7 @@ describe("PDF import configuration", () => {
     });
     const manifest = JSON.parse((call[1] as { manifest: string }).manifest);
     expect(manifest.settings.dpi).toBe(300);
+    expect(manifest.pages.every((page: { autoFigureDetection: boolean }) => page.autoFigureDetection === true)).toBe(true);
     expect(manifest.pages.map((page: { angle: number }) => page.angle)).toEqual([-1.2, 0.4, -1.2, 0.4]);
     expect(manifest.pages.every((page: { preprocessOrder: string }) => page.preprocessOrder === "split-deskew")).toBe(true);
     await waitFor(() => expect(mocks.processCanvas).toHaveBeenCalledWith(
@@ -282,7 +298,8 @@ describe("PDF import configuration", () => {
     expect(failedPage.cleanup).toHaveBeenCalledTimes(1);
   });
 
-  it("cancels page preparation, releases resources, and allows retry", async () => {
+  it.each([true, false])("cancels page preparation, releases resources, and allows retry (isTauri=%s)", async (isTauri) => {
+    mocks.isTauri = isTauri;
     await selectPdf();
     const source = await mocks.openSourcePdf.mock.results[0].value as ReturnType<typeof pdf>;
     source.getPage.mockClear();
@@ -304,12 +321,23 @@ describe("PDF import configuration", () => {
     const loadedSourcePage = await source.getPage.mock.results[0].value;
     expect(loadedSourcePage.cleanup).toHaveBeenCalledTimes(1);
     expect(inFlightCanvas).toMatchObject({ width: 1, height: 1 });
+    expect(mocks.createBrowserProject).not.toHaveBeenCalled();
+    expect(mocks.forgetFile).not.toHaveBeenCalled();
     expect(mocks.invoke.mock.calls.some(([command]) => command === "create_project")).toBe(false);
     expect(container.querySelector('[role="dialog"][aria-label="PDF import"]')).toBeTruthy();
 
     await act(async () => button(dialog, "4 logical pages").click());
-    await waitFor(() => expect(mocks.invoke.mock.calls.some(([command]) => command === "create_project")).toBe(true));
-    expect(mocks.invoke.mock.calls.some(([command]) => command === "create_project")).toBe(true);
+    await waitFor(() => expect(container.querySelector('[role="dialog"][aria-label="PDF import"]')).toBeNull());
+    const manifest = isTauri
+      ? mocks.invoke.mock.calls.find(([command]) => command === "create_project")![1].manifest
+      : mocks.createBrowserProject.mock.calls[0][1];
+    expect(JSON.parse(manifest).pages).toHaveLength(4);
+    expect(JSON.parse(manifest).pages.every((page: { autoFigureDetection: boolean }) => page.autoFigureDetection)).toBe(true);
+    if (!isTauri) {
+      expect(mocks.dialogSave).not.toHaveBeenCalled();
+      expect(mocks.forgetFile).toHaveBeenCalledTimes(1);
+      expect(mocks.forgetFile).toHaveBeenCalledWith(sourcePath);
+    }
   });
 
   it("reports import page progress in increasing order", async () => {
@@ -351,7 +379,7 @@ describe("PDF import configuration", () => {
     original.width = 100;
     original.height = 80;
     mocks.processCanvas.mockImplementation(() => ({
-      pages: [{ canvas: original }],
+      pages: [{ canvas: original, sourceToPage: [1, 0, 0, 1, 0, 0] }],
     }));
     let ocrCanvas: HTMLCanvasElement | undefined;
     mocks.canvasToBase64.mockImplementation((...values: unknown[]) => {

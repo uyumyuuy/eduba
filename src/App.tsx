@@ -1,3 +1,11 @@
+import { overlayPosition } from "./overlayPosition";
+import { useVisibleOverlay } from "./useVisibleOverlay";
+import { clickedLineCaret } from "./clickCaret";
+import { inverse, multiply, type HocrPageGeometry, type HocrSource } from "./coordinates";
+import { LicenseModal } from "./LicenseModal";
+import { KurnugiaLinks } from "./KurnugiaLinks";
+import { DEFAULT_MODEL, BROWSER_DEFAULT_MODELS } from "./ocrModel";
+import { prepareFigureOcr } from "./automaticFigures";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import { useTranslation } from "react-i18next";
 import { EditToolbarButton } from "./EditToolbarButton";
@@ -8,14 +16,12 @@ import { createPortal } from "react-dom";
 import { applyLanguage, t as globalT, type LocalePreference } from "./i18n";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import {
-  open as dialogOpen,
-  save as dialogSave,
-} from "@tauri-apps/plugin-dialog";
+import { dialogOpen, dialogSave, forgetFile, fileName } from "./browser/files";
 import JSZip from "jszip";
 import {
   ChevronLeft,
   ChevronRight,
+  CircleHelp,
   FileDown,
   FilePlus2,
   FolderOpen,
@@ -32,6 +38,8 @@ import {
 import { canvasToBase64, openProjectPdf, openSourcePdf } from "./pdf";
 import { LogicalPageThumbnailCache } from "./pdfThumbnail";
 import { invokeCommand, isTauri, type ProjectInfo } from "./tauri";
+import type { WorkingProjectInfo } from "./browser/backend";
+import { storageProtection, STORAGE_PROTECTION_CHANGED, type StorageProtection } from "./browser/storage";
 import { SaveQueue } from "./persistence";
 import { compactChange, historyPageUpdate, HistoryPersistence, type ProjectPageUpdate, type HistoryOperation as EditHistoryOperation } from "./editHistory";
 import { createReadableHtml } from "./readableHtml";
@@ -47,6 +55,7 @@ import {
   parseHocr,
   processCanvas,
   updateLineText,
+  replaceLineSelection,
   splitLineAtCaret,
   updateLineFormatting,
   applyScriptDetection,
@@ -63,18 +72,22 @@ import { ScriptCalibrationDialog, type ScriptCalibrationCandidate, type ScriptCa
 import { DEFAULT_SCRIPT_DETECTION_SETTINGS, SCRIPT_HEIGHT_REFERENCE_VERSION, ScriptHeightTrainer, detectScriptRanges, migrateLegacyScriptSettings, referenceHeightsForPage, type ScriptDetectionSettings, type ScriptHeightProfile } from "./scriptDetection";
 import { BulkReplaceDialog, type BulkMatch, type BulkReplaceRequest } from "./BulkReplaceDialog";
 import { prepareBulkUpdates } from "./bulkApply";
-import { addOcrRegion, prepareRegionOcrImage, removeOcrLinesInRegion, removeOcrLineAtPoint, mergeOcrLinesInRegion } from "./ocrRegion";
-import { lineIdsCrossed, moveLineAfter, reorderPageLines, type Point } from "./readingOrder";
+import { addOcrRegion, prepareRegionOcrImage, mergeOcrLinesInRegion } from "./ocrRegion";
+import { lineIdsCrossed, moveLineAfter, reorderPageItems, type Point } from "./readingOrder";
+import { pageItems, type PageItem } from "./pageContent";
+import { addFigureRegion, cropFigure, nonWhiteBounds, preserveFiguresAfterOcr, removePageRegions } from "./figureRegions";
+import { FigureRegionDialog } from "./FigureRegionDialog";
 import { candidatesForSelection } from "./correctionCandidates";
+import { choicesForSelection } from "./ocrChoices";
 import { importEntries, prepareImportEntries, type ImportConfig, type ImportProgress } from "./importConfig";
 import { loadPageImage, type ImportMode } from "./pageImage";
 import {
   defaultOcrMargins,
-  maskOcrCanvas,
   validateOcrMargins,
 } from "./ocrMargins";
 
 type Status = "pending" | "ocr" | "review";
+type ExportScope = "current" | "all" | "completed";
 type Entry = LogicalPageProvenance & {
   id: string;
   label: string;
@@ -95,7 +108,7 @@ type HistoryChange = { pageId: string; beforeData: string; afterData: string };
 type ScriptCalibrationSampleScope = { kind: "all-pages" } | { kind: "current-page"; pageId: string };
 type LineEditSession = { id: number; pageId: string; lineId: string; beforeData: string };
 type HistoryOperation = EditHistoryOperation<Settings, Entry>;
-type RenderedEntry = { canvas: HTMLCanvasElement; modeUsed: ImportMode; dpiX: number; dpiY: number; reason?: string; sourceWidth?: number; sourceHeight?: number; };
+type RenderedEntry = { geometry: HocrPageGeometry; canvas: HTMLCanvasElement; modeUsed: ImportMode; dpiX: number; dpiY: number; reason?: string; sourceWidth?: number; sourceHeight?: number; };
 const defaultSettings: Settings = {
   modelPath: "",
   psm: 3,
@@ -203,6 +216,7 @@ function parseManifest(raw: string | null): Manifest {
               page.split === "left" || page.split === "right",
             )
           : undefined,
+        autoFigureDetection: page.autoFigureDetection === true,
         crop: page.crop,
         status:
           page.status === "ocr" || page.status === "review"
@@ -282,27 +296,63 @@ function PageThumbnail({ cache, page }: { cache: LogicalPageThumbnailCache | nul
 
   return <span ref={frameRef} className="thumb" aria-hidden="true"><canvas ref={canvasRef} /></span>;
 }
-type LineOverlayProps = { portalTarget:HTMLElement|null; value:string; formatting:TextFormatRange[]; left:number; top:number; width:number; height:number; fontSize:number; onChange:(value:string)=>void; onCaretChange:(offset:number)=>void; onFinish:()=>void; onUndo:()=>void; onRedo:()=>void; onFormat:(start:number,end:number,kind:TextFormatKind)=>void; onOpenBulk:(selection:string,start:number,end:number)=>void; onSplit:(caret:number)=>void; textMagnifierEnabled:boolean; };
-function LineOverlay({portalTarget,value,formatting,left,top,width,height,fontSize:naturalFontSize,onChange,onCaretChange,onFinish,onUndo,onRedo,onFormat,onOpenBulk,onSplit,textMagnifierEnabled}:LineOverlayProps) {
- const { t } = useTranslation(); const inputRef=useRef<HTMLTextAreaElement>(null); const mirrorRef=useRef<HTMLDivElement>(null); const toolbarRef=useRef<HTMLDivElement>(null); const magnifierRef=useRef<HTMLDivElement>(null); const [magnifierPosition,setMagnifierPosition]=useState<{left:number;top:number}|null>(null); const [magnifierFontSize,setMagnifierFontSize]=useState(naturalFontSize*2); const [selection,setSelection]=useState({start:0,end:0,caret:0}); const [ctrl,setCtrl]=useState(false);
- const selected=value.slice(selection.start,selection.end); const candidates=selected?candidatesForSelection(selected):[];
+type LineOverlayProps = { initialCaret:number; portalTarget:HTMLElement|null; value:string; ocrLine:OcrLine; formatting:TextFormatRange[]; left:number; top:number; width:number; height:number; fontSize:number; onChange:(value:string)=>void; onReplaceCandidate:(start:number,end:number,text:string)=>void; onCaretChange:(offset:number)=>void; onFinish:()=>void; onUndo:()=>void; onRedo:()=>void; onFormat:(start:number,end:number,kind:TextFormatKind)=>void; onOpenBulk:(selection:string,start:number,end:number)=>void; onSplit:(caret:number)=>void; textMagnifierEnabled:boolean; };
+function LineOverlay({initialCaret,portalTarget,value,ocrLine,formatting,left,top,width,height,fontSize:naturalFontSize,onChange,onReplaceCandidate,onCaretChange,onFinish,onUndo,onRedo,onFormat,onOpenBulk,onSplit,textMagnifierEnabled}:LineOverlayProps) {
+ const { t } = useTranslation(); const inputRef=useRef<HTMLTextAreaElement>(null); const mirrorRef=useRef<HTMLDivElement>(null); const toolbarRef=useRef<HTMLDivElement>(null); const magnifierRef=useRef<HTMLDivElement>(null); const [magnifierPosition,setMagnifierPosition]=useState<{left:number;top:number;visible:boolean;width:number}|null>(null); const [magnifierFontSize,setMagnifierFontSize]=useState(naturalFontSize*2); const [selection,setSelection]=useState({start:initialCaret,end:initialCaret,caret:initialCaret}); const [ctrl,setCtrl]=useState(false); const pendingCaret=useRef<number|null>(initialCaret);
+ const selected=value.slice(selection.start,selection.end); const candidates=useMemo(()=>selected?candidatesForSelection(selected,choicesForSelection(ocrLine,selection.start,selection.end)):[],[selected,ocrLine,selection.start,selection.end]);
  // Keep the normal text baseline fixed while giving raised glyphs room above it.
  const extraTop=Math.min(top,Math.max(4,naturalFontSize*.45));
  const editTop=top-extraTop;
  const editHeight=height+extraTop;
+ useVisibleOverlay(toolbarRef,left,Math.max(0,editTop-48),selected,inputRef);
  const editStyle={left,top:editTop,width,height:editHeight,paddingTop:extraTop,fontSize:naturalFontSize};
  useLayoutEffect(()=>{const input=inputRef.current;if(!input)return;input.style.fontSize=`${naturalFontSize}px`;const ratio=Math.min(1,Math.max(1,input.clientWidth-4)/Math.max(1,input.scrollWidth-4),Math.max(1,input.clientHeight-2)/Math.max(1,input.scrollHeight-2));input.style.fontSize=`${Math.max(1,naturalFontSize*(ratio<1?ratio*.98:1))}px`;setMagnifierFontSize(Math.min(36,(Number.parseFloat(input.style.fontSize)||naturalFontSize)*2));if(mirrorRef.current){mirrorRef.current.style.fontSize=input.style.fontSize;mirrorRef.current.scrollLeft=input.scrollLeft;mirrorRef.current.scrollTop=input.scrollTop;}},[height,naturalFontSize,value,width,formatting]);
  useEffect(()=>{const up=(event:KeyboardEvent)=>{if(event.key==='Control'||!event.ctrlKey)setCtrl(false)};const blur=()=>setCtrl(false);document.addEventListener('keyup',up);window.addEventListener('blur',blur);return()=>{document.removeEventListener('keyup',up);window.removeEventListener('blur',blur)}},[]);
  const capture=()=>{const input=inputRef.current;if(input){const caret=input.selectionDirection==="backward"?input.selectionStart:input.selectionEnd;setSelection({start:input.selectionStart,end:input.selectionEnd,caret});onCaretChange(caret)}};
  useEffect(()=>{const input=inputRef.current;if(!input)return;const syncSelection=()=>capture();input.addEventListener("select",syncSelection);document.addEventListener("selectionchange",syncSelection);return()=>{input.removeEventListener("select",syncSelection);document.removeEventListener("selectionchange",syncSelection)}},[]);
  useEffect(()=>{const timer=window.setTimeout(()=>{if(inputRef.current===document.activeElement)capture()},0);return()=>window.clearTimeout(timer)},[]);
- useLayoutEffect(()=>{const place=()=>{const toolbar=toolbarRef.current,stage=portalTarget;if(!toolbar||!stage)return;const rect=toolbar.getBoundingClientRect(),stageRect=stage.getBoundingClientRect();const panelWidth=Math.min(250,Math.max(120,stage.clientWidth-16));const minLeft=stageRect.left+8,maxLeft=Math.max(minLeft,stageRect.left+stage.clientWidth-panelWidth-8);const viewportLeft=Math.max(minLeft,Math.min(maxLeft,rect.left));
-// Keep the 60px panel above the toolbar; near the scroll viewport top, place it below the toolbar.
-const viewportTop=rect.top-stageRect.top>=70?rect.top-68:rect.bottom+8;setMagnifierPosition({left:viewportLeft-stageRect.left+stage.scrollLeft,top:viewportTop-stageRect.top+stage.scrollTop});};place();window.addEventListener("resize",place);document.addEventListener("scroll",place,true);return()=>{window.removeEventListener("resize",place);document.removeEventListener("scroll",place,true)}},[portalTarget,left,top,selection.start,selection.end,value]);
+ useLayoutEffect(() => {
+   const stage = portalTarget;
+   if (!stage) return;
+   const place = () => {
+     const toolbar = toolbarRef.current, input = inputRef.current;
+     if (!toolbar || !input) return;
+     const stageRect = stage.getBoundingClientRect(), rect = toolbar.getBoundingClientRect();
+     const bounds = { left: Math.max(0, stageRect.left + stage.clientLeft) + 8,
+       top: Math.max(0, stageRect.top + stage.clientTop) + 8,
+       right: Math.min(window.innerWidth, stageRect.left + stage.clientLeft + stage.clientWidth) - 8,
+       bottom: Math.min(window.innerHeight, stageRect.top + stage.clientTop + stage.clientHeight) - 8 };
+     const panelWidth = Math.min(250, Math.max(0, bounds.right - bounds.left));
+     const position = overlayPosition(bounds, { left: rect.left, top: rect.top - 68 }, panelWidth, 60,
+       [input.getBoundingClientRect(), ...(toolbar.style.visibility === "hidden" ? [] : [rect])]);
+     setMagnifierPosition({ left: (position?.left ?? bounds.left) - stageRect.left - stage.clientLeft + stage.scrollLeft,
+       top: (position?.top ?? bounds.top) - stageRect.top - stage.clientTop + stage.scrollTop, visible: position !== null, width: panelWidth });
+   };
+   place();
+   window.addEventListener("resize", place);
+   document.addEventListener("scroll", place, true);
+   const observer = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(place);
+   observer?.observe(stage);
+   return () => { window.removeEventListener("resize", place); document.removeEventListener("scroll", place, true); observer?.disconnect(); };
+ }, [portalTarget,left,top,width,height,selection.start,selection.end,value,textMagnifierEnabled]);
 
  const format=(kind:TextFormatKind)=>{if(selection.start<selection.end)onFormat(selection.start,selection.end,kind)};
- const replace=(text:string)=>{onChange(value.slice(0,selection.start)+text+value.slice(selection.end));setSelection({start:selection.start,end:selection.start+text.length,caret:selection.start+text.length});onCaretChange(selection.start+text.length)};
- return <>{formatting.length>0&&<FormattedEditMirror mirrorRef={mirrorRef} value={value} formatting={formatting} className="line-edit-mirror" style={editStyle} />}<textarea ref={inputRef} autoFocus wrap="off" className={`line-overlay ${formatting.length?"has-formatting":""}`} value={value} onChange={event=>{onChange(event.currentTarget.value);onCaretChange(event.currentTarget.selectionStart)}} onSelect={capture} onScroll={event=>{if(mirrorRef.current){mirrorRef.current.scrollLeft=event.currentTarget.scrollLeft;mirrorRef.current.scrollTop=event.currentTarget.scrollTop}}} onKeyDown={event=>{setCtrl(event.ctrlKey);const key=event.key.toLowerCase();if(event.ctrlKey&&!event.nativeEvent.isComposing&&(key==='z'||key==='y')){event.preventDefault();if(key==='y'||event.shiftKey)onRedo();else onUndo();return}if(event.key==='Escape'||(event.key==='Enter'&&!event.nativeEvent.isComposing&&event.keyCode!==229)){event.preventDefault();onFinish();return}if(event.ctrlKey&&selection.start<selection.end){const kind=key==='b'?'bold':key==='i'?'italic':event.key==='ArrowUp'?'superscript':event.key==='ArrowDown'?'subscript':null;if(kind){event.preventDefault();format(kind)}else if(/^[1-9]$/.test(key)&&candidates[Number(key)-1]){event.preventDefault();replace(candidates[Number(key)-1])}else if(key==='g'){event.preventDefault();onOpenBulk(selected,selection.start,selection.end)}}}} onKeyUp={event=>{setCtrl(event.ctrlKey);capture()}} onBlur={onFinish} style={editStyle} />
+ // Restore after React writes the controlled value, which can move the native caret to the end.
+ useLayoutEffect(()=>{
+  const input=inputRef.current,caret=pendingCaret.current;
+  if(!input||caret===null)return;
+  pendingCaret.current=null;
+  input.focus({preventScroll:true});
+  input.setSelectionRange(caret,caret);
+ });
+ const replace=(text:string)=>{
+  const caret=selection.start+text.length;
+  pendingCaret.current=caret;
+  onReplaceCandidate(selection.start,selection.end,text);
+  setSelection({start:caret,end:caret,caret});
+  onCaretChange(caret);
+ };
+ return <>{formatting.length>0&&<FormattedEditMirror mirrorRef={mirrorRef} value={value} formatting={formatting} caret={selection.start===selection.end?selection.caret:undefined} className="line-edit-mirror" style={editStyle} />}<textarea ref={inputRef} autoFocus wrap="off" className={`line-overlay ${formatting.length?"has-formatting":""}`} value={value} onChange={event=>{onChange(event.currentTarget.value);capture()}} onSelect={capture} onScroll={event=>{if(mirrorRef.current){mirrorRef.current.scrollLeft=event.currentTarget.scrollLeft;mirrorRef.current.scrollTop=event.currentTarget.scrollTop}}} onKeyDown={event=>{setCtrl(event.ctrlKey);const key=event.key.toLowerCase();if(event.ctrlKey&&!event.nativeEvent.isComposing&&(key==='z'||key==='y')){event.preventDefault();if(key==='y'||event.shiftKey)onRedo();else onUndo();return}if(event.key==='Escape'||(event.key==='Enter'&&!event.nativeEvent.isComposing&&event.keyCode!==229)){event.preventDefault();onFinish();return}if(event.ctrlKey&&selection.start<selection.end){const kind=key==='b'?'bold':key==='i'?'italic':event.key==='ArrowUp'?'superscript':event.key==='ArrowDown'?'subscript':null;if(kind){event.preventDefault();format(kind)}else if(/^[1-9]$/.test(key)&&candidates[Number(key)-1]){event.preventDefault();replace(candidates[Number(key)-1])}else if(key==='g'){event.preventDefault();onOpenBulk(selected,selection.start,selection.end)}}}} onKeyUp={event=>{setCtrl(event.ctrlKey);capture()}} onBlur={onFinish} style={editStyle} />
  {!selected&&<div ref={toolbarRef} className="selection-toolbar" style={{left,top:Math.max(0,editTop-48)}} onMouseDown={event=>event.preventDefault()} role="toolbar" aria-label="Line tools"><EditToolbarButton label={t("toolbar.splitLine")} onClick={()=>onSplit(selection.start)} disabled={selection.start===0||selection.start===value.length}>{t("toolbar.splitLine")}</EditToolbarButton></div>}
  {selected&&<div ref={toolbarRef} className="selection-toolbar" style={{left,top:Math.max(0,editTop-48)}} onMouseDown={event=>event.preventDefault()} role="toolbar" aria-label="Selected text tools">
   <EditToolbarButton label={t("toolbar.bold")} shortcut="B" showShortcut={ctrl} onClick={()=>format("bold")}>{t("toolbar.bold")}</EditToolbarButton>
@@ -311,8 +361,52 @@ const viewportTop=rect.top-stageRect.top>=70?rect.top-68:rect.bottom+8;setMagnif
   <EditToolbarButton label={t("toolbar.subscript")} shortcut="↓" showShortcut={ctrl} onClick={()=>format("subscript")}>{t("toolbar.subscript")}</EditToolbarButton>
   <EditToolbarButton label={t("toolbar.bulkReplace")} shortcut="G" showShortcut={ctrl} onClick={()=>onOpenBulk(selected,selection.start,selection.end)}>{t("toolbar.bulkReplace")}</EditToolbarButton>
   {candidates.map((candidate,index)=><EditToolbarButton className="text-candidate" key={candidate} label={candidate} shortcut={index<9?String(index+1):undefined} showShortcut={ctrl} onClick={()=>replace(candidate)}>{candidate}</EditToolbarButton>)}
-</div>}{textMagnifierEnabled&&magnifierPosition&&portalTarget&&createPortal(<ProofingTextMagnifier ref={magnifierRef} value={value} formatting={formatting} selectionStart={selection.start} selectionEnd={selection.end} caret={selection.caret} fontSize={magnifierFontSize} style={{left:magnifierPosition.left,top:magnifierPosition.top}} />,portalTarget)}</>;
+</div>}{textMagnifierEnabled&&magnifierPosition&&portalTarget&&createPortal(<ProofingTextMagnifier ref={magnifierRef} value={value} formatting={formatting} selectionStart={selection.start} selectionEnd={selection.end} caret={selection.caret} fontSize={magnifierFontSize} style={{left:magnifierPosition.left,top:magnifierPosition.top,width:magnifierPosition.width,visibility:magnifierPosition.visible?undefined:"hidden"}} />,portalTarget)}</>;
 }
+function WorkingProjectStorageNotice() {
+  const { t } = useTranslation();
+  const [protection, setProtection] = useState<StorageProtection>("unknown");
+  useEffect(() => {
+    let disposed = false, request = 0;
+    const update = () => {
+      const current = ++request;
+      void storageProtection().then(value => {
+        if (!disposed && current === request) setProtection(value);
+      });
+    };
+    update();
+    window.addEventListener("focus", update);
+    window.addEventListener(STORAGE_PROTECTION_CHANGED, update);
+    return () => {
+      disposed = true;
+      window.removeEventListener("focus", update);
+      window.removeEventListener(STORAGE_PROTECTION_CHANGED, update);
+    };
+  }, []);
+  return <div className="recovery-storage-notice">
+    <p role="status">
+      <strong>{t(`browser.storageProtection.${protection}.title`)}</strong>
+      <span>{t(`browser.storageProtection.${protection}.description`)}</span>
+    </p>
+    <p>{t("browser.privateBrowsingNotice")}</p>
+  </div>;
+}
+
+function WorkingProjectDetails({ info }: { info: WorkingProjectInfo }) {
+  const { t, i18n } = useTranslation();
+  const locale = i18n.resolvedLanguage || i18n.language;
+  const units = ["B", "KiB", "MiB", "GiB", "TiB"];
+  const unit = Math.min(units.length - 1, Math.max(0, Math.floor(Math.log2(Math.max(1, info.sizeBytes)) / 10)));
+  const size = `${new Intl.NumberFormat(locale, { maximumFractionDigits: unit ? 1 : 0 }).format(info.sizeBytes / 1024 ** unit)} ${units[unit]}`;
+  return <dl className="recovery-project-details">
+    <div><dt>{t("browser.pageCount")}</dt><dd>{info.pageCount === null ? t("browser.unknown") : new Intl.NumberFormat(locale).format(info.pageCount)}</dd></div>
+    <div><dt>{t("browser.dataSize")}</dt><dd>{size}</dd></div>
+    <div><dt>{t("browser.lastEdited")}</dt><dd>{info.modifiedAt
+      ? <time dateTime={info.modifiedAt}>{new Intl.DateTimeFormat(locale, { dateStyle: "medium", timeStyle: "short" }).format(new Date(info.modifiedAt))}</time>
+      : t("browser.unknown")}</dd></div>
+  </dl>;
+}
+
 export default function App({ initialLanguage = "auto", initialOsLocale = null }: { initialLanguage?: LocalePreference; initialOsLocale?: string | null } = {}) {
   const { t } = useTranslation();
   const [language, setLanguage] = useState<LocalePreference>(initialLanguage);
@@ -321,7 +415,7 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
   const changeLanguage = useCallback(async (preference: LocalePreference) => {
     setLanguageSaving(true);
     try {
-      if (isTauri) await invokeCommand("save_user_preferences", { language: preference });
+      await invokeCommand("save_user_preferences", { language: preference });
       const resolved = await applyLanguage(preference, osLocale.current);
       document.documentElement.lang = resolved;
       setLanguage(preference);
@@ -335,6 +429,19 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
     } finally { setLanguageSaving(false); }
   }, []);
   const [project, setProject] = useState<ProjectInfo | null>(null);
+  const [browserDirty, setBrowserDirty] = useState(false);
+  const [recoveryProjects, setRecoveryProjects] = useState<WorkingProjectInfo[] | null>(null);
+  const orderedRecoveryProjects = useMemo(() => [...(recoveryProjects ?? [])].sort((a, b) => {
+    const currentOrder = Number(b.path === project?.path) - Number(a.path === project?.path);
+    if (currentOrder) return currentOrder;
+    if (a.modifiedAt === null && b.modifiedAt !== null) return 1;
+    if (b.modifiedAt === null && a.modifiedAt !== null) return -1;
+    const timeOrder = a.modifiedAt && b.modifiedAt ? Date.parse(b.modifiedAt) - Date.parse(a.modifiedAt) : 0;
+    return timeOrder || a.name.localeCompare(b.name) || a.path.localeCompare(b.path);
+  }), [recoveryProjects, project?.path]);
+  const [hasWorkingProjects, setHasWorkingProjects] = useState(false);
+  const [deletingWorkingPath, setDeletingWorkingPath] = useState<string | null>(null);
+  const [recoveryError, setRecoveryError] = useState<string | null>(null);
   const [manifest, setManifest] = useState<Manifest>(makeManifest);
   const [index, setIndex] = useState(0);
   const [pdf, setPdf] = useState<PDFDocumentProxy | null>(null);
@@ -343,7 +450,13 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
   const [selected, setSelected] = useState<string | null>(null);
   const [editing, setEditing] = useState<string | null>(null);
   const [editCaret, setEditCaret] = useState<{ lineId: string; offset: number } | null>(null);
-  const [regionMode, setRegionMode] = useState<"add" | "delete" | "merge" | "order" | null>(null);
+  const [regionMode, setRegionMode] = useState<"add" | "figure" | "delete" | "merge" | "order" | null>(null);
+  const [regionOcrPsm, setRegionOcrPsm] = useState<11 | 6 | 7>(11);
+  const [regionDisableRowNoiseRejection, setRegionDisableRowNoiseRejection] = useState(true);
+  const [pendingFigure, setPendingFigure] = useState<{ pageId: string; selection: Rect; tight: Rect } | null>(null);
+  const [figureImages, setFigureImages] = useState<Record<string, string>>({});
+  const [imageRevision, setImageRevision] = useState(0);
+  const [imagePageId, setImagePageId] = useState<string | null>(null);
   const [regionSelection, setRegionSelection] = useState<Rect | null>(null);
   const [regionHintHidden, setRegionHintHidden] = useState(false);
   const [orderVisited, setOrderVisited] = useState<string[]>([]);
@@ -416,7 +529,7 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
   const [importCreating, setImportCreating] = useState(false);
   const [importProgress, setImportProgress] = useState<ImportProgress | null>(null);
   const [confirmOcr, setConfirmOcr] = useState<"current" | "all" | null>(null);
-  const [exportScope, setExportScope] = useState<"current" | "all">("all");
+  const [exportScope, setExportScope] = useState<ExportScope>("all");
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const pdfPageRef = useRef<HTMLDivElement>(null);
   const regionHintRef = useRef<HTMLDivElement>(null);
@@ -497,7 +610,6 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
     setIndex(value);
   }, []);
   const saveLastOpenedProject = useCallback((info: ProjectInfo, pageId: string) => {
-    if (!isTauri) return;
     const write = lastProjectWrite.current
       .catch(() => undefined)
       .then(() => invokeCommand("save_last_opened_project", { projectPath: info.path, pageId }));
@@ -517,7 +629,7 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
     putManifest(next);
     const info = projectRef.current;
     try {
-      if (isTauri && info) await writeQueue.current.enqueue(() => invokeCommand("save_manifest", { projectPath: info.path, manifest: JSON.stringify(copy(next)) }));
+      if (info) await writeQueue.current.enqueue(() => invokeCommand("save_manifest", { projectPath: info.path, manifest: JSON.stringify(copy(next)) }));
       return true;
     } catch (error) {
       putManifest(previous);
@@ -551,7 +663,7 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
     const p = projectRef.current,
       entry = manifestRef.current.pages[indexRef.current],
       page = docRef.current;
-    if (!isTauri || !p || !entry) return;
+    if (!p || !entry) return;
     const projectPath = p.path,
       pageId = entry.id,
       data = page?.id === entry.id ? JSON.stringify(copy(page)) : null,
@@ -583,6 +695,10 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
     }
   }, [persistState, setUndoStack, setRedoStack]);
   const scheduleSave = useCallback(() => {
+    if (!isTauri && projectRef.current) {
+      const path = projectRef.current.path;
+      void import("./browser/backend").then(backend => backend.markBrowserProjectDirty(path));
+    }
     if (timer.current) clearTimeout(timer.current);
     timer.current = window.setTimeout(() => {
       timer.current = null;
@@ -590,7 +706,7 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
       setBusy("save");
       flush()
         .then(
-          () => setNotice("notices.saved"),
+          () => setNotice(isTauri ? "notices.saved" : "browser.workingSaved"),
           (e) => setNotice("notices.saveFailed", { error: errorText(e) }),
         )
         .finally(() => {
@@ -641,8 +757,14 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
       target.width = image.width;
       target.height = image.height;
       target.getContext("2d")!.drawImage(image, 0, 0);
-      if (!destination) setCanvasSize({ width: image.width, height: image.height });
-      return { ...loaded, canvas: image };
+      if (!destination) { setCanvasSize({ width: image.width, height: image.height }); setImagePageId(entry.id); setImageRevision(value => value + 1); }
+      return { ...loaded, canvas: image, geometry: {
+        pageToPdf: inverse(multiply(result.pages[0].sourceToPage, loaded.pdfToSource)),
+        pdfBox: [...source.view] as [number, number, number, number],
+        pdfRotation: source.rotate, pdfUserUnit: source.userUnit,
+        sourceWidth: loaded.canvas.width, sourceHeight: loaded.canvas.height,
+        dpiX: loaded.dpiX, dpiY: loaded.dpiY, mode: loaded.modeUsed,
+      } };
     },
     [pdf],
   );
@@ -705,6 +827,12 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
       }
       if (!existing.settings.modelPath)
         existing.settings.modelPath = environmentModel.current;
+      if (!isTauri && !existing.settings.modelPath.startsWith("model:")) {
+        existing.settings.modelPath = DEFAULT_MODEL;
+      }
+      if (isTauri && (existing.settings.modelPath.startsWith("model:") || BROWSER_DEFAULT_MODELS.includes(existing.settings.modelPath))) {
+        existing.settings.modelPath = environmentModel.current;
+      }
       try {
         const opened = await openProjectPdf(info.path, info.pdfSize);
         const historyStore = new HistoryPersistence<Settings, Entry>();
@@ -742,6 +870,11 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
           });
         }
         if (!quiet) setNotice("notices.opened", { name: info.name });
+        if (!isTauri) {
+          const backend = await import("./browser/backend");
+          await backend.activateBrowserProject(info.path);
+          setBrowserDirty(backend.isProjectDirty(info.path));
+        }
       } catch (e) {
         if (!quiet) setNotice("notices.pdfLoadFailed", { error: errorText(e) });
       } finally {
@@ -752,7 +885,7 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
     [pdf, putDoc, putIndex, putManifest, putProject, setUndoStack, setRedoStack],
   );
   useEffect(() => {
-    if (!isTauri || restorationStarted.current) return;
+    if (restorationStarted.current) return;
     restorationStarted.current = true;
     const generation = restorationGeneration.current;
     void invokeCommand("get_user_preferences")
@@ -781,8 +914,9 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
     const source = sourcePdfRef.current;
     sourcePdfRef.current = null;
     setImportSource(null);
+    if (!isTauri && importSource?.path) forgetFile(importSource.path);
     source?.destroy().catch(() => undefined);
-  }, []);
+  }, [importSource?.path]);
   const cancelOrCloseImport = useCallback(() => {
     if (importAbortController.current) {
       importAbortController.current.abort();
@@ -797,7 +931,7 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
     const session = ++importSession.current;
     let source: PDFDocumentProxy | null = null;
     try {
-      await flush();
+      if (isTauri) await flush();
       const pdfPath = await dialogOpen({
         multiple: false,
         filters: [{ name: "PDF", extensions: ["pdf"] }],
@@ -806,6 +940,7 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
         importActive.current = false;
         return;
       }
+      if (!isTauri) await flush();
       const { pdfSize } = await invokeCommand("inspect_pdf", { pdfPath });
       source = await openSourcePdf(pdfPath, pdfSize);
       if (session !== importSession.current) {
@@ -833,11 +968,15 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
       setImportCreating(true);
       setImportProgress(null);
       try {
-        const projectPath = await dialogSave({
-          defaultPath: importSource.path.replace(/\.pdf$/i, ".eduba"),
-          filters: [{ name: "Eduba", extensions: ["eduba"] }],
-        });
-        if (typeof projectPath !== "string") return;
+        let projectPath = "";
+        if (isTauri) {
+          const selected = await dialogSave({
+            defaultPath: importSource.path.replace(/\.pdf$/i, ".eduba"),
+            filters: [{ name: "Eduba", extensions: ["eduba"] }],
+          });
+          if (typeof selected !== "string") return;
+          projectPath = selected;
+        }
         if (abortController.signal.aborted) return;
         const next = makeImportManifest(config);
         next.pages = await prepareImportEntries(source, config, {
@@ -852,12 +991,15 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
         };
         await flush();
         if (abortController.signal.aborted) return;
-        const info = await invokeCommand("create_project", {
-          pdfPath: importSource.path,
-          projectPath,
-          manifest: JSON.stringify(next),
-          overwriteExisting: true,
-        });
+        const info = isTauri
+          ? await invokeCommand("create_project", {
+            pdfPath: importSource.path,
+            projectPath,
+            manifest: JSON.stringify(next),
+            overwriteExisting: true,
+          })
+          : await (await import("./browser/backend")).createBrowserProject(importSource.path, JSON.stringify(next));
+        if (!isTauri) forgetFile(importSource.path);
         sourcePdfRef.current = null;
         setImportSource(null);
         importActive.current = false;
@@ -876,21 +1018,27 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
     },
     [flush, importSource, openInfo],
   );
+  const openingProject = useRef(false);
   const openProject = useCallback(async () => {
-    if (working.current || importActive.current) return;
+    if (working.current || importActive.current || openingProject.current) return;
+    openingProject.current = true;
     restorationGeneration.current += 1;
     try {
-      await flush();
+      if (isTauri) await flush();
       const path = await dialogOpen({
         multiple: false,
         filters: [{ name: "Eduba", extensions: ["eduba"] }],
       });
-      if (typeof path === "string")
+      if (typeof path === "string") {
+        if (!isTauri) await flush();
         await openInfo(
           await invokeCommand("open_project", { projectPath: path }),
         );
+      }
     } catch (e) {
       setNotice("notices.projectOpenFailed", { error: errorText(e) });
+    } finally {
+      openingProject.current = false;
     }
   }, [flush, openInfo]);
   const finishLineEdit = useCallback((lineId?: string) => {
@@ -914,7 +1062,7 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
     if (hadSessionHistory) scheduleSave();
   }, [scheduleSave, setUndoStack, setRedoStack]);
   finishLineEditRef.current = finishLineEdit;
-  const beginLineEdit = useCallback(async (lineId: string) => {
+  const beginLineEdit = useCallback(async (lineId: string, initialCaret = 0) => {
     finishLineEditRef.current();
     const pageId = manifestRef.current.pages[indexRef.current]?.id;
     if (!pageId) return;
@@ -923,6 +1071,7 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
     if (!await clearCompletion([pageId])) return;
     lineEditSession.current = { id: ++nextLineEditSession.current, pageId, lineId, beforeData: JSON.stringify(before) };
     setSelected(lineId);
+    setEditCaret({ lineId, offset: initialCaret });
     setEditing(lineId);
   }, [clearCompletion]);
   const commitLineEdit = useCallback((lineId: string, update: (before: DocumentPage) => DocumentPage) => {
@@ -1034,16 +1183,133 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
     } catch (error) { setNotice("notices.saveFailed", { error: errorText(error) }); }
     finally { historyApplying.current = false; setBusy(null); }
   }, [applyHistory, clearCompletion, redoStack, setNotice]);
-  const save = useCallback(async () => {
+  const save = useCallback(async (saveAs = false) => {
     if (!projectRef.current || busy || working.current || importActive.current || historyApplying.current) return;
     setBusy("save");
     try {
+      const browser = !isTauri ? await import("./browser/backend") : null;
+      const target = browser ? await browser.prepareProjectSave(projectRef.current!, saveAs) : null;
+      if (browser && !target) return;
       await flush();
+      await writeQueue.current.idle();
+      if (browser && target) {
+        await browser.saveBrowserProject(projectRef.current!, target);
+        putProject({ ...projectRef.current!, name: target.name });
+      }
       setNotice("notices.saved");
     } catch (error) {
       setNotice("notices.saveFailed", { error: errorText(error) });
     } finally {
       setBusy(null);
+    }
+  }, [busy, flush, setNotice, putProject]);
+  const deleteWorkingProject = useCallback(async (info: ProjectInfo) => {
+    if (isTauri || busy || working.current || importActive.current || historyApplying.current) return;
+    if (!window.confirm(t("browser.deleteWorkingConfirm", { name: info.name }))) return;
+    working.current = true;
+    restorationGeneration.current += 1;
+    setBusy("save");
+    setDeletingWorkingPath(info.path);
+    setRecoveryError(null);
+    try {
+      finishLineEditRef.current();
+      await flush();
+      await writeQueue.current.idle();
+      await lastProjectWrite.current.catch(() => undefined);
+      const backend = await import("./browser/backend");
+      await backend.deleteWorkingProject(info.path);
+      if (projectRef.current?.path === info.path) {
+        // Invalidate asynchronous page work and detach all active project state.
+        loading.current += 1;
+        documentLoading.current += 1;
+        ocrLoading.current += 1;
+        scriptScanGeneration.current += 1;
+        if (timer.current) { clearTimeout(timer.current); timer.current = null; }
+        lineEditSession.current = null;
+        editingHistoryGroup.current = null;
+        persistedHistory.current = new HistoryPersistence<Settings, Entry>();
+        bulkSnippetCanvases.current.clear();
+        scriptSnippetCanvases.current.clear();
+        scriptCandidateLines.current.clear();
+        scriptCandidateHeights.current.clear();
+        scriptHeightProfileRef.current = null;
+        scriptCandidatePool.current = [];
+        scriptCandidateBuckets.current = [[], [], []];
+        const empty = makeManifest(0);
+        empty.settings.modelPath = environmentModel.current;
+        putProject(null);
+        putDoc(null);
+        putManifest(empty);
+        putIndex(0);
+        setPdf(null);
+        setUndoStack([]);
+        setRedoStack([]);
+        setSelected(null);
+        setEditing(null);
+        setEditCaret(null);
+        setRegionMode(null);
+        setRegionSelection(null);
+        setPendingFigure(null);
+        setFigureImages({});
+        setImagePageId(null);
+        setCanvasSize({ width: 0, height: 0 });
+        setOrderVisited([]);
+        orderVisitedRef.current = [];
+        setOrderPendingVisited([]);
+        setOrderPreviewIds(null);
+        setOrderHoverId(null);
+        setBulkReplace(null);
+        setScriptCalibrationOpen(false);
+        setScriptCalibrationCandidates([]);
+        setScriptCalibrationLoading(false);
+        setScriptCalibrationProgress(null);
+        setConfirmOcr(null);
+        setBrowserDirty(false);
+        await pdf?.destroy().catch(() => undefined);
+      }
+      setRecoveryProjects(current => current?.filter(project => project.path !== info.path) ?? null);
+      setNotice("browser.workingDeleted", { name: info.name });
+    } catch (error) {
+      setRecoveryError(errorText(error));
+      setNotice("browser.workingDeleteFailed", { error: errorText(error) });
+    } finally {
+      working.current = false;
+      setDeletingWorkingPath(null);
+      setBusy(null);
+    }
+  }, [busy, flush, pdf, putDoc, putIndex, putManifest, putProject, setNotice, setRedoStack, setUndoStack, t]);
+  const openWorkingProject = useCallback(async (info: ProjectInfo) => {
+    if (busy || working.current || importActive.current || historyApplying.current) return;
+    working.current = true;
+    restorationGeneration.current += 1;
+    setBusy("open");
+    try {
+      finishLineEditRef.current();
+      await flush();
+      await writeQueue.current.idle();
+      const restored = await invokeCommand("open_project", { projectPath: info.path });
+      working.current = false;
+      setRecoveryProjects(null);
+      await openInfo(restored);
+    } catch (error) {
+      setNotice("notices.projectOpenFailed", { error: errorText(error) });
+    } finally {
+      working.current = false;
+      setBusy(null);
+    }
+  }, [busy, flush, openInfo, setNotice]);
+  const showWorkingProjects = useCallback(async () => {
+    if (isTauri || busy || working.current || importActive.current) return;
+    setRecoveryError(null);
+    try {
+      finishLineEditRef.current();
+      if (timer.current) await flush();
+      await writeQueue.current.idle();
+      const saved = await (await import("./browser/backend")).workingProjects();
+      setHasWorkingProjects(saved.length > 0);
+      if (!working.current && !importActive.current) setRecoveryProjects(saved);
+    } catch (error) {
+      setNotice("notices.projectOpenFailed", { error: errorText(error) });
     }
   }, [busy, flush, setNotice]);
   useEffect(() => {
@@ -1057,7 +1323,7 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
       event.preventDefault();
       if (event.repeat || busy || document.querySelector(".modal")) return;
       if (key === "s") {
-        if (!event.shiftKey) void save();
+        if (!event.shiftKey || !isTauri) void save(event.shiftKey);
       } else if (key === "y" || event.shiftKey) {
         void redo();
       } else {
@@ -1077,10 +1343,13 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
       const sourceDpiX = entry.rotation === 90 || entry.rotation === 270 ? rendered.dpiY : rendered.dpiX;
       const sourceDpiY = entry.rotation === 90 || entry.rotation === 270 ? rendered.dpiX : rendered.dpiY;
       const renderDpi = Math.max(70, Math.min(2400, Math.round(Math.sqrt(sourceDpiX * sourceDpiY))));
+      const saved = await invokeCommand("load_page", { projectPath: projectRef.current!.path, pageId: entry.id });
+      const existing = saved ? (JSON.parse(saved) as DocumentPage).figureRegions ?? [] : [];
+      const figureOcr = await prepareFigureOcr(worker, entry, existing,
+        canvas => invokeCommand("detect_figures", { imageBase64: canvasToBase64(canvas) }));
+      if (cancelled.current || token !== ocrLoading.current) throw new Error(globalT("appErrors.ocrCancelled"));
       const hocr = await invokeCommand("run_ocr", {
-        imageBase64: canvasToBase64(
-          maskOcrCanvas(worker, entry.split, entry.ocrMargins),
-        ),
+        imageBase64: canvasToBase64(figureOcr.canvas),
         modelPath: manifestRef.current.settings.modelPath,
         psm: manifestRef.current.settings.psm,
         dpi: renderDpi,
@@ -1099,6 +1368,8 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
       }
       return {
         ...detected,
+        figureRegions: figureOcr.figures,
+        autoFigureDetection: entry.autoFigureDetection,
         id: entry.id,
         sourcePage: entry.sourcePage,
         split: entry.split,
@@ -1167,15 +1438,16 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
                 : p,
             ),
           };
-          const path = projectRef.current.path,
-            data = JSON.stringify(result);
+          const path = projectRef.current.path;
           const beforeData = await invokeCommand("load_page", { projectPath: path, pageId: entry.id });
+          const preserved = preserveFiguresAfterOcr(beforeData ? JSON.parse(beforeData) as DocumentPage : null, result);
+          const data = JSON.stringify(preserved);
           await commitHistoryOperation(path, [{ pageId: entry.id, ...(beforeData === null ? { expectedMissing: true } : { expectedData: beforeData }), data }], {
             targetPageId: entry.id, changes: [{ pageId: entry.id, beforeData, afterData: data }],
             beforeEntry: copy(entry), afterEntry: copy(next.pages.find(page => page.id === entry.id)!),
           }, next);
           putManifest(next);
-          if (entry.id === next.pages[indexRef.current]?.id) putDoc(result);
+          if (entry.id === next.pages[indexRef.current]?.id) putDoc(preserved);
           setProgress({ done: i + 1, total: targets.length });
         }
         setNotice(
@@ -1247,10 +1519,11 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
         imageBase64,
         modelPath: manifestRef.current.settings.modelPath,
         dpi,
+        disableRowNoiseRejection: regionDisableRowNoiseRejection,
       };
       const regionId = entry.id + "--manual-" + crypto.randomUUID();
-      let psm: 11 | 6 = 11;
-      const recognize = async (mode: 11 | 6) => {
+      let psm = regionOcrPsm;
+      const recognize = async (mode: 11 | 6 | 7) => {
         if (cancelled.current) throw new Error(globalT("appErrors.ocrCancelled"));
         const hocr = await invokeCommand("run_ocr", { ...ocrArgs, psm: mode });
         if (cancelled.current) throw new Error(globalT("appErrors.ocrCancelled"));
@@ -1260,7 +1533,7 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
       };
       let recognized = await recognize(psm);
       // Sparse-text segmentation can overlook isolated digits in a column.
-      if (!allLines(recognized).some(line => line.words.some(word => word.originalText.trim()))) {
+      if (psm === 11 && !allLines(recognized).some(line => line.words.some(word => word.originalText.trim()))) {
         psm = 6;
         recognized = await recognize(psm);
       }
@@ -1270,7 +1543,7 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
           (imageBase64, samples) => invokeCommand("classify_word_styles", { imageBase64, samples }));      } catch (error) {
         console.warn("Word style classification was skipped for the added OCR region.", error);
       }
-      const result = addOcrRegion(beforePage, recognized, selection, padding, regionId, psm);
+      const result = addOcrRegion(beforePage, recognized, selection, padding, regionId, psm, regionDisableRowNoiseRejection);
       if (!result.addedWords) {
         setNotice("notices.regionEmpty");
         setRegionMode("add");
@@ -1290,14 +1563,14 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
       working.current = false;
       setBusy(null);
     }
-  }, [commitHistoryOperation, flush, putDoc, setNotice]);
+  }, [commitHistoryOperation, flush, putDoc, regionOcrPsm, regionDisableRowNoiseRejection, setNotice]);
   const deleteSelectedRegion = useCallback(async (selection: Rect | { x: number; y: number }) => {
     const entry = manifestRef.current.pages[indexRef.current];
     const beforePage = docRef.current;
     const info = projectRef.current;
     if (!entry || entry.status !== "review" || !beforePage || !info || working.current || importActive.current) return;
-    const result = "x" in selection ? removeOcrLineAtPoint(beforePage, selection.x, selection.y) : removeOcrLinesInRegion(beforePage, selection);
-    if (!result.removedLines) { setNotice("notices.regionDeleteEmpty"); setRegionMode("delete"); return; }
+    const result = removePageRegions(beforePage, selection);
+    if (!result.removedRegions) { setNotice("notices.regionDeleteEmpty"); setRegionMode("delete"); return; }
     working.current = true;
     setBusy("save");
     try {
@@ -1308,7 +1581,7 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
         targetPageId: entry.id, changes: [{ pageId: entry.id, beforeData, afterData }],
       });
       putDoc(result.page);
-      setNotice("notices.regionDeleted", { count: result.removedLines });
+      setNotice("notices.regionDeleted", { count: result.removedRegions });
     } catch (error) {
       setNotice("notices.saveFailed", { error: errorText(error) });
       setRegionMode("delete");
@@ -1347,8 +1620,33 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
       setBusy(null);
     }
   }, [commitHistoryOperation, flush, putDoc, setNotice]);
+  const prepareFigureSelection = useCallback((selection: Rect) => {
+    const page = docRef.current, source = canvasRef.current;
+    if (!page || !source || imagePageId !== page.id) return;
+    try {
+      const data = source.getContext("2d")!.getImageData(selection.left, selection.top, selection.right - selection.left, selection.bottom - selection.top);
+      const bounds = nonWhiteBounds(data);
+      if (!bounds) { setNotice("notices.figureEmpty"); return; }
+      setPendingFigure({ pageId: page.id, selection, tight: { left: bounds.left + selection.left, top: bounds.top + selection.top, right: bounds.right + selection.left, bottom: bounds.bottom + selection.top } });
+    } catch (error) { setNotice("notices.saveFailed", { error: errorText(error) }); }
+  }, [imagePageId, setNotice]);
+  const confirmFigure = useCallback(async (kind: "figure" | "table", bbox: Rect) => {
+    const before = docRef.current, info = projectRef.current;
+    if (!before || !info || before.id !== pendingFigure?.pageId || working.current || importActive.current) return;
+    working.current = true; setBusy("save");
+    try {
+      await flush();
+      const next = addFigureRegion(before, { id: `${before.id}--figure-${crypto.randomUUID()}`, kind, bbox: { ...bbox } });
+      const beforeData = JSON.stringify(before), afterData = JSON.stringify(next);
+      await commitHistoryOperation(info.path, [{ pageId: before.id, expectedData: beforeData, data: afterData }], {
+        targetPageId: before.id, changes: [{ pageId: before.id, beforeData, afterData }],
+      });
+      putDoc(next); setPendingFigure(null); setNotice("notices.figureAdded");
+    } catch (error) { setNotice("notices.saveFailed", { error: errorText(error) }); }
+    finally { working.current = false; setBusy(null); }
+  }, [pendingFigure, flush, commitHistoryOperation, putDoc, setNotice]);
   const clientToRegionPage = useCallback((clientX: number, clientY: number) => {
-    const target = regionMode === "add" ? canvasRef.current : layoutCardRef.current;
+    const target = regionMode === "add" || regionMode === "figure" ? canvasRef.current : layoutCardRef.current;
     if (!target || !canvasSize.width || !canvasSize.height) return null;
     const bounds = target.getBoundingClientRect();
     if (!bounds.width || !bounds.height) return null;
@@ -1363,8 +1661,8 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
   }, []);
   const onRegionPointerDown = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
     if (!regionMode || event.button !== 0 || busy ||
-      (regionMode === "add" && event.currentTarget !== pdfPageRef.current) ||
-      (regionMode !== "add" && event.currentTarget !== layoutCardRef.current)) return;
+      ((regionMode === "add" || regionMode === "figure") && event.currentTarget !== pdfPageRef.current) ||
+      (regionMode !== "add" && regionMode !== "figure" && event.currentTarget !== layoutCardRef.current)) return;
     const point = clientToRegionPage(event.clientX, event.clientY);
     if (!point || point.x <= 0 || point.x >= canvasSize.width || point.y <= 0 || point.y >= canvasSize.height) return;
     event.preventDefault();
@@ -1373,7 +1671,7 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
     setRegionSelection({ left: point.x, top: point.y, right: point.x, bottom: point.y });
     stopRegionScroll();
     regionScrollTimer.current = window.setInterval(() => {
-      const drag = regionDrag.current, stage = regionMode === "add" ? pdfStageRef.current : ocrStageRef.current;
+      const drag = regionDrag.current, stage = regionMode === "add" || regionMode === "figure" ? pdfStageRef.current : ocrStageRef.current;
       if (!drag || !stage) return;
       const bounds = stage.getBoundingClientRect();
       const edge = 28;
@@ -1436,14 +1734,15 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
       return;
     }
     setRegionMode(null);
-    void addSelectedRegion(selection);
-  }, [addSelectedRegion, clientToRegionPage, deleteSelectedRegion, mergeSelectedRegion, regionMode, setNotice, stopRegionScroll]);
+    if (regionMode === "figure") prepareFigureSelection(selection);
+    else void addSelectedRegion(selection);
+  }, [addSelectedRegion, prepareFigureSelection, clientToRegionPage, deleteSelectedRegion, mergeSelectedRegion, regionMode, setNotice, stopRegionScroll]);
   const extendReadingOrder = useCallback((drag: NonNullable<typeof orderDrag.current>, point: Point) => {
     const previous = drag.last;
     drag.last = point;
     const already = new Set([...drag.priorVisited, ...drag.visits]);
     let changed = false;
-    for (const id of lineIdsCrossed(allLines(drag.page), previous, point)) {
+    for (const id of lineIdsCrossed(pageItems(drag.page), previous, point)) {
       if (already.has(id)) continue;
       const anchor = drag.visits.at(-1) ?? drag.priorVisited.at(-1);
       if (anchor) drag.ids = moveLineAfter(drag.ids, anchor, id);
@@ -1465,7 +1764,7 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
     const page = docRef.current;
     const drag = { pointerId: event.pointerId, page, last: point,
       clientX: event.clientX, clientY: event.clientY,
-      ids: allLines(page).map(line => line.id), priorVisited: orderVisitedRef.current.slice(), visits: [] as string[] };
+      ids: pageItems(page).map(item => item.id), priorVisited: orderVisitedRef.current.slice(), visits: [] as string[] };
     orderDrag.current = drag;
     extendReadingOrder(drag, point);
     stopRegionScroll();
@@ -1493,7 +1792,7 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
       drag.clientX = event.clientX; drag.clientY = event.clientY;
       extendReadingOrder(drag, point);
     } else if (!drag && docRef.current) {
-      setOrderHoverId(lineIdsCrossed(allLines(docRef.current), point, point)[0] ?? null);
+      setOrderHoverId(lineIdsCrossed(pageItems(docRef.current), point, point)[0] ?? null);
     }
   }, [clientToRegionPage, extendReadingOrder, regionMode]);
   const onOrderPointerUp = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
@@ -1508,7 +1807,7 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
     window.setTimeout(() => { suppressLayoutClick.current = false; }, 0);
     if (!drag.visits.length) { setOrderPendingVisited([]); setOrderPreviewIds(null); return; }
     const visited = [...drag.priorVisited, ...drag.visits];
-    const oldIds = allLines(drag.page).map(line => line.id);
+    const oldIds = pageItems(drag.page).map(item => item.id);
     if (drag.ids.every((id, index) => id === oldIds[index])) {
       orderVisitedRef.current = visited; setOrderVisited(visited); setOrderPendingVisited([]); setOrderPreviewIds(null);
       return;
@@ -1521,7 +1820,7 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
     void (async () => {
       try {
         await flush();
-        const next = reorderPageLines(drag.page, drag.ids);
+        const next = reorderPageItems(drag.page, drag.ids);
         const beforeData = JSON.stringify(copy(drag.page)), afterData = JSON.stringify(copy(next));
         await commitHistoryOperation(info.path, [{ pageId: entry.id, expectedData: beforeData, data: afterData }], {
           targetPageId: entry.id, changes: [{ pageId: entry.id, beforeData, afterData }],
@@ -1547,7 +1846,7 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
     setOrderPreviewIds(null);
   }, [stopRegionScroll]);
   const exportFile = useCallback(
-    async (type: "txt" | "hocr" | "html" | "svg", scope: "current" | "all" = "all") => {
+    async (type: "txt" | "hocr" | "html" | "svg", scope: ExportScope = "all") => {
       if (!projectRef.current || working.current || importActive.current)
         return;
       try {
@@ -1559,7 +1858,9 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
         const entries =
           scope === "current"
             ? [manifestRef.current.pages[indexRef.current]]
-            : manifestRef.current.pages;
+            : scope === "completed"
+              ? manifestRef.current.pages.filter(page => page.completed === true)
+              : manifestRef.current.pages;
         for (const entry of entries) {
           const saved = await invokeCommand("load_page", {
             projectPath: projectRef.current.path,
@@ -1571,19 +1872,58 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
             labeledPages.push({ page, label: entry.label });
           }
         }
-        if (!pages.length)
+        if (!pages.length) {
+          if (scope === "completed") {
+            setNotice("notices.noCompletedPagesToExport");
+            return;
+          }
           throw new Error(globalT("appErrors.noExport"));
+        }
+        const hocrSource: HocrSource | undefined = type === "hocr" ? {
+          fingerprint: pdf?.fingerprints[0] ?? "", byteLength: projectRef.current.pdfSize, pages: {}, unavailable: {},
+        } : undefined;
+        const images: Record<string, string> = {};
+        if (type === "html" || type === "svg" || type === "hocr") {
+          for (const page of pages) {
+            if (type !== "hocr" && !page.figureRegions?.length) continue;
+            const entry = entries.find(entry => entry.id === page.id);
+            if (hocrSource) {
+              if (!entry || !pdf) { hocrSource.unavailable![page.id] = "missing-source"; continue; }
+              try {
+                // Legacy entries may lack their render DPI; recover it from the saved OCR resolution.
+                const dpiX = page.sourceDpiX ?? entry.sourceDpiX;
+                const dpiY = page.sourceDpiY ?? entry.sourceDpiY;
+                const savedDpi = dpiX && dpiY && Number.isFinite(dpiX) && Number.isFinite(dpiY) && dpiX > 0 && dpiY > 0
+                  ? Math.sqrt(dpiX * dpiY) : undefined;
+                const rendered = await renderEntry({ ...entry, ...page, dpi: entry.dpi ?? savedDpi },
+                  loading.current, pdf, document.createElement("canvas"), false);
+                if (!rendered || rendered.canvas.width !== page.width || rendered.canvas.height !== page.height)
+                  hocrSource.unavailable![page.id] = "coordinate-mismatch";
+                else hocrSource.pages[page.id] = rendered.geometry;
+              } catch (error) {
+                hocrSource.unavailable![page.id] = errorText(error) === globalT("appErrors.coordinateMismatch")
+                  ? "coordinate-mismatch" : "reconstruction-failed";
+              }
+              continue;
+            }
+            if (!entry) throw new Error(globalT("appErrors.processedPage"));
+            const rendered = await renderEntry(entry, loading.current, pdf, document.createElement("canvas"), false);
+            if (!rendered || rendered.canvas.width !== page.width || rendered.canvas.height !== page.height)
+              throw new Error(globalT("appErrors.coordinateMismatch"));
+            for (const figure of page.figureRegions ?? []) images[figure.id] = cropFigure(rendered.canvas, figure.bbox);
+          }
+        }
         let content = "",
           suffix = type === "txt" ? "txt" : type === "hocr" ? "html" : type === "html" ? "readable.html" : "svg",
           readyBase64 = false;
         if (type === "txt") content = exportText(pages);
-        else if (type === "hocr") content = exportHocr(pages);
-        else if (type === "html") content = createReadableHtml(projectRef.current.name.replace(/\.eduba$/i, ""), labeledPages, await loadReadableFontFaces(), notoSerifLicense);
-        else if (pages.length === 1) content = exportSvg(pages[0]);
+        else if (type === "hocr") content = exportHocr(pages, hocrSource!);
+        else if (type === "html") content = createReadableHtml(projectRef.current.name.replace(/\.eduba$/i, ""), labeledPages, await loadReadableFontFaces(), notoSerifLicense, images);
+        else if (pages.length === 1) content = exportSvg(pages[0], images);
         else {
           const zip = new JSZip();
           pages.forEach((page, i) =>
-            zip.file(`page-${i + 1}.svg`, exportSvg(page)),
+            zip.file(`page-${i + 1}.svg`, exportSvg(page, images)),
           );
           content = await zip.generateAsync({ type: "base64" });
           suffix = "zip";
@@ -1598,7 +1938,8 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
             path,
             contentBase64: readyBase64 ? content : encode(content),
           });
-        setNotice("notices.exported");
+        const incompleteCoordinates = type === "hocr" && content.includes('name="eduba-hocr-coordinates" content="incomplete"');
+        setNotice(incompleteCoordinates ? "notices.exportedIncompleteCoordinates" : "notices.exported");
       } catch (e) {
         setNotice("notices.exportFailed", { error: errorText(e) });
       } finally {
@@ -1606,26 +1947,31 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
         setBusy(null);
       }
     },
-    [flush],
+    [flush, renderEntry, pdf],
   );
   useEffect(() => {
     if (!isTauri) return;
     let off: (() => void) | undefined;
+    let disposed = false;
     listen<string>("app-menu", (event) => {
-      if (working.current || importActive.current) return;
+      if (disposed || working.current || importActive.current) return;
       if (event.payload === "import") importPdf();
       if (event.payload === "open") openProject();
       if (event.payload === "export") exportFile("txt");
       if (event.payload === "settings") setSettingsOpen(true);
-    }).then((value) => (off = value));
-    return () => off?.();
+    }).then((value) => {
+      if (disposed) value();
+      else off = value;
+    });
+    return () => { disposed = true; off?.(); };
   }, [exportFile, importPdf, openProject]);
   useEffect(() => {
     if (!isTauri) return;
     let unlisten: (() => void) | undefined;
+    let disposed = false;
     getCurrentWindow()
       .onCloseRequested(async (event) => {
-        if (closing.current) return;
+        if (disposed || closing.current) return;
         event.preventDefault();
         if (
           working.current ||
@@ -1647,10 +1993,49 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
         }
       })
       .then((value) => {
-        unlisten = value;
+        if (disposed) value();
+        else unlisten = value;
       });
-    return () => unlisten?.();
+    return () => { disposed = true; unlisten?.(); };
   }, [flush]);
+  useEffect(() => {
+    if (isTauri) return;
+    let disposed = false;
+    let request = 0;
+    const update = () => {
+      const current = ++request;
+      void import("./browser/backend").then(backend => backend.workingProjects()).then(saved => {
+        if (!disposed && current === request) setHasWorkingProjects(saved.length > 0);
+      }).catch(() => {
+        if (!disposed && current === request) setHasWorkingProjects(false);
+      });
+    };
+    window.addEventListener("eduba-browser-projects-changed", update);
+    window.addEventListener("focus", update);
+    update();
+    return () => {
+      disposed = true;
+      window.removeEventListener("eduba-browser-projects-changed", update);
+      window.removeEventListener("focus", update);
+    };
+  }, []);
+  useEffect(() => {
+    if (isTauri) return;
+    let disposed = false;
+    const update = () => {
+      void import("./browser/backend").then(backend => {
+        if (!disposed) setBrowserDirty(backend.isProjectDirty(projectRef.current?.path));
+      });
+    };
+    const beforeUnload = (event: BeforeUnloadEvent) => {
+      if (!projectRef.current || (!browserDirty && !timer.current)) return;
+      event.preventDefault(); event.returnValue = "";
+    };
+    window.addEventListener("eduba-browser-save-state", update);
+    window.addEventListener("beforeunload", beforeUnload);
+    update();
+    return () => { disposed = true; window.removeEventListener("eduba-browser-save-state", update); window.removeEventListener("beforeunload", beforeUnload); };
+  }, [browserDirty]);
   useEffect(
     () => () => {
       if (timer.current) clearTimeout(timer.current);
@@ -1664,7 +2049,6 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
     [flush],
   );
   useEffect(() => {
-    if (!isTauri) return;
     invokeCommand("get_environment")
       .then((env) => {
         environmentModel.current = env.modelPath;
@@ -1706,7 +2090,7 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
           const start = line.correctedText.indexOf(search, cursor);
           if (start < 0 || start > selectionStart) break;
           if (start === selectionStart) {
-            initialMatch = { pageId: page.id, pageLabel: manifestRef.current.pages.find(entry => entry.id === page.id)?.label ?? "", lineId, lineText: line.correctedText, matchOrdinal: ordinal };
+            initialMatch = { pageId: page.id, pageLabel: manifestRef.current.pages.find(entry => entry.id === page.id)?.label ?? "", lineId, lineText: line.correctedText, matchOrdinal: ordinal, ocrChoices: choicesForSelection(line, start, start + search.length) };
             break;
           }
           cursor = start + search.length;
@@ -2061,10 +2445,19 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
   }, [commitHistoryOperation, flush, project, putDoc]);
   const lines = useMemo(() => (doc ? allLines(doc) : []), [doc]);
   const orderedLines = useMemo(() => {
-    if (!orderPreviewIds) return lines;
-    const byId = new Map(lines.map(line => [line.id, line]));
-    return orderPreviewIds.map(id => byId.get(id)).filter((line): line is OcrLine => line != null);
-  }, [lines, orderPreviewIds]);
+    const items = doc ? pageItems(doc) : [];
+    if (!orderPreviewIds) return items;
+    const byId = new Map(items.map(item => [item.id, item]));
+    return orderPreviewIds.map(id => byId.get(id)).filter((item): item is PageItem => item != null);
+  }, [doc, orderPreviewIds]);
+  const figureGeometry = JSON.stringify(doc?.figureRegions ?? []);
+  useEffect(() => {
+    if (!doc || imagePageId !== doc.id || !canvasRef.current) { setFigureImages({}); return; }
+    try {
+      const figures = JSON.parse(figureGeometry) as NonNullable<DocumentPage["figureRegions"]>;
+      setFigureImages(Object.fromEntries(figures.map(figure => [figure.id, cropFigure(canvasRef.current!, figure.bbox)])));
+    } catch (error) { setFigureImages({}); setNotice("notices.saveFailed", { error: errorText(error) }); }
+  }, [doc?.id, figureGeometry, imagePageId, imageRevision, setNotice]);
   const orderChosenIds = new Set([...orderVisited, ...orderPendingVisited]);
   const activeOrderId = orderPendingVisited.at(-1) ?? orderVisited.at(-1);
   const w = canvasSize.width * zoom,
@@ -2089,7 +2482,7 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
     lastScrolledPane.current = sourcePane;
     synchronizeProofingPane(sourcePane);
   }, [synchronizeProofingPane]);
-  useEffect(() => { setRegionMode(null); setRegionSelection(null); regionDrag.current = null; stopRegionScroll(); }, [current?.id, stopRegionScroll]);
+  useEffect(() => { setRegionMode(null); setRegionSelection(null); setPendingFigure(null); regionDrag.current = null; stopRegionScroll(); }, [current?.id, stopRegionScroll]);
   useEffect(() => { setRegionHintHidden(false); }, [regionMode]);
   useEffect(() => {
     if (regionMode === "order") return;
@@ -2141,7 +2534,7 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
     return () => observer.disconnect();
   }, [synchronizeProofingPane]);
   return (
-    <main className="app-shell">
+    <main className={isTauri ? "app-shell" : "app-shell browser-app"}>
       <header className="topbar">
         <div className="brand">
           <div className="brand-mark">E</div>
@@ -2157,7 +2550,13 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
               ? t("ui.logicalPageCount", { count: manifest.pages.length })
               : t("ui.projectFile")}
           </span>
+          {!isTauri && <span className={project ? "muted" : "muted privacy-notice"}>{t(project ? (browserDirty ? "browser.unsavedFile" : "browser.savedFile") : "browser.localOnly")}</span>}
         </div>
+        {!isTauri && <KurnugiaLinks />}
+        {!isTauri && <a className="header-help" href="../getting-started/browser/" target="_blank" rel="noopener noreferrer" title={t("browser.openInNewTab")}>
+          <CircleHelp size={16} aria-hidden="true" />
+          {t("browser.help")}
+        </a>}
         <button
           className="icon-btn"
           disabled={Boolean(busy)}
@@ -2176,6 +2575,11 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
         <button onClick={openProject} disabled={Boolean(busy)}>
           <FolderOpen size={15} /> {t("ui.open")}
         </button>
+        {!isTauri && <>
+          <button onClick={() => void save()} disabled={!project || Boolean(busy)} title="Ctrl+S">{t("browser.save")}</button>
+          <button onClick={() => void save(true)} disabled={!project || Boolean(busy)} title="Ctrl+Shift+S">{t("browser.saveAs")}</button>
+          <button disabled={Boolean(busy) || !hasWorkingProjects} onClick={() => void showWorkingProjects()}>{t("browser.recover")}</button>
+        </>}
         <span className="toolbar-divider" />
         <button onClick={undo} disabled={!undoStack.length || Boolean(busy)} title="Ctrl+Z" aria-keyshortcuts="Control+Z">
           <Undo2 size={15} /> {t("ui.undo")}
@@ -2209,11 +2613,12 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
         <span className="toolbar-divider" />
         <select
           value={exportScope}
-          onChange={(e) => setExportScope(e.target.value as "current" | "all")}
+          onChange={(e) => setExportScope(e.target.value as ExportScope)}
           disabled={!project || Boolean(busy)}
         >
           <option value="current">{t("ui.currentPage")}</option>
           <option value="all">{t("ui.allPages")}</option>
+          <option value="completed">{t("ui.completedPagesOnly")}</option>
         </select>
         <button
           onClick={() => exportFile("txt", exportScope)}
@@ -2276,17 +2681,17 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
         <section className="editor-area">
           <div className="canvas-toolbar">
             <div className="breadcrumb">
-              <strong>
-                {current ? t("ui.page", { page: current.label }) : t("ui.openPdf")}
-              </strong>
-              <span>
-                ／{" "}
-                {current?.split === "single"
-                  ? t("ui.whole")
-                  : current?.split === "left"
-                    ? t("ui.leftPage")
-                    : t("ui.rightPage")}
-              </span>
+              {project && current && <>
+                <strong>{t("ui.page", { page: current.label })}</strong>
+                <span>
+                  ／{" "}
+                  {current.split === "single"
+                    ? t("ui.whole")
+                    : current.split === "left"
+                      ? t("ui.leftPage")
+                      : t("ui.rightPage")}
+                </span>
+              </>}
             </div>
             <button
               className={"region-add-button" + (regionMode === "add" ? " active" : "")}
@@ -2304,6 +2709,16 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
                 })();
               }}
             >{regionMode === "add" ? <X size={15} /> : <ScanLine size={15} />} {t(regionMode === "add" ? "ui.finishAddOcrRegion" : "ui.addOcrRegion")}</button>
+            <button className={"region-add-button" + (regionMode === "figure" ? " active" : "")}
+              disabled={current?.status !== "review" || !doc || imagePageId !== doc.id || Boolean(busy) || Boolean(pendingFigure)}
+              aria-pressed={regionMode === "figure"} onClick={() => {
+                if (regionMode === "figure") { regionDrag.current = null; stopRegionScroll(); setRegionSelection(null); setRegionMode(null); return; }
+                void (async () => {
+                  const active = manifestRef.current.pages[indexRef.current];
+                  if (!active || !await clearCompletion([active.id]) || manifestRef.current.pages[indexRef.current]?.id !== active.id) return;
+                  finishLineEditRef.current(); setSelected(null); setRegionMode("figure");
+                })();
+              }}><ScanLine size={15} /> {t(regionMode === "figure" ? "ui.finishAddFigureRegion" : "ui.addFigureRegion")}</button>
             <button
               className={"region-add-button region-delete-button" + (regionMode === "delete" ? " active" : "")}
               disabled={current?.status !== "review" || !doc || !canvasSize.width || Boolean(busy)}
@@ -2392,6 +2807,20 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
               </button>
             </div>
           </div>
+          {regionMode === "add" && <div className="region-ocr-options">
+            <label>
+              <span>{t("ui.regionOcrMode")}</span>
+              <select aria-label={t("ui.regionOcrMode")} value={regionOcrPsm} disabled={Boolean(busy)} onChange={event => setRegionOcrPsm(Number(event.currentTarget.value) as 11 | 6 | 7)}>
+                <option value={11}>{t("ui.automatic")}</option>
+                <option value={6}>{t("ui.singleBlock")}</option>
+                <option value={7}>{t("ui.singleLine")}</option>
+              </select>
+            </label>
+            <label title={t("ui.regionDisableRowNoiseRejectionHint")}>
+              <input type="checkbox" checked={regionDisableRowNoiseRejection} disabled={Boolean(busy)} onChange={event => setRegionDisableRowNoiseRejection(event.currentTarget.checked)} />
+              <span>{t("ui.regionDisableRowNoiseRejection")}</span>
+            </label>
+          </div>}
           <div className="proofing-grid" onPointerMove={(event) => {
               if (!regionMode || !regionHintRef.current) return;
               const box = regionHintRef.current.getBoundingClientRect();
@@ -2399,18 +2828,18 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
               setRegionHintHidden(event.clientX >= box.left - margin && event.clientX <= box.right + margin &&
                 event.clientY >= box.top - margin && event.clientY <= box.bottom + margin);
             }} onPointerLeave={() => setRegionHintHidden(false)}>
-            <article className={"pdf-pane" + (regionMode && regionMode !== "add" ? " region-inactive" : "")}>
+            <article className={"pdf-pane" + (regionMode && regionMode !== "add" && regionMode !== "figure" ? " region-inactive" : "")}>
               <div className="pane-label">
                 <span>{t("ui.processedImage")}</span>
               </div>
-              {regionMode === "add" && <div ref={regionHintRef} className={"region-instruction" + (regionHintHidden ? " hidden" : "")} role="status">
-                {t("ui.regionSelectHint")}
+              {(regionMode === "add" || regionMode === "figure") && <div ref={regionHintRef} className={"region-instruction" + (regionHintHidden ? " hidden" : "")} role="status">
+                {t(regionMode === "figure" ? "ui.figureSelectHint" : "ui.regionSelectHint")}
               </div>}
               <div ref={pdfStageRef} className="pdf-stage" onScroll={() => onProofingScroll("pdf")}>
                 {project ? (
                   <div
                     ref={pdfPageRef}
-                    className={"pdf-page" + (regionMode === "add" ? " selecting" : "")}
+                    className={"pdf-page" + (regionMode === "add" || regionMode === "figure" ? " selecting" : "")}
                     style={{ width: w || undefined, height: h || undefined }}
                     onPointerDown={onRegionPointerDown}
                     onPointerMove={onRegionPointerMove}
@@ -2441,18 +2870,24 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
                       return line ? <EditImageFocus line={line} caret={editCaret?.lineId === line.id ? editCaret.offset : 0}
                         zoom={zoom} pageWidth={canvasSize.width} sourceRef={canvasRef} showMagnifier={magnifierPreferences.imageMagnifierEnabled} /> : null;
                     })()}
-                    {regionMode === "add" && regionSelection && <div className="region-selection" style={{
+                    {(regionMode === "add" || regionMode === "figure") && regionSelection && <div className="region-selection" style={{
                       left: regionSelection.left * zoom, top: regionSelection.top * zoom,
                       width: (regionSelection.right - regionSelection.left) * zoom,
                       height: (regionSelection.bottom - regionSelection.top) * zoom,
                     }} />}
                   </div>
                 ) : (
-                  <Empty />
+                  <Empty
+                    busy={Boolean(busy) || importCreating}
+                    onImport={() => void importPdf()}
+                    onOpen={() => void openProject()}
+                    onRecover={isTauri ? undefined : () => void showWorkingProjects()}
+                    canRecover={hasWorkingProjects}
+                  />
                 )}
               </div>
             </article>
-            <article className={"ocr-pane" + (regionMode === "add" ? " region-inactive" : "")}>
+            <article className={"ocr-pane" + (regionMode === "add" || regionMode === "figure" ? " region-inactive" : "")}>
               <div className="pane-label">
                 <span>{t("ui.recognitionLayout")}</span>
                 {regionMode === null || regionMode === "add" ? <span className="pane-hint">{t("ui.clickLine")}</span> : null}
@@ -2484,6 +2919,14 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
                       className="layout-svg"
                       viewBox={`0 0 ${canvasSize.width} ${canvasSize.height}`}
                     >
+                      {(doc.figureRegions ?? []).map(figure => <g key={figure.id} className="figure-layout-region">
+                        {figureImages[figure.id] && <image href={figureImages[figure.id]} x={figure.bbox.left} y={figure.bbox.top}
+                          width={figure.bbox.right - figure.bbox.left} height={figure.bbox.bottom - figure.bbox.top} />}
+                        <rect data-figure-id={figure.id} x={figure.bbox.left} y={figure.bbox.top}
+                          width={figure.bbox.right - figure.bbox.left} height={figure.bbox.bottom - figure.bbox.top}
+                          className={regionMode === "order" && figure.id === activeOrderId ? "reading-order-active" : regionMode === "order" && orderChosenIds.has(figure.id) ? "reading-order-chosen" : "figure-region-box"} />
+                        <title>{t(figure.kind === "table" ? "ui.table" : "ui.figure")}</title>
+                      </g>)}
                       {lines.map((line) => (
                         <g key={line.id}>
                           <rect
@@ -2502,7 +2945,12 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
                               1,
                               line.bbox.bottom - line.bbox.top,
                             )}
-                            onClick={() => { if (!regionMode) void beginLineEdit(line.id); }}
+                            onClick={event => {
+                              if (regionMode) return;
+                              const hit = event.currentTarget;
+                              const text = hit.parentElement?.querySelector<SVGTextElement>("text") ?? null;
+                              void beginLineEdit(line.id, clickedLineCaret(text, line.correctedText, event.clientX, hit.getBoundingClientRect()));
+                            }}
                           />
                           <text
                             x={line.bbox.left}
@@ -2559,10 +3007,13 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
                         return line ? (
                           <LineOverlay
                             key={line.id}
+                            initialCaret={editCaret?.lineId === line.id ? editCaret.offset : 0}
                             portalTarget={ocrStageRef.current}
                             value={line.correctedText}
+                            ocrLine={line}
                             formatting={effectiveFormatting(line)}
                             onChange={(value) => editLine(line.id, value)}
+                            onReplaceCandidate={(start, end, text) => commitLineEdit(line.id, before => replaceLineSelection(before, line.id, start, end, text))}
                             onCaretChange={(offset) => setEditCaret({ lineId: line.id, offset })}
                             onFinish={() => finishLineEdit(line.id)}
                             onUndo={() => void undo()}
@@ -2587,11 +3038,16 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
                         ? t("ui.noOcr")
                         : t("ui.importToStart")}
                     </strong>
-                    <span>
-                      {project
-                        ? t("ui.runOcrHint")
-                        : t("ui.singleFileHint")}
-                    </span>
+                    {project && (
+                      <button
+                        type="button"
+                        className="primary"
+                        onClick={() => void askOcr("current")}
+                        disabled={Boolean(busy)}
+                      >
+                        <ScanLine size={15} /> {t("ui.ocrCurrent")}
+                      </button>
+                    )}
                   </div>
                 )}
               </div>
@@ -2632,7 +3088,29 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
           }}
         />
       )}
+      {recoveryProjects && <div className="modal-scrim"><div className="modal recovery-modal" role="dialog" aria-modal="true" aria-labelledby="recovery-title" aria-describedby="recovery-description" aria-busy={Boolean(deletingWorkingPath)}>
+        <div className="modal-head"><h2 id="recovery-title">{t("browser.recoveryTitle")}</h2><button className="icon-btn" disabled={Boolean(busy)} onClick={() => setRecoveryProjects(null)} aria-label={t("ui.close")}><X size={16} /></button></div>
+        <div className="recovery-body">
+        <p id="recovery-description">{t("browser.recoveryDescription")}</p>
+        <WorkingProjectStorageNotice />
+        {recoveryError && <p className="form-error" role="alert">{t("browser.workingDeleteFailed", { error: recoveryError })}</p>}
+        {recoveryProjects.length ? <ul className="recovery-projects">{orderedRecoveryProjects.map(info => <li key={info.path}>
+          <div className="recovery-project-info">
+            <button className="recovery-open" title={info.name} disabled={Boolean(busy)} onClick={() => void openWorkingProject(info)}>
+              <span className="recovery-project-name">{info.name}</span>
+              {info.path === project?.path && <span className="recovery-current">{t("browser.currentProject")}</span>}
+            </button>
+            <WorkingProjectDetails info={info} />
+          </div>
+          <button className="recovery-delete" disabled={Boolean(busy)} aria-label={t("browser.deleteWorkingLabel", { name: info.name })} onClick={() => void deleteWorkingProject(info)}>
+            {deletingWorkingPath === info.path ? t("browser.deletingWorking") : t("browser.deleteWorking")}
+          </button>
+        </li>)}</ul> : <p className="recovery-empty">{t("browser.recoveryEmpty")}</p>}
+        </div>
+      </div></div>}
       {bulkReplace && project && (<BulkReplaceDialog open={true} projectPath={project.path} initialSearch={bulkReplace.search} initialMatch={bulkReplace.initialMatch} getSnippet={getBulkSnippet} onApply={applyBulkReplace} onClose={() => { bulkSnippetCanvases.current.clear(); setBulkReplace(null); }} />)}
+      {pendingFigure && canvasRef.current && <FigureRegionDialog source={canvasRef.current} selection={pendingFigure.selection} tight={pendingFigure.tight}
+        working={Boolean(busy)} onConfirm={(kind, bbox) => void confirmFigure(kind, bbox)} onClose={() => { if (!working.current) setPendingFigure(null); }} />}
       {importSource && (
         <ImportModal
           pdfPath={importSource.path}
@@ -2693,12 +3171,25 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
     </main>
   );
 }
-function Empty() {
+function Empty({ busy, onImport, onOpen, onRecover, canRecover }: {
+  busy: boolean;
+  onImport: () => void;
+  onOpen: () => void;
+  onRecover?: () => void;
+  canRecover: boolean;
+}) {
   const { t } = useTranslation();
   return (
     <div className="empty-state">
-      <strong>Eduba</strong>
-      <span>{t("ui.importToStart")}</span>
+      <button className="primary" disabled={busy} onClick={onImport}>
+        <FilePlus2 size={17} /> {t("ui.createFromPdf")}
+      </button>
+      <button className="secondary" disabled={busy} onClick={onOpen}>
+        <FolderOpen size={17} /> {t("ui.openProjectFile")}
+      </button>
+      {onRecover && <button className="secondary" disabled={busy || !canRecover} onClick={onRecover}>
+        <FolderOpen size={17} /> {t("browser.recoveryTitle")}
+      </button>}
     </div>
   );
 }
@@ -2724,6 +3215,10 @@ function SettingsModal({
   setMagnifierPreference: (key: "imageMagnifierEnabled" | "textMagnifierEnabled", enabled: boolean) => void;
 }) {
   const { t } = useTranslation();
+  const [showLicenses, setShowLicenses] = useState(false);
+  const [modelError, setModelError] = useState<string | null>(null);
+  const [modelLoading, setModelLoading] = useState(false);
+  if (showLicenses) return <LicenseModal back={() => setShowLicenses(false)} close={close} />;
   return (
     <div className="modal-scrim">
       <div className="modal settings-modal">
@@ -2736,13 +3231,27 @@ function SettingsModal({
         <label className="settings-checkbox"><input type="checkbox" checked={magnifierPreferences.imageMagnifierEnabled} onChange={(event) => setMagnifierPreference("imageMagnifierEnabled", event.currentTarget.checked)} />{t("ui.imageMagnifier")}</label>
         <label className="settings-checkbox"><input type="checkbox" checked={magnifierPreferences.textMagnifierEnabled} onChange={(event) => setMagnifierPreference("textMagnifierEnabled", event.currentTarget.checked)} />{t("ui.textMagnifier")}</label>
         <label>{t("ui.model")}
-          <button className="file-select" onClick={async () => {
-            const path = await dialogOpen({ multiple: false, filters: [{ name: t("ui.model"), extensions: ["traineddata"] }] });
-            if (typeof path === "string") { putManifest({ ...manifest, settings: { ...manifest.settings, modelPath: path } }); scheduleSave(); }
-          }}>{manifest.settings.modelPath || t("ui.selectModel")}</button>
+          <button className="file-select" disabled={modelLoading} onClick={async () => {
+            setModelLoading(true);
+            setModelError(null);
+            try {
+              const path = await dialogOpen({ multiple: false, filters: [{ name: t("ui.model"), extensions: ["traineddata"] }] });
+              if (typeof path === "string") {
+                const modelPath = isTauri ? path : await (await import("./browser/backend")).importBrowserModel(path);
+                putManifest({ ...manifest, settings: { ...manifest.settings, modelPath } }); scheduleSave();
+              }
+            } catch (error) { setModelError(errorText(error)); }
+            finally { setModelLoading(false); }
+          }}>{manifest.settings.modelPath ? (isTauri ? manifest.settings.modelPath : fileName(manifest.settings.modelPath)) : t("ui.selectModel")}</button>
+          {modelError && <span role="alert">{modelError}</span>}
         </label>
+        {!isTauri && <button className="model-reset" disabled={modelLoading || !manifest.settings.modelPath.startsWith("model:")} onClick={() => {
+          setModelError(null);
+          putManifest({ ...manifest, settings: { ...manifest.settings, modelPath: DEFAULT_MODEL } });
+          scheduleSave();
+        }}>{t("browser.resetModel")}</button>}
         <label>PSM<select value={manifest.settings.psm} onChange={(e) => { putManifest({ ...manifest, settings: { ...manifest.settings, psm: Number(e.target.value) as Settings["psm"] } }); scheduleSave(); }}><option value="3">3 — {t("ui.automatic")}</option><option value="6">6 — {t("ui.singleBlock")}</option><option value="11">11 — {t("ui.sparseText")}</option></select></label>
-        <div className="modal-actions"><button className="primary" onClick={close}>{t("ui.done")}</button></div>
+        <div className="modal-actions"><button onClick={() => setShowLicenses(true)}>{t("ui.licenses")}</button><button className="primary" onClick={close}>{t("ui.done")}</button></div>
       </div>
     </div>
   );

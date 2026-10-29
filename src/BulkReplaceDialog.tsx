@@ -5,7 +5,7 @@ import { useTranslation } from "react-i18next";
 import { candidatesForSelection } from "./correctionCandidates";
 import { EditToolbarButton } from "./EditToolbarButton";
 import { FormattedEditMirror } from "./FormattedEditMirror";
-import type { TextFormatKind, TextFormatRange } from "./domain";
+import type { OcrChoice, TextFormatKind, TextFormatRange } from "./domain";
 import "./BulkReplaceDialog.css";
 
 export type BulkMatch = {
@@ -18,6 +18,8 @@ export type BulkMatch = {
   bbox?: { left: number; top: number; right: number; bottom: number };
   matchBBox?: { left: number; top: number; right: number; bottom: number };
   matchOrdinal: number;
+  /** Choices for the original selection which opened this dialog, if known. */
+  ocrChoices?: OcrChoice[];
 };
 
 type SearchPage = { results: BulkMatch[]; total: number; page: number; pageSize: number };
@@ -75,8 +77,9 @@ function toggleFormatting(ranges: TextFormatRange[], start: number, end: number,
   }).filter(range => range.end > range.start);
 }
 
-function ReplacementEditor({ value, formatting, onChange, onFormattingChange }: {
+function ReplacementEditor({ value, formatting, onChange, onFormattingChange, originalSearch, ocrChoices }: {
   value: string; formatting: TextFormatRange[]; onChange: (value: string) => void; onFormattingChange: (ranges: TextFormatRange[]) => void;
+  originalSearch: string; ocrChoices?: OcrChoice[];
 }) {
   const { t } = useTranslation();
   const inputRef = useRef<HTMLInputElement>(null);
@@ -88,7 +91,8 @@ function ReplacementEditor({ value, formatting, onChange, onFormattingChange }: 
 
   const [ctrl, setCtrl] = useState(false);
   const selected = value.slice(selection.start, selection.end);
-  const candidates = selected ? candidatesForSelection(selected) : [];
+  const candidates = selected ? candidatesForSelection(selected,
+    value === originalSearch && selection.start === 0 && selection.end === value.length ? ocrChoices : undefined) : [];
   const capture = () => { const input = inputRef.current; if (input) setSelection({ start: input.selectionStart ?? 0, end: input.selectionEnd ?? 0 }); };
   const changeText = (next: string) => { onFormattingChange(remapFormatting(formatting, value, next)); onChange(next); };
   const replace = (text: string) => {
@@ -244,7 +248,7 @@ export function BulkReplaceDialog({ open, projectPath, initialSearch, initialMat
   return <div className="modal-scrim bulk-replace-scrim" role="presentation" onMouseDown={event => { if (event.target === event.currentTarget && !working) onClose(); }}>
     <section className="modal bulk-replace-modal" role="dialog" aria-modal="true" aria-labelledby="bulk-replace-title">
       <header className="bulk-replace-header"><div><span className="eyebrow">CORRECTION</span><h2 id="bulk-replace-title">{t("bulkReplace.title")}</h2></div><button className="icon-button" type="button" aria-label={t("bulkReplace.close")} onClick={onClose} disabled={working}><X size={16} /></button></header>
-      <div className="bulk-replace-fields"><label>{t("bulkReplace.source")}<input value={search} readOnly /></label><label>{t("bulkReplace.replacement")}<ReplacementEditor value={replacement} formatting={replacementFormatting} onChange={setReplacement} onFormattingChange={setReplacementFormatting} /></label></div>
+      <div className="bulk-replace-fields"><label>{t("bulkReplace.source")}<input value={search} readOnly /></label><label>{t("bulkReplace.replacement")}<ReplacementEditor value={replacement} formatting={replacementFormatting} onChange={setReplacement} onFormattingChange={setReplacementFormatting} originalSearch={initialSearch} ocrChoices={initialMatch?.ocrChoices} /></label></div>
       <div className="bulk-replace-results-head"><strong>{t("bulkReplace.results", { count: data.total })}</strong><button type="button" className="text-button" onClick={togglePage} disabled={!data.results.length}>{allPageSelected ? t("bulkReplace.clearPage") : t("bulkReplace.selectPage")}</button></div>
       <div className="bulk-replace-results" aria-live="polite">{data.results.map(result => <MatchRow key={keyOf(result)} match={result} search={search} checked={selected.has(keyOf(result))} getSnippet={getSnippet} onToggle={() => toggle(result)} />)}{!data.results.length && <p className="bulk-replace-empty"><Search size={15} />{t("bulkReplace.noResults")}</p>}</div>
       <footer className="bulk-replace-footer"><div className="bulk-replace-pagination"><button type="button" className="icon-button" aria-label={t("bulkReplace.previous")} disabled={resultPage === 0} onClick={() => setResultPage(page => page - 1)}><ChevronLeft size={16} /></button><span>{resultPage + 1} / {pageCount}</span><button type="button" className="icon-button" aria-label={t("bulkReplace.next")} disabled={resultPage + 1 >= pageCount} onClick={() => setResultPage(page => page + 1)}><ChevronRight size={16} /></button></div><div className="modal-actions"><button className="secondary" type="button" disabled={working} onClick={onClose}>{t("bulkReplace.cancel")}</button><button className="secondary" type="button" disabled={working || !selectedCount} onClick={() => void submit(false)}>{working ? t("bulkReplace.applying") : t("bulkReplace.applyFormatting", { count: selectedCount })}</button><button className="primary" type="button" disabled={working || !selectedCount} onClick={() => void submit(true)}>{working ? t("bulkReplace.applying") : t("bulkReplace.preserveFormatting", { count: selectedCount })}</button></div></footer>

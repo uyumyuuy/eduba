@@ -33,6 +33,7 @@ export function ImportModal({ pdfPath, pdf, onCancel, onConfirm, busy = false, p
   const [importMode, setImportMode] = useState<ImportMode>("extract");
   const [rotation, setRotation] = useState<0 | 90 | 180 | 270>(0);
   const [splitSpread, setSplitSpread] = useState(false);
+  const [autoFigureDetection, setAutoFigureDetection] = useState(true);
   const [deskew, setDeskew] = useState(true);
   const [ocrMargins, setOcrMargins] = useState<OcrMargins>({ ...defaultOcrMargins });
   const [page, setPage] = useState(1);
@@ -99,11 +100,11 @@ export function ImportModal({ pdfPath, pdf, onCancel, onConfirm, busy = false, p
   const updateMargin = (key: keyof OcrMargins, value: string) => setOcrMargins(current => ({ ...current, [key]: Number(value) }));
   const submit = () => {
     if (!valid || previewError) return;
-    onConfirm({ begin, end, dpi: importMode === "extract" ? 300 : Number(dpiRaw), rotation, splitSpread, deskew, importMode, ocrMargins });
+    onConfirm({ begin, end, dpi: importMode === "extract" ? 300 : Number(dpiRaw), rotation, splitSpread, deskew, autoFigureDetection, importMode, ocrMargins });
   };
 
   return <div className="modal-scrim">
-    <div className="modal import-modal" role="dialog" aria-label={t("importUi.dialogLabel")}>
+    <div className="modal import-modal" role="dialog" aria-modal="true" aria-label={t("importUi.dialogLabel")}>
       <div className="modal-head">
         <div><div className="eyebrow">{t("importUi.eyebrow")}</div><h2>{t("importUi.title")}</h2></div>
         <button className="icon-btn" onClick={onCancel} aria-label={t("importUi.close")}><X size={16}/></button>
@@ -120,7 +121,7 @@ export function ImportModal({ pdfPath, pdf, onCancel, onConfirm, busy = false, p
             <label>{t("importUi.dpi")}<input aria-label={t("importUi.dpi")} disabled={busy || importMode === "extract"} inputMode="numeric" value={importMode === "extract" ? t("importUi.sourceImage") : dpiRaw} onChange={event => setDpiRaw(event.target.value)}/></label>
             <label>{t("importUi.rotation")}<select aria-label={t("importUi.rotation")} disabled={busy} value={rotation} onChange={event => setRotation(Number(event.target.value) as 0 | 90 | 180 | 270)}><option value="0">0°</option><option value="90">{t("importUi.clockwise90")}</option><option value="180">180°</option><option value="270">270°</option></select></label>
           </div>
-          <label className="split-check"><input aria-label={t("importUi.splitSpread")} disabled={busy} type="checkbox" checked={splitSpread} onChange={event => setSplitSpread(event.target.checked)}/>{t("importUi.splitSpread")}</label><label className="split-check"><input aria-label={t("importUi.deskew")} disabled={busy} type="checkbox" checked={deskew} onChange={event => setDeskew(event.target.checked)}/>{t("importUi.deskew")}</label><p className="settings-note">{t("importUi.deskewNote")}</p><div className="margin-fields"><strong>{t("importUi.ocrMargins")}</strong><div className="form-row"><label>{t("importUi.top")}<input aria-label={t("importUi.top")} disabled={busy} type="number" value={ocrMargins.top} onChange={e=>updateMargin("top",e.target.value)}/></label><label>{t("importUi.bottom")}<input aria-label={t("importUi.bottom")} disabled={busy} type="number" value={ocrMargins.bottom} onChange={e=>updateMargin("bottom",e.target.value)}/></label></div><div className="form-row"><label>{splitSpread ? t("importUi.outer") : t("importUi.left")}<input aria-label={splitSpread ? t("importUi.outer") : t("importUi.left")} disabled={busy} type="number" value={splitSpread?ocrMargins.outer:ocrMargins.left} onChange={e=>updateMargin(splitSpread?"outer":"left",e.target.value)}/></label><label>{splitSpread ? t("importUi.inner") : t("importUi.right")}<input aria-label={splitSpread ? t("importUi.inner") : t("importUi.right")} disabled={busy} type="number" value={splitSpread?ocrMargins.inner:ocrMargins.right} onChange={e=>updateMargin(splitSpread?"inner":"right",e.target.value)}/></label></div></div>
+          <label className="split-check"><input aria-label={t("importUi.autoFigureDetection")} disabled={busy} type="checkbox" checked={autoFigureDetection} onChange={event => setAutoFigureDetection(event.target.checked)}/>{t("importUi.autoFigureDetection")}</label><label className="split-check"><input aria-label={t("importUi.splitSpread")} disabled={busy} type="checkbox" checked={splitSpread} onChange={event => setSplitSpread(event.target.checked)}/>{t("importUi.splitSpread")}</label><label className="split-check"><input aria-label={t("importUi.deskew")} disabled={busy} type="checkbox" checked={deskew} onChange={event => setDeskew(event.target.checked)}/>{t("importUi.deskew")}</label><p className="settings-note">{t("importUi.deskewNote")}</p><div className="margin-fields"><strong>{t("importUi.ocrMargins")}</strong><div className="form-row"><label>{t("importUi.top")}<input aria-label={t("importUi.top")} disabled={busy} type="number" value={ocrMargins.top} onChange={e=>updateMargin("top",e.target.value)}/></label><label>{t("importUi.bottom")}<input aria-label={t("importUi.bottom")} disabled={busy} type="number" value={ocrMargins.bottom} onChange={e=>updateMargin("bottom",e.target.value)}/></label></div><div className="form-row"><label>{splitSpread ? t("importUi.outer") : t("importUi.left")}<input aria-label={splitSpread ? t("importUi.outer") : t("importUi.left")} disabled={busy} type="number" value={splitSpread?ocrMargins.outer:ocrMargins.left} onChange={e=>updateMargin(splitSpread?"outer":"left",e.target.value)}/></label><label>{splitSpread ? t("importUi.inner") : t("importUi.right")}<input aria-label={splitSpread ? t("importUi.inner") : t("importUi.right")} disabled={busy} type="number" value={splitSpread?ocrMargins.inner:ocrMargins.right} onChange={e=>updateMargin(splitSpread?"inner":"right",e.target.value)}/></label></div></div>
           <p className="settings-note">{t("importUi.settingsNote")}</p>
         </div>
         <div className="import-preview">

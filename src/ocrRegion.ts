@@ -1,3 +1,4 @@
+import { resolveOcrMargins } from "./ocrMargins";
 import { allLines, type DocumentPage, type OcrChar, type OcrLine, type PageBlock, type Paragraph, type Rect, type TextFormatRange } from "./domain";
 
 const intersects = (a: Rect, b: Rect) => a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom;
@@ -28,6 +29,24 @@ export function prepareRegionOcrImage(source: HTMLCanvasElement, selection: Rect
     if (!intersects(b, selection)) continue;
     const left = Math.max(b.left, selection.left), top = Math.max(b.top, selection.top);
     const right = Math.min(b.right, selection.right), bottom = Math.min(b.bottom, selection.bottom);
+    context.fillRect(padding + left - selection.left, padding + top - selection.top, right - left, bottom - top);
+  }
+  const margins = resolveOcrMargins(page.ocrMargins, page.split);
+  const topMargin = Math.ceil(source.height * margins.top / 100);
+  const bottomMargin = Math.ceil(source.height * margins.bottom / 100);
+  const leftMargin = Math.ceil(source.width * margins.left / 100);
+  const rightMargin = Math.ceil(source.width * margins.right / 100);
+  const excluded: Rect[] = [
+    { left: 0, top: 0, right: source.width, bottom: topMargin },
+    { left: 0, top: source.height - bottomMargin, right: source.width, bottom: source.height },
+    { left: 0, top: 0, right: leftMargin, bottom: source.height },
+    { left: source.width - rightMargin, top: 0, right: source.width, bottom: source.height },
+    ...(page.figureRegions ?? []).map(figure => figure.bbox),
+  ];
+  for (const bbox of excluded) {
+    if (!intersects(bbox, selection)) continue;
+    const left = Math.max(bbox.left, selection.left), top = Math.max(bbox.top, selection.top);
+    const right = Math.min(bbox.right, selection.right), bottom = Math.min(bbox.bottom, selection.bottom);
     context.fillRect(padding + left - selection.left, padding + top - selection.top, right - left, bottom - top);
   }
   return result;
@@ -139,7 +158,7 @@ function insertIndependent(page: DocumentPage, addition: OcrLine, regionId: stri
 }
 
 /** Integrates region hOCR without replacing existing recognition or corrections. */
-export function addOcrRegion(page: DocumentPage, recognized: DocumentPage, selection: Rect, padding: number, regionId: string, psm: 11 | 6 = 11): { page: DocumentPage; addedLines: number; addedWords: number } {
+export function addOcrRegion(page: DocumentPage, recognized: DocumentPage, selection: Rect, padding: number, regionId: string, psm: 11 | 6 | 7 = 11, disableRowNoiseRejection = false): { page: DocumentPage; addedLines: number; addedWords: number } {
   const next: DocumentPage = JSON.parse(JSON.stringify(page));
   const oldWords = allLines(page).flatMap(line => line.words);
   const dx = selection.left - padding, dy = selection.top - padding;
@@ -168,12 +187,12 @@ export function addOcrRegion(page: DocumentPage, recognized: DocumentPage, selec
     for (const paragraph of block.paragraphs) paragraph.bbox = union(paragraph.lines.map(line => line.bbox));
     block.bbox = union(block.paragraphs.map(paragraph => paragraph.bbox));
   }
-  next.manualOcrRegions = [...(next.manualOcrRegions ?? []), { id: regionId, bbox: selection, psm, addedWordIds, addedLineIds }];
+  next.manualOcrRegions = [...(next.manualOcrRegions ?? []), { id: regionId, bbox: selection, psm, disableRowNoiseRejection, addedWordIds, addedLineIds }];
   return { page: next, addedLines: lines.length, addedWords: addedWordIds.length };
 }
 
 /** Removes complete OCR lines and repairs the page hierarchy and manual-region references. */
-function removeLineIds(page: DocumentPage, ids: Set<string>): { page: DocumentPage; removedLines: number } {
+export function removeOcrLineIds(page: DocumentPage, ids: Set<string>): { page: DocumentPage; removedLines: number } {
   if (!ids.size) return { page, removedLines: 0 };
   const next: DocumentPage = JSON.parse(JSON.stringify(page));
   for (const block of next.blocks) {
@@ -201,14 +220,14 @@ function removeLineIds(page: DocumentPage, ids: Set<string>): { page: DocumentPa
 
 /** A drag on the OCR layout removes each line whose visible line box overlaps it. */
 export function removeOcrLinesInRegion(page: DocumentPage, selection: Rect): { page: DocumentPage; removedLines: number } {
-  return removeLineIds(page, new Set(allLines(page).filter(line => intersects(line.bbox, selection)).map(line => line.id)));
+  return removeOcrLineIds(page, new Set(allLines(page).filter(line => intersects(line.bbox, selection)).map(line => line.id)));
 }
 
 /** A click removes one line. Prefer the smallest line box if OCR boxes overlap. */
 export function removeOcrLineAtPoint(page: DocumentPage, x: number, y: number): { page: DocumentPage; removedLines: number } {
   const target = allLines(page).filter(line => x >= line.bbox.left && x <= line.bbox.right && y >= line.bbox.top && y <= line.bbox.bottom)
     .sort((a, b) => area(a.bbox) - area(b.bbox))[0];
-  return removeLineIds(page, new Set(target ? [target.id] : []));
+  return removeOcrLineIds(page, new Set(target ? [target.id] : []));
 }
 
 export type MergeRegionResult = { page: DocumentPage; mergedLines: number; reason?: "tooFew" | "differentRows" | "overlap" | "classes" };

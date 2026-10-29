@@ -1,5 +1,4 @@
 import { invoke as tauriInvoke } from "@tauri-apps/api/core";
-import { t } from "./i18n";
 import type { StoredHistory, ProjectPageUpdate } from "./editHistory";
 
 export type CorrectionMatch = {
@@ -62,7 +61,8 @@ export type BackendCommands = {
   save_manifest: { args: { projectPath: string; manifest: string }; result: void };
   load_page: { args: { projectPath: string; pageId: string }; result: string | null };
   save_page: { args: { projectPath: string; pageId: string; data: string }; result: void };
-  run_ocr: { args: { imageBase64: string; modelPath: string; psm: number; dpi?: number }; result: string };
+  run_ocr: { args: { imageBase64: string; modelPath: string; psm: number; dpi?: number; disableRowNoiseRejection?: boolean }; result: string };
+  detect_figures: { args: { imageBase64: string }; result: import("./automaticFigures").FigureDetection[] };
   classify_word_styles: { args: { imageBase64: string; samples: WordStyleSample[] }; result: WordStylePrediction[] };
   cancel_ocr: { args: undefined; result: void };
   export_file: { args: { path: string; contentBase64: string }; result: void };
@@ -78,6 +78,9 @@ export async function invokeCommand<K extends keyof BackendCommands>(
   command: K,
   ...args: BackendCommands[K]["args"] extends undefined ? [] : [BackendCommands[K]["args"]]
 ): Promise<BackendCommands[K]["result"]> {
-  if (!isTauri) throw new Error(t("appErrors.desktopOnly"));
+  if (!isTauri) {
+    const { browserInvoke } = await import("./browser/backend");
+    return browserInvoke(command, args[0] as BackendCommands[K]["args"]);
+  }
   return tauriInvoke(command as string, (args[0] ?? undefined) as Record<string, unknown>);
 }

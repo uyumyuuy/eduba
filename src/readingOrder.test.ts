@@ -1,6 +1,7 @@
+import { exportFixtureHocr as exportHocr } from "./testSupport/hocr";
 // @vitest-environment jsdom
 import { describe, expect, it } from "vitest";
-import { allLines, exportHocr, exportText, type DocumentPage, type OcrLine, type Rect } from "./domain";
+import { allLines, exportText, type DocumentPage, type OcrLine, type Rect } from "./domain";
 import { lineIdsCrossed, moveLineAfter, reorderPageLines } from "./readingOrder";
 
 function line(id: string, bbox: Rect): OcrLine {

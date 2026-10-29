@@ -1,14 +1,8 @@
+import type { OcrChoice } from "./domain";
 import candidateData from "./assets/scan-candidate-character-confusions.json";
 
-type CandidateEntry = {
-  gt_candidates: Array<{ gt_character: string; count: number }>;
-};
-
-type CandidateData = {
-  output_to_gt: Record<string, CandidateEntry>;
-};
-
-const outputToGt = (candidateData as CandidateData).output_to_gt;
+type CandidateEntry = { gt_candidates: Array<{ gt_character: string; count: number }> };
+const outputToGt = candidateData.output_to_gt as Record<string, CandidateEntry>;
 
 /**
  * Converts the ASCII transliteration notation accepted by the original review
@@ -27,6 +21,10 @@ export function convert(text: string): string {
     .replace(/T,/g, "Ṭ")
     .replace(/t_/g, "ṯ")
     .replace(/T_/g, "Ṯ")
+    .replace(/k,/g, "ḳ")
+    .replace(/K,/g, "Ḳ")
+    .replace(/\[\[/g, "⸢")
+    .replace(/\]\]/g, "⸣")
     .replace(/j/g, "ŋ")
     .replace(/J/g, "Ŋ")
     .replace(/g~/g, "g̃")
@@ -98,23 +96,33 @@ function graphemes(text: string): string[] {
 
 /**
  * Returns correction candidates without depending on UI state or the network.
- * A multi-grapheme selection is only offered its whole-string transliteration.
+ * LSTM choices precede table-only choices and additional transliterations.
+ * Canonically equivalent spellings share one suggestion; its first spelling wins.
  */
-export function candidatesForSelection(selection: string): string[] {
+export function candidatesForSelection(selection: string, choices: readonly OcrChoice[] = []): string[] {
   const candidates: string[] = [];
+  const seen = new Set([selection.normalize("NFC")]);
+  const append = (text: string) => {
+    const key = text.normalize("NFC");
+    if (text.trim() && !seen.has(key)) { candidates.push(text); seen.add(key); }
+  };
   const converted = convertIndexToAccent(convert(selection));
 
-  if (converted !== selection) candidates.push(converted);
-  if (graphemes(selection).length !== 1) return candidates;
+  if (graphemes(selection).length !== 1) { append(converted); return candidates; }
 
-  const rankedCandidates = (outputToGt[selection]?.gt_candidates ?? [])
-    .map((candidate, index) => ({ ...candidate, index }))
-    .sort((a, b) => b.count - a.count || a.index - b.index);
+  const rankedCandidates = choices
+    .filter(choice => choice.text.trim() && Number.isFinite(choice.confidence))
+    .map((choice, index) => ({ ...choice, index }))
+    .sort((a, b) => b.confidence - a.confidence || a.index - b.index);
 
-  for (const { gt_character } of rankedCandidates) {
-    if (gt_character !== selection && !candidates.includes(gt_character)) {
-      candidates.push(gt_character);
-    }
+  for (const { text } of rankedCandidates) {
+    append(text);
   }
+  const tableCandidates = (outputToGt[selection.normalize("NFC")]?.gt_candidates ?? [])
+    .filter(choice => Number.isFinite(choice.count) && choice.count > 0)
+    .map((choice, index) => ({ ...choice, index }))
+    .sort((a, b) => b.count - a.count || a.index - b.index);
+  for (const { gt_character } of tableCandidates) append(gt_character);
+  append(converted);
   return candidates;
 }

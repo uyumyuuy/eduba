@@ -1,3 +1,4 @@
+import { useVisibleOverlay } from "./useVisibleOverlay";
 import { useLayoutEffect, useMemo, useRef, type RefObject } from "react";
 import type { OcrLine, Rect } from "./domain";
 
@@ -97,6 +98,7 @@ export function EditImageFocus({ line, caret, zoom, pageWidth, sourceRef, showMa
   const cropTop = clamp((line.bbox.top + line.bbox.bottom) / 2 - cropHeight / 2, 0, Math.max(0, imageHeight - visibleHeight));
   const left = clamp(focus.x * zoom - displayWidth / 2, 0, Math.max(0, pageWidth * zoom - displayWidth));
   const top = Math.max(0, line.bbox.top * zoom - displayHeight - 10);
+  useVisibleOverlay(magnifierRef, left, top, showMagnifier);
   useLayoutEffect(() => {
     const target = magnifierRef.current, source = sourceRef.current;
     if (!target || !source?.width || !source.height) return;

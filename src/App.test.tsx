@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { act } from "react";
+import { act, StrictMode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import App, { synchronizePageScroll } from "./App";
@@ -14,6 +14,7 @@ const mocks = vi.hoisted(() => ({
   loadPageImage: vi.fn(),
   closeRequested: vi.fn(),
   destroy: vi.fn(),
+  listen: vi.fn(),
 }));
 
 vi.mock("@tauri-apps/plugin-dialog", () => ({
@@ -22,7 +23,7 @@ vi.mock("@tauri-apps/plugin-dialog", () => ({
 }));
 
 vi.mock("@tauri-apps/api/event", () => ({
-  listen: vi.fn(async () => () => undefined),
+  listen: mocks.listen,
 }));
 
 vi.mock("@tauri-apps/api/window", () => ({
@@ -51,7 +52,7 @@ vi.mock("./domain", async importOriginal => {
       const canvas = document.createElement("canvas");
       canvas.width = 100;
       canvas.height = 80;
-      return { pages: [{ canvas }] };
+      return { pages: [{ canvas, sourceToPage: [1, 0, 0, 1, 0, 0] }] };
     }),
   };
 });
@@ -92,7 +93,7 @@ async function waitFor(assertion: () => void): Promise<void> {
 const emptyRegionHocr = '<html><body><div class="ocr_page" title="bbox 0 0 80 60"></div></body></html>';
 const numberRegionHocr = '<html><body><div class="ocr_page" title="bbox 0 0 80 60"><div class="ocr_carea"><p class="ocr_par"><span class="ocr_line" title="bbox 25 25 35 35"><span class="ocrx_word" title="bbox 25 25 35 35">2</span></span></p></div></div></body></html>';
 
-async function dragOcrRegion(container: HTMLElement) {
+async function dragOcrRegion(container: HTMLElement, configure?: () => Promise<void>) {
   const canvas = container.querySelector<HTMLCanvasElement>(".rendered-page")!;
   vi.spyOn(canvas, "getBoundingClientRect").mockReturnValue({ left: 0, top: 0, right: 100, bottom: 80, width: 100, height: 80 } as DOMRect);
   const surface = container.querySelector<HTMLDivElement>(".pdf-page")!;
@@ -102,6 +103,7 @@ async function dragOcrRegion(container: HTMLElement) {
     releasePointerCapture: { configurable: true, value: vi.fn() },
   });
   await act(async () => Array.from(container.querySelectorAll<HTMLButtonElement>("button")).find(button => button.textContent?.includes("Add OCR region"))!.click());
+  await configure?.();
   const pointer = (type: string, x: number, y: number) => {
     const event = new MouseEvent(type, { bubbles: true, button: 0, clientX: x, clientY: y });
     Object.defineProperty(event, "pointerId", { value: 1 });
@@ -162,14 +164,16 @@ describe("saved project loading", () => {
     mocks.dialogOpen.mockResolvedValue("D:/projects/reading.eduba");
     mocks.dialogSave.mockResolvedValue("D:/exports/reading.readable.html");
     mocks.closeRequested.mockResolvedValue(() => undefined);
+    mocks.listen.mockResolvedValue(() => undefined);
     mocks.openProjectPdf.mockResolvedValue({
-      numPages: 2,
+      numPages: 2, fingerprints: ["test-pdf"],
       getPage: vi.fn(async () => ({
+        view: [0, 0, 100, 80], rotate: 0, userUnit: 1,
         getViewport: () => ({ width: 100, height: 80 }),
         render: () => ({ promise: Promise.resolve() }),
       })),
     });
-    mocks.loadPageImage.mockImplementation(async (_page: unknown, mode: string, dpi: number) => { const canvas = document.createElement("canvas"); canvas.width = 100; canvas.height = 80; return { canvas, modeUsed: mode, dpiX: dpi, dpiY: dpi }; });
+    mocks.loadPageImage.mockImplementation(async (_page: unknown, mode: string, dpi: number) => { const canvas = document.createElement("canvas"); canvas.width = 100; canvas.height = 80; return { canvas, modeUsed: mode, dpiX: dpi, dpiY: dpi, pdfToSource: [1, 0, 0, -1, 0, 80] }; });
 
     let manifest = JSON.stringify({
       version: 1,
@@ -242,6 +246,32 @@ describe("saved project loading", () => {
     await act(async () => openButton?.click());
     await waitFor(() => expect(container.textContent).toContain(expectedText));
   }
+
+  it("cleans up delayed menu subscriptions and opens only one dialog until it closes", async () => {
+    const subscriptions: Array<{ callback: (event: { payload: string }) => void; resolve: (off: () => void) => void; off: ReturnType<typeof vi.fn> }> = [];
+    mocks.listen.mockImplementation((_name: string, callback: (event: { payload: string }) => void) =>
+      new Promise<() => void>(resolve => subscriptions.push({ callback, resolve, off: vi.fn() })),
+    );
+    let closeDialog!: (value: null) => void;
+    mocks.dialogOpen.mockImplementation(() => new Promise<null>(resolve => { closeDialog = resolve; }));
+    await act(async () => root.render(<StrictMode><App /></StrictMode>));
+    expect(subscriptions.length).toBeGreaterThanOrEqual(2);
+    await act(async () => subscriptions.forEach(subscription => subscription.resolve(subscription.off)));
+    expect(subscriptions.filter(subscription => !subscription.off.mock.calls.length)).toHaveLength(1);
+    await act(async () => {
+      for (const subscription of subscriptions) {
+        subscription.callback({ payload: "open" });
+        subscription.callback({ payload: "open" });
+      }
+    });
+    expect(mocks.dialogOpen).toHaveBeenCalledTimes(1);
+    await act(async () => closeDialog(null));
+    await act(async () => subscriptions.forEach(subscription => subscription.callback({ payload: "open" })));
+    expect(mocks.dialogOpen).toHaveBeenCalledTimes(2);
+    await act(async () => closeDialog(null));
+    await act(async () => root.unmount());
+    expect(subscriptions.every(subscription => subscription.off.mock.calls.length === 1)).toBe(true);
+  });
 
   it("reopens the last project on its saved logical page", async () => {
     const base = mocks.invoke.getMockImplementation()!;
@@ -698,6 +728,44 @@ describe("saved project loading", () => {
     expect(JSON.parse(persistedPages.get("page-1")!).blocks[0].paragraphs[0].lines[0].correctedText).toBe("2");
   });
 
+  it("detects figures before OCR and restores them together with OCR through undo and redo", async () => {
+    vi.spyOn(HTMLCanvasElement.prototype, "toDataURL").mockReturnValue("data:image/png;base64,image");
+    persistedPages.delete("page-1");
+    const base = mocks.invoke.getMockImplementation()!;
+    let firstOpen = true;
+    const bbox = { left: 10, top: 40, right: 50, bottom: 60 };
+    mocks.invoke.mockImplementation(async (command: string, args?: unknown) => {
+      if (command === "detect_figures") return [{ bbox, score: 0.9 }];
+      if (command === "run_ocr") return numberRegionHocr;
+      const result = await base(command, args as never);
+      if (command === "open_project" && firstOpen) {
+        firstOpen = false;
+        const info = result as { manifest: string };
+        const manifest = JSON.parse(info.manifest);
+        manifest.pages[0].status = "pending";
+        manifest.pages[0].autoFigureDetection = true;
+        return { ...info, manifest: JSON.stringify(manifest) };
+      }
+      return result;
+    });
+    await openSavedProject("");
+    const ocr = Array.from(container.querySelectorAll<HTMLButtonElement>("button")).find(button => button.textContent?.trim() === "OCR current")!;
+    await waitFor(() => expect(ocr.disabled).toBe(false));
+    await act(async () => ocr.click());
+    await waitFor(() => expect(persistedPages.has("page-1")).toBe(true));
+    const calls = mocks.invoke.mock.calls.map(call => call[0]);
+    expect(calls.indexOf("detect_figures")).toBeGreaterThanOrEqual(0);
+    expect(calls.indexOf("detect_figures")).toBeLessThan(calls.indexOf("run_ocr"));
+    const figures = JSON.parse(persistedPages.get("page-1")!).figureRegions;
+    expect(figures).toHaveLength(1);
+    expect(figures[0]).toMatchObject({ kind: "figure", bbox });
+    await act(async () => window.dispatchEvent(new KeyboardEvent("keydown", { key: "z", ctrlKey: true, cancelable: true })));
+    await waitFor(() => expect(persistedPages.has("page-1")).toBe(false));
+    await act(async () => window.dispatchEvent(new KeyboardEvent("keydown", { key: "y", ctrlKey: true, cancelable: true })));
+    await waitFor(() => expect(persistedPages.has("page-1")).toBe(true));
+    expect(JSON.parse(persistedPages.get("page-1")!).figureRegions).toEqual(figures);
+  });
+
   it("keeps the page and history cursor unchanged when saving an undo fails", async () => {
     await openSavedProject();
     await act(async () => container.querySelector<SVGRectElement>(".layout-svg rect")!.dispatchEvent(new MouseEvent("click", { bubbles: true })));
@@ -799,12 +867,13 @@ describe("saved project loading", () => {
     });
     expect(container.querySelector(".region-selection")).not.toBeNull();
     await act(async () => surface.dispatchEvent(pointer("pointerup", 50, 40)));
-    await waitFor(() => expect(mocks.invoke).toHaveBeenCalledWith("run_ocr", expect.objectContaining({ psm: 11 })));
+    await waitFor(() => expect(mocks.invoke).toHaveBeenCalledWith("run_ocr", expect.objectContaining({ psm: 11, disableRowNoiseRejection: true })));
     await waitFor(() => expect(JSON.parse(persistedPages.get("page-1")!).manualOcrRegions).toHaveLength(1));
     const saved = JSON.parse(persistedPages.get("page-1")!);
     expect(saved.manualOcrRegions[0].bbox).toEqual({ left: 10, top: 20, right: 50, bottom: 40 });
     expect(mocks.invoke.mock.calls.filter(([command]) => command === "run_ocr")).toHaveLength(1);
     expect(saved.manualOcrRegions[0].psm).toBe(11);
+    expect(saved.manualOcrRegions[0].disableRowNoiseRejection).toBe(true);
     expect(container.textContent).toContain("15");
     const undoButton = Array.from(container.querySelectorAll<HTMLButtonElement>("button")).find(item => item.textContent?.includes("Undo"))!;
     await act(async () => undoButton.click());
@@ -819,11 +888,46 @@ describe("saved project loading", () => {
     await waitFor(() => expect(JSON.parse(persistedPages.get("page-1")!).manualOcrRegions?.[0].psm).toBe(6));
     const calls = mocks.invoke.mock.calls.filter(([command]) => command === "run_ocr");
     expect(calls.map(([, args]) => args.psm)).toEqual([11, 6]);
+    expect(calls.every(([, args]) => args.disableRowNoiseRejection === true)).toBe(true);
     expect(calls[1][1]).toEqual({ ...calls[0][1], psm: 6 });
     expect(mocks.invoke.mock.calls.filter(([command, args]) => command === "save_project_state" && args.updates.some((update: { expectedData?: string }) => update.expectedData !== undefined))).toHaveLength(1);
     expect(container.textContent).toContain("saved page one");
     await act(async () => Array.from(container.querySelectorAll<HTMLButtonElement>("button")).find(button => button.textContent?.includes("Undo"))!.click());
     await waitFor(() => expect(JSON.parse(persistedPages.get("page-1")!).manualOcrRegions).toBeUndefined());
+  });
+
+  it.each([
+    { psm: 6, disableRowNoiseRejection: true },
+    { psm: 7, disableRowNoiseRejection: true },
+    { psm: 6, disableRowNoiseRejection: false },
+    { psm: 7, disableRowNoiseRejection: false },
+  ])("uses the selected PSM $psm and row-noise setting $disableRowNoiseRejection for added regions", async ({ psm, disableRowNoiseRejection }) => {
+    const base = mocks.invoke.getMockImplementation()!;
+    mocks.invoke.mockImplementation(async (command: string, args?: { disableRowNoiseRejection?: boolean }) =>
+      command === "run_ocr" ? (args?.disableRowNoiseRejection ? numberRegionHocr.replace(">2<", ">[......]<") : emptyRegionHocr) : base(command, args as never));
+    await openSavedProject();
+    const before = persistedPages.get("page-1");
+    expect(container.querySelector(".region-ocr-options")).toBeNull();
+    await dragOcrRegion(container, async () => {
+      const mode = container.querySelector<HTMLSelectElement>(".region-ocr-options select")!;
+      const toggle = container.querySelector<HTMLInputElement>(".region-ocr-options input")!;
+      expect(mode.value).toBe("11");
+      expect(toggle.checked).toBe(true);
+      await act(async () => {
+        mode.value = String(psm);
+        mode.dispatchEvent(new Event("change", { bubbles: true }));
+        if (!disableRowNoiseRejection) toggle.click();
+      });
+    });
+    await waitFor(() => expect(mocks.invoke).toHaveBeenCalledWith("run_ocr", expect.objectContaining({ psm, disableRowNoiseRejection })));
+    if (disableRowNoiseRejection) {
+      await waitFor(() => expect(JSON.parse(persistedPages.get("page-1")!).manualOcrRegions?.[0]).toMatchObject({ psm, disableRowNoiseRejection }));
+      expect(container.textContent).toContain("[......]");
+    } else {
+      await waitFor(() => expect(container.textContent).toContain("No new text was found"));
+      expect(persistedPages.get("page-1")).toBe(before);
+    }
+    expect(mocks.invoke.mock.calls.filter(([command]) => command === "run_ocr")).toHaveLength(1);
   });
 
   it("leaves the page unchanged when both region OCR attempts are empty", async () => {
@@ -848,6 +952,7 @@ describe("saved project loading", () => {
     await openSavedProject();
     await dragOcrRegion(container);
     await waitFor(() => expect(mocks.invoke).toHaveBeenCalledWith("run_ocr", expect.objectContaining({ psm: 11 })));
+    expect(container.querySelector(".region-ocr-options")).toBeNull();
     await act(async () => Array.from(container.querySelectorAll<HTMLButtonElement>("button")).find(button => button.textContent?.trim() === "Cancel")!.click());
     await act(async () => finish(emptyRegionHocr));
     await waitFor(() => expect(container.textContent).toContain("OCR was cancelled"));
@@ -869,13 +974,13 @@ describe("saved project loading", () => {
 
   it("deletes a clicked line from the OCR pane and can undo it", async () => {
     await openSavedProject();
-    const button = Array.from(container.querySelectorAll<HTMLButtonElement>("button")).find(item => item.textContent?.includes("Delete OCR region"))!;
+    const button = Array.from(container.querySelectorAll<HTMLButtonElement>("button")).find(item => item.textContent?.includes("Delete region"))!;
     expect(button.disabled).toBe(false);
     await act(async () => button.click());
     expect(button.getAttribute("aria-pressed")).toBe("true");
     expect(container.querySelector(".pdf-pane.region-inactive")).not.toBeNull();
     expect(container.querySelector(".ocr-pane.region-inactive")).toBeNull();
-    expect(container.querySelector(".region-instruction")?.textContent).toContain("Click a line");
+    expect(container.querySelector(".region-instruction")?.textContent).toContain("smallest region");
     const surface = container.querySelector<HTMLDivElement>(".layout-card")!;
     vi.spyOn(surface, "getBoundingClientRect").mockReturnValue({ left: 0, top: 0, right: 100, bottom: 80, width: 100, height: 80 } as DOMRect);
     Object.defineProperties(surface, {
@@ -898,6 +1003,133 @@ describe("saved project loading", () => {
     await waitFor(() => expect(container.textContent).toContain("saved page one"));
   });
 
+  it("adds a tightly cropped table, persists it, and restores it with undo and redo", async () => {
+    const context = HTMLCanvasElement.prototype.getContext.call(document.createElement("canvas"), "2d") as CanvasRenderingContext2D;
+    context.getImageData = vi.fn((_x, _y, width: number, height: number) => {
+      const data = new Uint8ClampedArray(width * height * 4).fill(255);
+      for (let y = 3; y < 8; y++) for (let x = 2; x < 9; x++) data.set([0, 0, 0, 255], (y * width + x) * 4);
+      return { data, width, height } as ImageData;
+    });
+    vi.spyOn(HTMLCanvasElement.prototype, "toDataURL").mockReturnValue("data:image/png;base64,AAAA");
+    await openSavedProject();
+    const canvas = container.querySelector<HTMLCanvasElement>(".rendered-page")!;
+    vi.spyOn(canvas, "getBoundingClientRect").mockReturnValue({ left: 0, top: 0, right: 100, bottom: 80, width: 100, height: 80 } as DOMRect);
+    const surface = container.querySelector<HTMLDivElement>(".pdf-page")!;
+    Object.defineProperties(surface, {
+      setPointerCapture: { configurable: true, value: vi.fn() },
+      hasPointerCapture: { configurable: true, value: vi.fn(() => true) },
+      releasePointerCapture: { configurable: true, value: vi.fn() },
+    });
+    const pointer = (type: string, x: number, y: number) => {
+      const event = new MouseEvent(type, { bubbles: true, button: 0, clientX: x, clientY: y });
+      Object.defineProperty(event, "pointerId", { value: 10 }); return event;
+    };
+    await act(async () => Array.from(container.querySelectorAll<HTMLButtonElement>("button")).find(button => button.textContent?.trim() === "Add figure/table region")!.click());
+    await act(async () => { surface.dispatchEvent(pointer("pointerdown", 10, 35)); surface.dispatchEvent(pointer("pointerup", 50, 65)); });
+    expect(container.querySelector(".figure-region-coordinates")?.textContent).toContain("12, 38 — 19, 43");
+    expect(container.querySelector(".figure-region-preview")?.getAttribute("src")).toBe("data:image/png;base64,AAAA");
+    const select = container.querySelector<HTMLSelectElement>(".figure-region-modal select")!;
+    await act(async () => { select.value = "table"; select.dispatchEvent(new Event("change", { bubbles: true })); });
+    await act(async () => container.querySelector<HTMLButtonElement>(".figure-region-modal .primary")!.click());
+    await waitFor(() => expect(container.querySelector(".figure-region-modal")).toBeNull());
+    const figure = JSON.parse(persistedPages.get("page-1")!).figureRegions[0];
+    expect(figure.kind).toBe("table");
+    expect(figure.bbox).toEqual({ left: 12, top: 38, right: 19, bottom: 43 });
+    expect(container.querySelector(".figure-layout-region image")?.getAttribute("href")).toBe("data:image/png;base64,AAAA");
+    expect(container.textContent).toContain("saved page one");
+    await act(async () => window.dispatchEvent(new KeyboardEvent("keydown", { key: "z", ctrlKey: true })));
+    await waitFor(() => expect(container.querySelector(".figure-layout-region")).toBeNull());
+    await act(async () => window.dispatchEvent(new KeyboardEvent("keydown", { key: "y", ctrlKey: true })));
+    await waitFor(() => expect(container.querySelector(".figure-layout-region image")).not.toBeNull());
+    await act(async () => root.unmount()); root = createRoot(container);
+    await openSavedProject();
+    await waitFor(() => expect(container.querySelector(".figure-layout-region image")).not.toBeNull());
+    expect(JSON.parse(persistedPages.get("page-1")!).figureRegions[0]).toEqual(figure);
+  });
+
+  it("exports images from saved figures on all pages and preserves them after re-OCR", async () => {
+    vi.spyOn(HTMLCanvasElement.prototype, "toDataURL").mockReturnValue("data:image/png;base64,AAAA");
+    for (const id of ["page-1", "page-2"]) {
+      const page = JSON.parse(persistedPages.get(id)!);
+      page.figureRegions = [{ id: `${id}-figure`, kind: "figure", bbox: { left: 10, top: 35, right: 50, bottom: 65 } }];
+      page.readingOrderIds = [`${id}-figure`, `${id}-line`]; page.manualReadingOrder = true;
+      persistedPages.set(id, JSON.stringify(page));
+    }
+    const base = mocks.invoke.getMockImplementation()!;
+    mocks.invoke.mockImplementation(async (command: string, args?: unknown) => command === "run_ocr" ? numberRegionHocr : base(command, args as never));
+    await openSavedProject();
+    vi.spyOn(globalThis, "fetch").mockImplementation(async () => ({ ok: true, status: 200, arrayBuffer: async () => Uint8Array.of(0, 1).buffer } as Response));
+    await act(async () => Array.from(container.querySelectorAll<HTMLButtonElement>("button")).find(button => button.textContent?.trim() === "HTML")!.click());
+    const call = mocks.invoke.mock.calls.find(([command]) => command === "export_file")!;
+    const html = atob(call[1].contentBase64);
+    expect(html.match(/src="data:image\/png;base64,AAAA"/g)).toHaveLength(2);
+    expect(html.indexOf('data-region-id="page-1-figure"')).toBeLessThan(html.indexOf("saved page one"));
+    await act(async () => Array.from(container.querySelectorAll<HTMLButtonElement>("button")).find(button => button.textContent?.trim() === "OCR current")!.click());
+    await waitFor(() => expect(container.querySelector(".modal-actions .primary")).not.toBeNull());
+    await act(async () => container.querySelector<HTMLButtonElement>(".modal-actions .primary")!.click());
+    await waitFor(() => expect(JSON.parse(persistedPages.get("page-1")!).blocks[0].paragraphs[0].lines[0].correctedText).toBe("2"));
+    const after = JSON.parse(persistedPages.get("page-1")!);
+    expect(after.figureRegions[0].id).toBe("page-1-figure");
+    expect(after.readingOrderIds).toBeUndefined();
+    expect(after.manualReadingOrder).toBeUndefined();
+    expect(container.querySelector(".figure-layout-region image")).not.toBeNull();
+  });
+
+  it("deletes the smallest overlapping figure on click and all intersecting regions on drag", async () => {
+    vi.spyOn(HTMLCanvasElement.prototype, "toDataURL").mockReturnValue("data:image/png;base64,AAAA");
+    const saved = JSON.parse(persistedPages.get("page-1")!);
+    saved.figureRegions = [{ id: "small-figure", kind: "figure", bbox: { left: 10, top: 12, right: 20, bottom: 22 } }];
+    persistedPages.set("page-1", JSON.stringify(saved));
+    await openSavedProject();
+    const surface = container.querySelector<HTMLDivElement>(".layout-card")!;
+    vi.spyOn(surface, "getBoundingClientRect").mockReturnValue({ left: 0, top: 0, right: 100, bottom: 80, width: 100, height: 80 } as DOMRect);
+    Object.defineProperties(surface, { setPointerCapture: { value: vi.fn() }, hasPointerCapture: { value: vi.fn(() => true) }, releasePointerCapture: { value: vi.fn() } });
+    const pointer = (type: string, x: number, y: number) => {
+      const event = new MouseEvent(type, { bubbles: true, button: 0, clientX: x, clientY: y });
+      Object.defineProperty(event, "pointerId", { value: 11 }); return event;
+    };
+    const deleteButton = () => Array.from(container.querySelectorAll<HTMLButtonElement>("button")).find(button => button.textContent?.trim() === "Delete region")!;
+    await act(async () => deleteButton().click());
+    await act(async () => { surface.dispatchEvent(pointer("pointerdown", 15, 17)); surface.dispatchEvent(pointer("pointerup", 15, 17)); });
+    await waitFor(() => expect(JSON.parse(persistedPages.get("page-1")!).figureRegions).toHaveLength(0));
+    expect(container.textContent).toContain("saved page one");
+    await act(async () => window.dispatchEvent(new KeyboardEvent("keydown", { key: "z", ctrlKey: true })));
+    await waitFor(() => expect(container.querySelector(".figure-layout-region image")).not.toBeNull());
+    await act(async () => deleteButton().click());
+    await act(async () => { surface.dispatchEvent(pointer("pointerdown", 8, 8)); surface.dispatchEvent(pointer("pointerup", 25, 25)); });
+    await waitFor(() => expect(JSON.parse(persistedPages.get("page-1")!).blocks).toHaveLength(0));
+    expect(JSON.parse(persistedPages.get("page-1")!).figureRegions).toHaveLength(0);
+    expect(container.textContent).toContain("Deleted 2 region");
+  });
+
+  it("includes image regions in the reading-order overlay and saves their chosen positions", async () => {
+    vi.spyOn(HTMLCanvasElement.prototype, "toDataURL").mockReturnValue("data:image/png;base64,AAAA");
+    const saved = JSON.parse(persistedPages.get("page-1")!);
+    saved.figureRegions = [{ id: "figure", kind: "figure", bbox: { left: 10, top: 40, right: 50, bottom: 50 } }];
+    persistedPages.set("page-1", JSON.stringify(saved));
+    await openSavedProject();
+    await act(async () => Array.from(container.querySelectorAll<HTMLButtonElement>("button")).find(button => button.textContent?.trim() === "Change reading order")!.click());
+    expect(container.querySelectorAll(".reading-order-overlay circle")).toHaveLength(2);
+    const surface = container.querySelector<HTMLDivElement>(".layout-card")!;
+    vi.spyOn(surface, "getBoundingClientRect").mockReturnValue({ left: 0, top: 0, right: 100, bottom: 80, width: 100, height: 80 } as DOMRect);
+    Object.defineProperties(surface, { setPointerCapture: { value: vi.fn() }, hasPointerCapture: { value: vi.fn(() => true) }, releasePointerCapture: { value: vi.fn() } });
+    const clickRegion = async (y: number) => {
+      await act(async () => {
+        for (const type of ["pointerdown", "pointerup"]) {
+          const event = new MouseEvent(type, { bubbles: true, button: 0, clientX: 15, clientY: y });
+          Object.defineProperty(event, "pointerId", { value: 12 }); surface.dispatchEvent(event);
+        }
+      });
+    };
+    await clickRegion(45); await clickRegion(20);
+    await waitFor(() => expect(JSON.parse(persistedPages.get("page-1")!).readingOrderIds).toEqual(["figure", "page-1-line"]));
+    expect(container.querySelector(".figure-layout-region rect")?.getAttribute("class")).toBe("reading-order-chosen");
+    await act(async () => window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" })));
+    await act(async () => window.dispatchEvent(new KeyboardEvent("keydown", { key: "z", ctrlKey: true })));
+    await waitFor(() => expect(JSON.parse(persistedPages.get("page-1")!).readingOrderIds).toBeUndefined());
+    expect(container.querySelector(".figure-layout-region image")).not.toBeNull();
+  });
+
   it("deletes every OCR line overlapped by a drag on the recognition layout", async () => {
     const saved = JSON.parse(persistedPages.get("page-1")!);
     saved.blocks[0].paragraphs[0].lines.push({ ...saved.blocks[0].paragraphs[0].lines[0],
@@ -905,7 +1137,7 @@ describe("saved project loading", () => {
       originalText: "second OCR line", correctedText: "second OCR line" });
     persistedPages.set("page-1", JSON.stringify(saved));
     await openSavedProject();
-    const button = Array.from(container.querySelectorAll<HTMLButtonElement>("button")).find(item => item.textContent?.includes("Delete OCR region"))!;
+    const button = Array.from(container.querySelectorAll<HTMLButtonElement>("button")).find(item => item.textContent?.includes("Delete region"))!;
     await act(async () => button.click());
     const surface = container.querySelector<HTMLDivElement>(".layout-card")!;
     vi.spyOn(surface, "getBoundingClientRect").mockReturnValue({ left: 0, top: 0, right: 100, bottom: 80, width: 100, height: 80 } as DOMRect);
@@ -926,7 +1158,7 @@ describe("saved project loading", () => {
     expect(container.querySelector(".region-selection.deleting")).not.toBeNull();
     await act(async () => surface.dispatchEvent(pointer("pointerup", 50, 55)));
     await waitFor(() => expect(JSON.parse(persistedPages.get("page-1")!).blocks).toHaveLength(0));
-    expect(container.textContent).toContain("Deleted 2 OCR line");
+    expect(container.textContent).toContain("Deleted 2 region");
   });
 
   it("merges same-row OCR regions dragged on the recognition layout and can undo", async () => {
@@ -977,7 +1209,7 @@ describe("saved project loading", () => {
     await openSavedProject();
     for (const [start, finish] of [
       ["Add OCR region", "Finish adding OCR regions"],
-      ["Delete OCR region", "Finish deleting OCR regions"],
+      ["Delete region", "Finish deleting regions"],
       ["Merge OCR regions", "Finish merging OCR regions"],
     ]) {
       const button = Array.from(container.querySelectorAll<HTMLButtonElement>("button"))
@@ -1104,6 +1336,76 @@ describe("saved project loading", () => {
     expect(container.querySelectorAll<HTMLButtonElement>(".page-item")[0].className).toContain("active");
   });
 
+  it.each(["bold", "italic", "superscript", "subscript"] as const)("retains %s when choosing a replacement candidate", async kind => {
+    const page = JSON.parse(savedPage("page-1", "left sz right", 1));
+    page.blocks[0].paragraphs[0].lines[0].formatting = [{start:5,end:7,kind}];
+    persistedPages.set("page-1", JSON.stringify(page));
+    await openSavedProject("left sz right");
+    await act(async () => container.querySelector<SVGRectElement>("svg rect")!.dispatchEvent(new MouseEvent("click", { bubbles:true })));
+    const editor = container.querySelector<HTMLTextAreaElement>("textarea.line-overlay")!;
+    await act(async () => { editor.setSelectionRange(5,7); editor.dispatchEvent(new Event("select", {bubbles:true})); });
+    await act(async () => container.querySelector<HTMLButtonElement>('.text-candidate[aria-label="š"]')!.click());
+    expect(editor.value).toBe("left š right");
+    expect(editor.selectionStart).toBe(6);
+    await act(async () => editor.dispatchEvent(new KeyboardEvent("keydown", {key:"Enter",bubbles:true})));
+    await act(async () => { await waitFor(() => expect(JSON.parse(persistedPages.get("page-1")!).blocks[0].paragraphs[0].lines[0].correctedText).toBe("left š right")); });
+    expect(JSON.parse(persistedPages.get("page-1")!).blocks[0].paragraphs[0].lines[0].formatting).toEqual([{start:5,end:6,kind}]);
+  });
+
+  it.each(["click", "shortcut"])("restores the editing caret after a candidate replacement via %s", async mode => {
+    persistedPages.set("page-1", savedPage("page-1", "left sz right", 1));
+    await openSavedProject("left sz right");
+    await act(async () => container.querySelector<SVGRectElement>("svg rect")!.dispatchEvent(new MouseEvent("click", { bubbles: true })));
+    const editor = container.querySelector<HTMLTextAreaElement>("textarea.line-overlay")!;
+    await act(async () => {
+      editor.setSelectionRange(5, 7, "backward");
+      editor.dispatchEvent(new Event("select", { bubbles: true }));
+    });
+    if (mode === "click") {
+      const candidate = container.querySelector<HTMLButtonElement>('.text-candidate[aria-label="š"]')!;
+      expect(candidate).not.toBeNull();
+      await act(async () => {
+        candidate.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, cancelable: true }));
+        candidate.click();
+      });
+    } else {
+      await act(async () => editor.dispatchEvent(new KeyboardEvent("keydown", {key:"1",ctrlKey:true,bubbles:true})));
+    }
+    await waitFor(() => expect(editor.value).toBe("left š right"));
+    expect(document.activeElement).toBe(editor);
+    expect(editor.selectionStart).toBe(6);
+    expect(editor.selectionEnd).toBe(6);
+    expect(container.querySelector(".text-candidate")).toBeNull();
+    // The next typed character belongs at the replacement site, not the line end.
+    await act(async () => {
+      const at = editor.selectionStart;
+      Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")!.set!.call(editor,
+        editor.value.slice(0, at) + "!" + editor.value.slice(at));
+      editor.setSelectionRange(at + 1, at + 1);
+      editor.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    expect(editor.value).toBe("left š! right");
+  });
+
+  it("starts editing at the clicked glyph boundary and preserves later caret movement", async () => {
+    persistedPages.set("page-1", savedPage("page-1", "Wii", 1));
+    await openSavedProject("Wii");
+    const hit = container.querySelector<SVGRectElement>(".layout-svg rect")!;
+    const text = hit.parentElement!.querySelector("text")!;
+    Object.assign(text, {
+      getScreenCTM:()=>({a:2,c:0,e:100}), getNumberOfChars:()=>3,
+      getStartPositionOfChar:(index:number)=>({x:[0,30,35][index],y:0}),
+      getEndPositionOfChar:(index:number)=>({x:[30,35,40][index],y:0}),
+    });
+    await act(async () => hit.dispatchEvent(new MouseEvent("click", {bubbles:true,clientX:158})));
+    const editor = container.querySelector<HTMLTextAreaElement>("textarea.line-overlay")!;
+    expect(document.activeElement).toBe(editor);
+    expect(editor.selectionStart).toBe(1);
+    expect(editor.selectionEnd).toBe(1);
+    await act(async () => { editor.setSelectionRange(2,2); editor.dispatchEvent(new Event("select",{bubbles:true})); });
+    expect(editor.selectionStart).toBe(2);
+  });
+
   it("keeps action labels below shortcut keys while Ctrl is pressed", async () => {
     await openSavedProject();
     const firstRect = container.querySelector<SVGRectElement>("svg rect")!;
@@ -1141,6 +1443,15 @@ describe("saved project loading", () => {
     expect(raised.style.fontSize).toBe("0.7em");
     expect(raised.style.top).toBe("0.1em");
     expect(raised.style.bottom).toBe("auto");
+    expect(mirror.querySelector(".formatted-edit-caret")).toBeNull();
+    await act(async () => {
+      editor.setSelectionRange(3, 3);
+      editor.dispatchEvent(new Event("select", { bubbles: true }));
+    });
+    const visualCaret = mirror.querySelector(".formatted-edit-caret")!;
+    expect(visualCaret.parentElement).toBe(raised);
+    expect(visualCaret.previousSibling?.textContent).toBe("sav");
+    expect(visualCaret.nextSibling?.textContent).toBe("ed");
   });
 
   it("replaces selected matches across pages and navigates on undo and redo", async () => {
@@ -1215,6 +1526,79 @@ describe("saved project loading", () => {
     await waitFor(() => expect(container.querySelectorAll("svg text")).toHaveLength(2));
   });
 
+  it("exports PDF geometry for every saved page in hOCR", async () => {
+    await openSavedProject();
+    await act(async () => Array.from(container.querySelectorAll<HTMLButtonElement>("button")).find(button => button.textContent === "hOCR")!.click());
+    await waitFor(() => expect(mocks.invoke.mock.calls.some(([command]) => command === "export_file")).toBe(true));
+    const call = mocks.invoke.mock.calls.find(([command]) => command === "export_file")!;
+    const hocr = atob((call[1] as { contentBase64: string }).contentBase64);
+    expect(hocr).toContain('name="eduba-hocr-version" content="1"');
+    expect(hocr.match(/x_edubapagetopdf 1 0 0 -1 0 80/g)).toHaveLength(2);
+    expect(hocr).toContain("x_edubasourcepage 2");
+    expect(hocr).toContain("x_edubapreprocessorder deskew-split");
+  });
+
+  it("exports hOCR with a per-page warning when saved OCR dimensions differ from the PDF reconstruction", async () => {
+    const page = JSON.parse(persistedPages.get("page-2")!);
+    page.width = 101;
+    persistedPages.set("page-2", JSON.stringify(page));
+    await openSavedProject();
+    await act(async () => Array.from(container.querySelectorAll<HTMLButtonElement>("button")).find(button => button.textContent === "hOCR")!.click());
+    await waitFor(() => expect(container.textContent).toContain("PDF coordinate restoration information is incomplete"));
+    const call = mocks.invoke.mock.calls.find(([command]) => command === "export_file")!;
+    const xml = new DOMParser().parseFromString(atob((call[1] as {contentBase64:string}).contentBase64), "application/xml");
+    const titles = [...xml.querySelectorAll(".ocr_page")].map(page=>page.getAttribute("title")!);
+    expect(titles[0]).toContain("x_edubacoordinates complete");
+    expect(titles[1]).toContain("x_edubacoordinatereason coordinate-mismatch");
+    expect(titles[1]).not.toContain("x_edubapagetopdf");
+    expect(xml.documentElement.textContent).toContain("saved page two");
+  });
+
+  it("exports hOCR text even when the source PDF fingerprint is unavailable", async () => {
+    // Configure before opening; keep PDF rendering available but remove its identity.
+    const sourcePdf = { numPages: 2, fingerprints: [], getPage: vi.fn(async () => ({
+      view:[0,0,100,80],rotate:0,userUnit:1,
+      getViewport:()=>({width:100,height:80}), render:()=>({promise:Promise.resolve()}),
+    })) };
+    mocks.openProjectPdf.mockResolvedValue(sourcePdf);
+    await openSavedProject();
+    await act(async () => Array.from(container.querySelectorAll<HTMLButtonElement>("button")).find(button => button.textContent === "hOCR")!.click());
+    await waitFor(() => expect(container.textContent).toContain("PDF coordinate restoration information is incomplete"));
+    const call = mocks.invoke.mock.calls.find(([command]) => command === "export_file")!;
+    const hocr = atob((call[1] as {contentBase64:string}).contentBase64);
+    expect(hocr).toContain("saved page one");
+    expect(hocr).toContain("x_edubacoordinatereason missing-source");
+    expect(hocr).not.toContain("; x_edubapagetopdf ");
+  });
+
+  it("recovers a missing render DPI from saved OCR resolution before declaring coordinates unavailable", async () => {
+    const page = JSON.parse(persistedPages.get("page-1")!);
+    page.sourceDpiX = 600; page.sourceDpiY = 600;
+    persistedPages.set("page-1", JSON.stringify(page));
+    await openSavedProject();
+    mocks.loadPageImage.mockClear();
+    await act(async () => Array.from(container.querySelectorAll<HTMLButtonElement>("button")).find(button => button.textContent === "hOCR")!.click());
+    await waitFor(() => expect(mocks.invoke.mock.calls.some(([command]) => command === "export_file")).toBe(true));
+    expect(mocks.loadPageImage).toHaveBeenCalledWith(expect.anything(), "render", 600);
+    const call = mocks.invoke.mock.calls.find(([command]) => command === "export_file")!;
+    expect(atob((call[1] as {contentBase64:string}).contentBase64)).toContain('name="eduba-hocr-coordinates" content="complete"');
+  });
+
+  it("continues hOCR export after a PDF page reconstruction error", async () => {
+    await openSavedProject();
+    const sourcePdf = await mocks.openProjectPdf.mock.results[0].value;
+    sourcePdf.getPage.mockRejectedValueOnce(new Error("Page decoding failed"));
+    await act(async () => Array.from(container.querySelectorAll<HTMLButtonElement>("button")).find(button => button.textContent === "hOCR")!.click());
+    await waitFor(() => expect(container.textContent).toContain("PDF coordinate restoration information is incomplete"));
+    const call = mocks.invoke.mock.calls.find(([command]) => command === "export_file")!;
+    const xml = new DOMParser().parseFromString(atob((call[1] as {contentBase64:string}).contentBase64), "application/xml");
+    const titles = [...xml.querySelectorAll(".ocr_page")].map(page=>page.getAttribute("title")!);
+    expect(titles[0]).toContain("x_edubacoordinatereason reconstruction-failed");
+    expect(titles[1]).toContain("x_edubacoordinates complete");
+    expect(xml.documentElement.textContent).toContain("saved page one");
+    expect(xml.documentElement.textContent).toContain("saved page two");
+  });
+
   it("exports readable HTML through its own button with all page labels", async () => {
     await openSavedProject();
     vi.spyOn(globalThis, "fetch").mockImplementation(async () => ({ ok: true, status: 200, arrayBuffer: async () => Uint8Array.of(0, 1).buffer } as Response));
@@ -1247,5 +1631,56 @@ describe("saved project loading", () => {
     const html = atob((call[1] as { contentBase64: string }).contentBase64);
     expect(html).toContain('class="page-label">2</header>');
     expect(html).not.toContain('class="page-label">1</header>');
+  });
+
+  it.each(["TXT", "hOCR", "HTML", "SVG"])("exports only proofread pages in %s", async format => {
+    await openSavedProject();
+    vi.spyOn(globalThis, "fetch").mockImplementation(async () => ({ ok: true, status: 200, arrayBuffer: async () => Uint8Array.of(0, 1).buffer } as Response));
+    await act(async () => container.querySelectorAll<HTMLButtonElement>(".page-item")[1].click());
+    await waitFor(() => expect(container.textContent).toContain("saved page two"));
+    await act(async () => container.querySelector<HTMLInputElement>(".page-complete-toggle input")!.click());
+    await act(async () => container.querySelectorAll<HTMLButtonElement>(".page-item")[0].click());
+    await waitFor(() => expect(container.textContent).toContain("saved page one"));
+    const scope = Array.from(container.querySelectorAll<HTMLSelectElement>("select")).find(select => Array.from(select.options).some(option => option.value === "completed"))!;
+    expect(scope.querySelector('option[value="completed"]')?.textContent).toBe("Proofread pages only");
+    await act(async () => {
+      scope.value = "completed";
+      scope.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    mocks.invoke.mockClear();
+    await act(async () => Array.from(container.querySelectorAll<HTMLButtonElement>("button")).find(button => button.textContent?.trim() === format)!.click());
+    await waitFor(() => expect(mocks.invoke.mock.calls.some(([command]) => command === "export_file")).toBe(true));
+    expect(mocks.invoke.mock.calls.filter(([command]) => command === "load_page").map(([, args]) => args.pageId)).toEqual(["page-2"]);
+    const call = mocks.invoke.mock.calls.find(([command]) => command === "export_file")!;
+    const content = atob(call[1].contentBase64);
+    expect(content).toContain("saved page two");
+    expect(content).not.toContain("saved page one");
+    if (format === "hOCR") {
+      const xml = new DOMParser().parseFromString(content, "application/xml");
+      expect(xml.querySelectorAll(".ocr_page")).toHaveLength(1);
+      const title = xml.querySelector(".ocr_page")!.getAttribute("title")!;
+      expect(title).toContain("ppageno 0;");
+      expect(title).toContain("x_edubasourcepage 2;");
+      expect(title).toContain("x_edubapagetopdf 1 0 0 -1 0 80");
+    }
+    if (format === "HTML") {
+      expect(content).toContain('class="page-label">2</header>');
+      expect(content).not.toContain('class="page-label">1</header>');
+    }
+    if (format === "SVG") expect(mocks.dialogSave).toHaveBeenLastCalledWith(expect.objectContaining({ defaultPath: "reading.svg" }));
+  });
+
+  it("does not open a save dialog or write a file when no pages are proofread", async () => {
+    await openSavedProject();
+    const scope = Array.from(container.querySelectorAll<HTMLSelectElement>("select")).find(select => Array.from(select.options).some(option => option.value === "completed"))!;
+    await act(async () => {
+      scope.value = "completed";
+      scope.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    mocks.invoke.mockClear();
+    await act(async () => Array.from(container.querySelectorAll<HTMLButtonElement>("button")).find(button => button.textContent?.trim() === "TXT")!.click());
+    await waitFor(() => expect(container.textContent).toContain("There are no proofread OCR pages to export."));
+    expect(mocks.dialogSave).not.toHaveBeenCalled();
+    expect(mocks.invoke.mock.calls.some(([command]) => command === "export_file" || command === "load_page")).toBe(false);
   });
 });

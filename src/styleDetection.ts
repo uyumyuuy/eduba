@@ -50,8 +50,15 @@ export function applyWordStylePredictions(page: DocumentPage, predictionsByLine:
     samples.forEach((entry, index) => {
       const prediction = predictions[index];
       if (!prediction) return;
-      if (prediction.italic) ranges.push({ start: entry.start, end: entry.end, kind: "italic" });
-      if (prediction.bold) ranges.push({ start: entry.start, end: entry.end, kind: "bold" });
+      if (prediction.italic) {
+        // Keep punctuation and symbols upright without changing classifier crops.
+        // match.index and match[0].length use the same UTF-16 offsets as formatting.
+        for (const match of entry.sample.text.matchAll(/[\p{L}\p{N}\p{M}]+/gu)) {
+          const start = entry.start + match.index;
+          ranges.push({ start, end: start + match[0].length, kind: "italic" });
+        }
+      }
+      // Bold classification is temporarily ignored because its accuracy is insufficient.
     });
     const scripts = (line.autoFormatting ?? []).filter(range => range.kind === "superscript" || range.kind === "subscript");
     line.autoFormatting = [...scripts, ...ranges].length ? [...scripts, ...ranges] : undefined;

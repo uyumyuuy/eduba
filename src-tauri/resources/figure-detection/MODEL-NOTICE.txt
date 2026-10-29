@@ -1,0 +1,8 @@
+PicoDet-S_layout_3cls (PaddlePaddle / PaddleOCR)
+Original model: https://huggingface.co/PaddlePaddle/PicoDet-S_layout_3cls
+Revision: db636e60872752f4ed6cf9cde51eea0ee8dae3d4
+License: Apache License 2.0 (see LICENSE)
+Eduba modification: converted the official Paddle model to ONNX opset 19,
+batch size 1, using PaddlePaddle 3.1.1 and Paddle2ONNX 2.1.0.
+ONNX SHA256: 17339365e8f496a3bffad890ff68dcd7bc64212b73338e2651c07b4df93bf580
+Original model card and inference configuration are preserved alongside this file.

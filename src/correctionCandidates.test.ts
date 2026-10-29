@@ -1,89 +1,98 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
-import candidateData from "./assets/scan-candidate-character-confusions.json";
+import { describe, expect, it, vi } from "vitest";
 import { candidatesForSelection, convert, convertIndexToAccent } from "./correctionCandidates";
+import { choicesForSelection } from "./ocrChoices";
+import { allLines, parseHocr, updateLineText } from "./domain";
+import { exportFixtureHocr } from "./testSupport/hocr";
 
-describe("transliteration candidates", () => {
-  it("ports the legacy transliteration and index accent conversion", () => {
+vi.mock("./assets/scan-candidate-character-confusions.json", () => ({ default: { output_to_gt: {
+  g: { gt_candidates: [{ gt_character: "g", count: 999 }, { gt_character: "q", count: 6 }] },
+  m: { gt_candidates: [{ gt_character: "n", count: 500 }, { gt_character: "é", count: 100 }, { gt_character: "z", count: 4 }] },
+  c: { gt_candidates: [{ gt_character: "C", count: 500 }, { gt_character: "e", count: 8 }, { gt_character: "š", count: 4 }] },
+} } }));
+
+describe("correction candidate sources", () => {
+  it("retains transliteration and supplements missing LSTM data from the paired table", () => {
     expect(convert("s, t_ g^ a~ '")).toBe("ṣ ṯ ĝ ā ʿ");
     expect(convertIndexToAccent("ama2 e3 gu4")).toBe("áma è gu₄");
+    expect(candidatesForSelection("[[k, sz]]")).toEqual(["⸢ḳ š⸣"]);
+    expect(candidatesForSelection("g")).toEqual(["q"]);
   });
-
-  it("keeps transliteration conversions ahead of OCR candidates", () => {
-    expect(candidatesForSelection("c")[0]).toBe("š");
-    expect(candidatesForSelection("a2")[0]).toBe("á");
+  it.each([["k,", "ḳ"], ["K,", "Ḳ"], ["[[", "⸢"], ["]]", "⸣"]])("converts %s to %s", (selection, expected) => {
+    expect(candidatesForSelection(selection)).toEqual([expected]);
   });
-
-  it("does not apply one-character OCR mappings to a multi-grapheme selection", () => {
-    expect(candidatesForSelection("a2")).toEqual(["á"]);
-    expect(candidatesForSelection("🙂a")).toEqual([]);
-  });
-
-  it("retains the bundled candidates without fixing their counts or order", () => {
-    for (const [selection, entry] of Object.entries(candidateData.output_to_gt)) {
-      const converted = convertIndexToAccent(convert(selection));
-      const candidates = candidatesForSelection(selection);
-      const expected = new Set(converted !== selection ? [converted] : []);
-      if ([...new Intl.Segmenter(undefined, { granularity: "grapheme" }).segment(selection)].length === 1) {
-        for (const candidate of entry.gt_candidates) {
-          if (candidate.gt_character !== selection) expected.add(candidate.gt_character);
-        }
-      }
-      expect(new Set(candidates), selection).toEqual(expected);
-      expect(candidates.length, selection).toBe(expected.size);
-      expect(candidates, selection).not.toContain(selection);
-    }
+  it("ranks LSTM scores stably, excluding self, blank, invalid and duplicate choices", () => {
+    const choices = [
+      { text: "m", confidence: 99 }, { text: "rn", confidence: 5 },
+      { text: "n", confidence: 20 }, { text: "r", confidence: 20 },
+      { text: "n", confidence: 2 }, { text: " ", confidence: 30 }, { text: "e\u0301", confidence: 10 },
+      { text: "?", confidence: NaN },
+    ];
+    expect(candidatesForSelection("m", choices)).toEqual(["n", "r", "e\u0301", "rn", "z"]);
+    expect(choices[1].text).toBe("rn");
+    expect(candidatesForSelection("c", [{ text: "š", confidence: 10 }, { text: "C", confidence: 20 }])).toEqual(["C", "š", "e"]);
+    expect(candidatesForSelection("a2", choices)).toEqual(["á"]);
   });
 });
 
-describe("OCR candidate ranking with fixed test data", () => {
-  const fixture = {
-    output_to_gt: {
-      g: { gt_candidates: [
-        { gt_character: "8", count: 2 },
-        { gt_character: "g", count: 999 },
-        { gt_character: "ṣ", count: 7 },
-        { gt_character: "Ĝ", count: 3 },
-        { gt_character: "q", count: 7 },
-        { gt_character: "ç", count: 3 },
-        { gt_character: "ç", count: 1 },
-        { gt_character: "Ḫ", count: 1 },
-        { gt_character: "Ĝ", count: 3 },
-      ] },
-      c: { gt_candidates: [
-        { gt_character: "C", count: 50 },
-        { gt_character: "š", count: 1 },
-        { gt_character: "c", count: 100 },
-      ] },
-      a2: { gt_candidates: [{ gt_character: "unexpected", count: 100 }] },
-    },
-  };
+const word = (text: string) => `<span class="ocrx_word" id="word" title="bbox 0 0 100 30">${text}</span>`;
+function character(text: string, index: number, nested = false) {
+  const choices = `<span class="ocrx_cinfo" id="lstm_choices_1_1_${index}"><span class="ocrx_cinfo" title="x_confs 90">${text}</span><span class="ocr_glyph" title="x_confs 12.5">X</span><span class="ocrx_cinfo" title="x_confs invalid">?</span></span>`;
+  const span = `<span class="ocrx_cinfo" title="x_bboxes ${index * 10} 0 ${index * 10 + 10} 30; x_conf 98">${text}${nested ? choices : ""}</span>`;
+  return nested ? span : span + choices;
+}
+function pageWith(content: string) {
+  return parseHocr(`<html><body><div class="ocr_page" title="bbox 0 0 200 50"><div class="ocr_carea"><p class="ocr_par"><span class="ocr_line" id="line" title="bbox 0 0 100 30">${content}</span></p></div></div></body></html>`)[0];
+}
 
-  afterEach(() => {
-    vi.doUnmock("./assets/scan-candidate-character-confusions.json");
-    vi.resetModules();
+describe("choice-aware hOCR contract", () => {
+  it.each([false, true])("keeps choices out of recognized/exported text (nested=%s)", nested => {
+    const page = pageWith(word(`<strong>${character("m", 0, nested)}${character("𒀀", 1, nested)}</strong>`));
+    const line = allLines(page)[0];
+    expect(line.correctedText).toBe("m𒀀");
+    expect(line.chars).toHaveLength(2);
+    expect(line.chars[0]).toMatchObject({ choices: [{ text: "m", confidence: 90 }, { text: "X", confidence: 12.5 }], confidence: 98, bbox: { left: 0, top: 0, right: 10, bottom: 30 } });
+    const restored = JSON.parse(JSON.stringify(page));
+    expect(choicesForSelection(allLines(restored)[0], 1, 3).map(choice => choice.text)).toEqual(["𒀀", "X"]);
+    const exported = exportFixtureHocr([restored]);
+    expect(exported).not.toContain("lstm_choices");
+    expect(exported).not.toContain("x_confs");
+    expect(allLines(parseHocr(exported)[0])[0].correctedText).toBe("m𒀀");
   });
-
-  async function fixtureCandidates() {
-    vi.resetModules();
-    vi.doMock("./assets/scan-candidate-character-confusions.json", () => ({ default: fixture }));
-    return (await import("./correctionCandidates")).candidatesForSelection;
-  }
-
-  it("ranks by count, keeps source order for ties, and excludes self and duplicates", async () => {
-    const candidates = await fixtureCandidates();
-    expect(candidates("g")).toEqual(["ṣ", "q", "Ĝ", "ç", "8", "Ḫ"]);
-    // Ranking must not mutate the shared source order across calls.
-    expect(candidates("g")).toEqual(["ṣ", "q", "Ĝ", "ç", "8", "Ḫ"]);
-    expect(fixture.output_to_gt.g.gt_candidates[0].gt_character).toBe("8");
+  it("ignores unmappable choices without character boxes and legacy timesteps", () => {
+    const page = pageWith(word('m<span class="ocrx_cinfo" id="lstm_choices_1_1_1"><span class="ocrx_cinfo" title="x_confs 20">X</span></span><span class="ocr_symbol"><span class="ocrx_cinfo" title="x_confs 10">Z</span></span>'));
+    expect(allLines(page)[0].correctedText).toBe("m");
+    expect(choicesForSelection(allLines(page)[0], 0, 1)).toEqual([]);
   });
-
-  it("prioritizes transliteration and excludes its duplicate OCR candidate", async () => {
-    const candidates = await fixtureCandidates();
-    expect(candidates("c")).toEqual(["š", "C"]);
+  it("keeps escaped alternatives out of body text", () => {
+    const line = allLines(pageWith(word(character("&amp;", 0))))[0];
+    expect(line.correctedText).toBe("&");
+    expect(choicesForSelection(line, 0, 1)[0].text).toBe("&");
   });
+});
 
-  it("ignores OCR mappings for multi-grapheme selections", async () => {
-    const candidates = await fixtureCandidates();
-    expect(candidates("a2")).toEqual(["á"]);
+describe("choice positions after editing", () => {
+  const page = pageWith(word([..."book"].map((text, index) => character(text, index)).join("")));
+  const original = allLines(page)[0];
+  const edited = (text: string) => allLines(updateLineText(page, original.id, text))[0];
+  it("maps unchanged symbols and rejects new or replaced symbols", () => {
+    expect(choicesForSelection(edited("a book"), 2, 3)[0].text).toBe("b");
+    expect(choicesForSelection(edited("boox"), 0, 1)[0].text).toBe("b");
+    expect(choicesForSelection(edited("boox"), 3, 4)).toEqual([]);
+    expect(choicesForSelection(edited("a book"), 0, 1)).toEqual([]);
+  });
+  it("rejects ambiguous repeated symbols and multi-grapheme selections", () => {
+    expect(choicesForSelection(edited("bok"), 1, 2)).toEqual([]);
+    expect(choicesForSelection(edited("bok"), 2, 3)[0].text).toBe("k");
+    expect(choicesForSelection(original, 1, 3)).toEqual([]);
+  });
+  it("supports a grapheme with separately recognized combining marks", () => {
+    const line = allLines(pageWith(word(character("g", 0) + character("&#x303;", 1))))[0];
+    expect(line.correctedText).toBe("g̃");
+    expect(choicesForSelection(line, 0, 2).map(choice => choice.text)).toEqual(["g̃", "X̃", "g̃", "gX"]);
+  });
+  it("ignores invalid offsets and excessively long edited lines", () => {
+    expect(choicesForSelection(original, -1, 1)).toEqual([]);
+    expect(choicesForSelection(original, 0, 99)).toEqual([]);
+    expect(choicesForSelection({ ...original, correctedText: "x".repeat(100_000) }, 0, 1)).toEqual([]);
   });
 });
