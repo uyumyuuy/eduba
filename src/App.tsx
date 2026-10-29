@@ -3,6 +3,7 @@ import { useVisibleOverlay } from "./useVisibleOverlay";
 import { clickedLineCaret } from "./clickCaret";
 import { inverse, multiply, type HocrPageGeometry, type HocrSource } from "./coordinates";
 import { LicenseModal } from "./LicenseModal";
+import { KurnugiaLinks } from "./KurnugiaLinks";
 import { DEFAULT_MODEL, BROWSER_DEFAULT_MODELS } from "./ocrModel";
 import { prepareFigureOcr } from "./automaticFigures";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
@@ -2511,7 +2512,7 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
     return () => observer.disconnect();
   }, [synchronizeProofingPane]);
   return (
-    <main className="app-shell">
+    <main className={isTauri ? "app-shell" : "app-shell browser-app"}>
       <header className="topbar">
         <div className="brand">
           <div className="brand-mark">E</div>
@@ -2529,6 +2530,7 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
           </span>
           {!isTauri && <span className={project ? "muted" : "muted privacy-notice"}>{t(project ? (browserDirty ? "browser.unsavedFile" : "browser.savedFile") : "browser.localOnly")}</span>}
         </div>
+        {!isTauri && <KurnugiaLinks />}
         <button
           className="icon-btn"
           disabled={Boolean(busy)}
