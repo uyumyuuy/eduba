@@ -80,7 +80,7 @@ import { addFigureRegion, cropFigure, nonWhiteBounds, preserveFiguresAfterOcr, r
 import { FigureRegionDialog } from "./FigureRegionDialog";
 import { candidatesForSelection } from "./correctionCandidates";
 import { choicesForSelection } from "./ocrChoices";
-import { importEntries, prepareImportEntries, type ImportConfig } from "./importConfig";
+import { importEntries, prepareImportEntries, type ImportConfig, type ImportProgress } from "./importConfig";
 import { loadPageImage, type ImportMode } from "./pageImage";
 import {
   defaultOcrMargins,
@@ -533,6 +533,7 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
     pdf: PDFDocumentProxy;
   } | null>(null);
   const [importCreating, setImportCreating] = useState(false);
+  const [importProgress, setImportProgress] = useState<ImportProgress | null>(null);
   const [confirmOcr, setConfirmOcr] = useState<"current" | "all" | null>(null);
   const [exportScope, setExportScope] = useState<ExportScope>("all");
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -561,6 +562,7 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
     closing = useRef(false),
     importActive = useRef(false),
     importCreatingRef = useRef(false),
+    importAbortController = useRef<AbortController | null>(null),
     importSession = useRef(0),
     sourcePdfRef = useRef<PDFDocumentProxy | null>(null),
     bulkSnippetCanvases = useRef(new Map<string, Promise<HTMLCanvasElement | null>>()),
@@ -926,6 +928,13 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
     if (!isTauri && importSource?.path) forgetFile(importSource.path);
     source?.destroy().catch(() => undefined);
   }, [importSource?.path]);
+  const cancelOrCloseImport = useCallback(() => {
+    if (importAbortController.current) {
+      importAbortController.current.abort();
+      return;
+    }
+    closeImport();
+  }, [closeImport]);
   const importPdf = useCallback(async () => {
     if (working.current || importActive.current) return;
     restorationGeneration.current += 1;
@@ -964,8 +973,11 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
       if (!importSource || importCreatingRef.current || working.current) return;
       const source = sourcePdfRef.current;
       if (!source) return;
+      const abortController = new AbortController();
+      importAbortController.current = abortController;
       importCreatingRef.current = true;
       setImportCreating(true);
+      setImportProgress(null);
       try {
         let projectPath = "";
         if (isTauri) {
@@ -976,8 +988,12 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
           if (typeof selected !== "string") return;
           projectPath = selected;
         }
+        if (abortController.signal.aborted) return;
         const next = makeImportManifest(config);
-        next.pages = await prepareImportEntries(source, config);
+        next.pages = await prepareImportEntries(source, config, {
+          signal: abortController.signal,
+          onProgress: setImportProgress,
+        });
         next.settings = {
           ...manifestRef.current.settings,
           dpi: config.dpi,
@@ -985,6 +1001,7 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
             manifestRef.current.settings.modelPath || environmentModel.current,
         };
         await flush();
+        if (abortController.signal.aborted) return;
         const info = isTauri
           ? await invokeCommand("create_project", {
             pdfPath: importSource.path,
@@ -1000,10 +1017,14 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
         await source.destroy();
         await openInfo(info);
       } catch (e) {
-        setNotice("notices.importFailed", { error: errorText(e) });
+        if (!(e instanceof DOMException && e.name === "AbortError"))
+          setNotice("notices.importFailed", { error: errorText(e) });
       } finally {
+        if (importAbortController.current === abortController)
+          importAbortController.current = null;
         importCreatingRef.current = false;
         setImportCreating(false);
+        setImportProgress(null);
       }
     },
     [flush, importSource, openInfo],
@@ -3194,9 +3215,10 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
         <ImportModal
           pdfPath={importSource.path}
           pdf={importSource.pdf}
-          onCancel={closeImport}
+          onCancel={cancelOrCloseImport}
           onConfirm={confirmImport}
           busy={importCreating}
+          progress={importProgress}
         />
       )}{" "}
       {settingsOpen && (

@@ -5,6 +5,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import App from "./App";
 
 const mocks = vi.hoisted(() => ({
+  isTauri: true,
+  forgetFile: vi.fn(),
+  createBrowserProject: vi.fn(),
   dialogOpen: vi.fn(),
   dialogSave: vi.fn(),
   invoke: vi.fn(),
@@ -29,7 +32,14 @@ vi.mock("@tauri-apps/api/window", () => ({
     destroy: vi.fn(),
   })),
 }));
-vi.mock("./tauri", () => ({ isTauri: true, invokeCommand: mocks.invoke }));
+vi.mock("./tauri", () => ({ get isTauri() { return mocks.isTauri; }, invokeCommand: mocks.invoke }));
+vi.mock("./browser/files", async (importOriginal) => ({
+  ...await importOriginal<typeof import("./browser/files")>(),
+  dialogOpen: mocks.dialogOpen,
+  dialogSave: mocks.dialogSave,
+  forgetFile: mocks.forgetFile,
+}));
+vi.mock("./browser/backend", () => ({ createBrowserProject: mocks.createBrowserProject }));
 vi.mock("./pdf", () => ({
   openSourcePdf: mocks.openSourcePdf,
   openProjectPdf: mocks.openProjectPdf,
@@ -48,9 +58,9 @@ function pdf() {
   return {
     numPages: 4, fingerprints: ["test-pdf"],
     destroy: mocks.destroy,
-    getPage: vi.fn(async () => ({
+    getPage: vi.fn(async (_page: number) => ({
       view: [0, 0, 100, 80], rotate: 0, userUnit: 1,
-        getViewport: () => ({ width: 100, height: 80 }),
+      getViewport: () => ({ width: 100, height: 80 }),
       render: () => ({ promise: Promise.resolve() }),
       cleanup: vi.fn(),
     })),
@@ -102,6 +112,10 @@ describe("PDF import configuration", () => {
       translate: vi.fn(),
       rotate: vi.fn(),
     } as unknown as CanvasRenderingContext2D);
+    mocks.isTauri = true;
+    mocks.createBrowserProject.mockImplementation(async (_path: string, manifest: string) => ({
+      path: projectPath, name: "book.eduba", pdfSize: 1234, manifest,
+    }));
     mocks.dialogOpen.mockResolvedValue(sourcePath);
     mocks.dialogSave.mockResolvedValue(projectPath);
     mocks.openSourcePdf.mockResolvedValue(pdf());
@@ -273,12 +287,74 @@ describe("PDF import configuration", () => {
 
   it("keeps import settings available without creating a project if preparing a page fails", async () => {
     await selectPdf();
+    const source = await mocks.openSourcePdf.mock.results[0].value as ReturnType<typeof pdf>;
     mocks.loadPageImage.mockRejectedValueOnce(new Error("Raster preparation failed"));
     const dialog = container.querySelector<HTMLElement>('[role="dialog"][aria-label="PDF import"]')!;
     await act(async () => button(dialog, "4 logical pages").click());
     await waitFor(() => expect(container.textContent).toContain("Raster preparation failed"));
     expect(container.querySelector('[role="dialog"][aria-label="PDF import"]')).toBeTruthy();
     expect(mocks.invoke.mock.calls.some(([command]) => command === "create_project")).toBe(false);
+    const failedPage = await source.getPage.mock.results.at(-1)!.value;
+    expect(failedPage.cleanup).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([true, false])("cancels page preparation, releases resources, and allows retry (isTauri=%s)", async (isTauri) => {
+    mocks.isTauri = isTauri;
+    await selectPdf();
+    const source = await mocks.openSourcePdf.mock.results[0].value as ReturnType<typeof pdf>;
+    source.getPage.mockClear();
+    const priorLoadCount = mocks.loadPageImage.mock.calls.length;
+    let finishLoad!: (value: { canvas: HTMLCanvasElement; modeUsed: string; dpiX: number; dpiY: number }) => void;
+    mocks.loadPageImage.mockImplementationOnce(() => new Promise(resolve => { finishLoad = resolve; }));
+    const dialog = container.querySelector<HTMLElement>('[role="dialog"][aria-label="PDF import"]')!;
+
+    await act(async () => { button(dialog, "4 logical pages").click(); });
+    await waitFor(() => expect(mocks.loadPageImage).toHaveBeenCalledTimes(priorLoadCount + 1));
+    await act(async () => button(dialog, "Cancel").click());
+    const inFlightCanvas = document.createElement("canvas");
+    inFlightCanvas.width = 100;
+    inFlightCanvas.height = 80;
+    await act(async () => finishLoad({ canvas: inFlightCanvas, modeUsed: "extract", dpiX: 300, dpiY: 300 }));
+    await waitFor(() => expect(button(dialog, "4 logical pages").disabled).toBe(false));
+
+    expect(source.getPage.mock.calls.map(([page]) => page)).toEqual([1]);
+    const loadedSourcePage = await source.getPage.mock.results[0].value;
+    expect(loadedSourcePage.cleanup).toHaveBeenCalledTimes(1);
+    expect(inFlightCanvas).toMatchObject({ width: 1, height: 1 });
+    expect(mocks.createBrowserProject).not.toHaveBeenCalled();
+    expect(mocks.forgetFile).not.toHaveBeenCalled();
+    expect(mocks.invoke.mock.calls.some(([command]) => command === "create_project")).toBe(false);
+    expect(container.querySelector('[role="dialog"][aria-label="PDF import"]')).toBeTruthy();
+
+    await act(async () => button(dialog, "4 logical pages").click());
+    await waitFor(() => expect(container.querySelector('[role="dialog"][aria-label="PDF import"]')).toBeNull());
+    const manifest = isTauri
+      ? mocks.invoke.mock.calls.find(([command]) => command === "create_project")![1].manifest
+      : mocks.createBrowserProject.mock.calls[0][1];
+    expect(JSON.parse(manifest).pages).toHaveLength(4);
+    expect(JSON.parse(manifest).pages.every((page: { autoFigureDetection: boolean }) => page.autoFigureDetection)).toBe(true);
+    if (!isTauri) {
+      expect(mocks.dialogSave).not.toHaveBeenCalled();
+      expect(mocks.forgetFile).toHaveBeenCalledTimes(1);
+      expect(mocks.forgetFile).toHaveBeenCalledWith(sourcePath);
+    }
+  });
+
+  it("reports import page progress in increasing order", async () => {
+    await selectPdf();
+    const dialog = container.querySelector<HTMLElement>('[role="dialog"][aria-label="PDF import"]')!;
+    const progress: number[] = [];
+    const observer = new MutationObserver(() => {
+      const match = dialog.textContent?.match(/(\d+) \/ 4 (?:pages|ページ)/);
+      if (match) progress.push(Number(match[1]));
+    });
+    observer.observe(dialog, { childList: true, subtree: true, characterData: true });
+    await act(async () => button(dialog, "4 logical pages").click());
+    await waitFor(() => expect(mocks.invoke.mock.calls.some(([command]) => command === "create_project")).toBe(true));
+    observer.disconnect();
+    expect(progress.length).toBeGreaterThan(0);
+    expect(progress).toEqual([...progress].sort((a, b) => a - b));
+    expect(progress.at(-1)).toBe(4);
   });
 
   it("releases the import lock when the file picker is cancelled so a later selection works", async () => {
