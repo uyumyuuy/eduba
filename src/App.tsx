@@ -4,6 +4,7 @@ import { clickedLineCaret } from "./clickCaret";
 import { inverse, multiply, type HocrPageGeometry, type HocrSource } from "./coordinates";
 import { LicenseModal } from "./LicenseModal";
 import { KurnugiaLinks } from "./KurnugiaLinks";
+import { ReaderView } from "./ReaderView";
 import { DEFAULT_MODEL, BROWSER_DEFAULT_MODELS } from "./ocrModel";
 import { prepareFigureOcr } from "./automaticFigures";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
@@ -444,6 +445,11 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
   const [recoveryError, setRecoveryError] = useState<string | null>(null);
   const [manifest, setManifest] = useState<Manifest>(makeManifest);
   const [index, setIndex] = useState(0);
+  const [reading, setReading] = useState(false);
+  const readingRef = useRef(false);
+  const [readerJump, setReaderJump] = useState({ index: 0, serial: 0 });
+  const [readerSidebarHidden, setReaderSidebarHidden] = useState(false);
+  const [readerFontSize, setReaderFontSize] = useState(18);
   const [pdf, setPdf] = useState<PDFDocumentProxy | null>(null);
   const [doc, setDoc] = useState<DocumentPage | null>(null);
   const [canvasSize, setCanvasSize] = useState({ width: 0, height: 0 });
@@ -619,6 +625,7 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
     saveLastOpenedProject(project, current.id);
   }, [current?.id, project, saveLastOpenedProject]);
   const clearCompletion = useCallback(async (pageIds: string[]) => {
+    if (readingRef.current) return false;
     const protectedIds = new Set(pageIds.filter(id => manifestRef.current.pages.some(page => page.id === id && page.completed)));
     if (!protectedIds.size) return true;
     if (!window.confirm(t("ui.editCompletedConfirm"))) return false;
@@ -767,7 +774,7 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
     [pdf],
   );
   useEffect(() => {
-    if (!project || !current) return;
+    if (reading || !project || !current) return;
     const token = ++documentLoading.current;
     putDoc(null);
     setSelected(null);
@@ -786,9 +793,10 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
           token === documentLoading.current &&
           setNotice("notices.pageLoadFailed", { error: errorText(e) }),
       );
-  }, [project, index, current?.id, putDoc]);
+    return () => { documentLoading.current++; };
+  }, [reading, project, index, current?.id, putDoc]);
   useEffect(() => {
-    if (!project || !pdf || !current) return;
+    if (reading || !project || !pdf || !current) return;
     const token = ++loading.current;
     renderEntry(current, token).catch(
       (e) =>
@@ -797,6 +805,7 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
     );
     // Transform changes redraw only the processed image; they do not discard a loaded document or its undo stack.
   }, [
+    reading,
     project,
     pdf,
     current?.id,
@@ -843,6 +852,8 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
           }
         })();
         const oldPdf = pdf;
+        readingRef.current = false;
+        setReading(false);
         setPdf(null);
         if (oldPdf) await oldPdf.destroy();
         putProject(info);
@@ -1042,6 +1053,7 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
   }, [scheduleSave, setUndoStack, setRedoStack]);
   finishLineEditRef.current = finishLineEdit;
   const beginLineEdit = useCallback(async (lineId: string, initialCaret = 0) => {
+    if (readingRef.current) return;
     finishLineEditRef.current();
     const pageId = manifestRef.current.pages[indexRef.current]?.id;
     if (!pageId) return;
@@ -1054,7 +1066,7 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
     setEditing(lineId);
   }, [clearCompletion]);
   const commitLineEdit = useCallback((lineId: string, update: (before: DocumentPage) => DocumentPage) => {
-    if (working.current || importActive.current) return;
+    if (readingRef.current || working.current || importActive.current) return;
     const before = docRef.current;
     const session = lineEditSession.current;
     if (!before || !session || session.lineId !== lineId || session.pageId !== manifestRef.current.pages[indexRef.current]?.id) return;
@@ -1080,7 +1092,12 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
         setNotice("notices.navigationBusy");
         return;
       }
-      if (next < 0 || next >= manifestRef.current.pages.length || next === indexRef.current) return;
+      if (next < 0 || next >= manifestRef.current.pages.length) return;
+      if (readingRef.current) {
+        setReaderJump(value => ({ index: next, serial: value.serial + 1 }));
+        return;
+      }
+      if (next === indexRef.current) return;
       finishLineEditRef.current();
       try {
         setBusy("save");
@@ -1129,7 +1146,7 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
     orderVisitedRef.current = []; setOrderVisited([]); setOrderPendingVisited([]); setOrderPreviewIds(null);
   }, [flush, persistState, putDoc, putIndex, putManifest, setUndoStack, setRedoStack]);
   const undo = useCallback(async () => {
-    if (working.current || importActive.current || historyApplying.current) return;
+    if (readingRef.current || working.current || importActive.current || historyApplying.current) return;
     const operation = undoStack.at(-1);
     const session = lineEditSession.current;
     if (session && (!operation || operation.lineEditSessionId !== session.id)) {
@@ -1146,7 +1163,7 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
     finally { historyApplying.current = false; setBusy(null); }
   }, [applyHistory, clearCompletion, undoStack, setNotice]);
   const redo = useCallback(async () => {
-    if (working.current || importActive.current || historyApplying.current) return;
+    if (readingRef.current || working.current || importActive.current || historyApplying.current) return;
     const operation = redoStack[0];
     const session = lineEditSession.current;
     if (session && (!operation || operation.lineEditSessionId !== session.id)) {
@@ -1216,6 +1233,8 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
         scriptCandidateBuckets.current = [[], [], []];
         const empty = makeManifest(0);
         empty.settings.modelPath = environmentModel.current;
+        readingRef.current = false;
+        setReading(false);
         putProject(null);
         putDoc(null);
         putManifest(empty);
@@ -1296,6 +1315,7 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
       if (event.defaultPrevented || !event.ctrlKey || event.altKey || event.metaKey || event.isComposing || event.keyCode === 229) return;
       const key = event.key.toLowerCase();
       if (key !== "s" && key !== "z" && key !== "y") return;
+      if (readingRef.current && key !== "s") return;
       const target = event.target instanceof HTMLElement ? event.target : null;
       // Other inputs keep their own text undo; the line editor already handles history.
       if (key !== "s" && target?.closest("input, textarea, [contenteditable]:not([contenteditable='false'])")) return;
@@ -1369,7 +1389,7 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
   );
   const runOcr = useCallback(
     async (scope: "current" | "all") => {
-      if (!projectRef.current || working.current || importActive.current)
+      if (readingRef.current || !projectRef.current || working.current || importActive.current)
         return;
       finishLineEditRef.current();
       working.current = true;
@@ -1449,7 +1469,7 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
   );
   const askOcr = useCallback(
     async (scope: "current" | "all") => {
-      if (importActive.current) return;
+      if (readingRef.current || importActive.current) return;
       const active = manifestRef.current.pages[indexRef.current];
       const hasManualCorrections = scope === "current" && Boolean(docRef.current && (
         (docRef.current.manualOcrRegions?.length ?? 0) > 0 ||
@@ -1824,6 +1844,33 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
     setOrderPendingVisited([]);
     setOrderPreviewIds(null);
   }, [stopRegionScroll]);
+  const readableImages = useCallback(async (page: DocumentPage, entry: Entry, signal?: AbortSignal) => {
+    signal?.throwIfAborted();
+    if (!page.figureRegions?.length) return {};
+    const rendered = await renderEntry(entry, loading.current, pdf, document.createElement("canvas"), false);
+    signal?.throwIfAborted();
+    if (!rendered || rendered.canvas.width !== page.width || rendered.canvas.height !== page.height)
+      throw new Error(globalT("appErrors.coordinateMismatch"));
+    return Object.fromEntries(page.figureRegions.map(figure => [figure.id, cropFigure(rendered.canvas, figure.bbox)]));
+  }, [renderEntry, pdf]);
+  const loadReaderPage = useCallback(async (pageId: string) => {
+    if (!project?.path) return null;
+    const saved = await invokeCommand("load_page", { projectPath: project.path, pageId });
+    if (!saved) return null;
+    const page = JSON.parse(saved) as DocumentPage;
+    // Reading needs corrected text and formatting, not the per-character OCR
+    // geometry/candidates or a saved source image. Keep the page cache small.
+    return { ...page, sourceImage: undefined, blocks: page.blocks.map(block => ({ ...block,
+      paragraphs: block.paragraphs.map(paragraph => ({ ...paragraph,
+        lines: paragraph.lines.map(line => ({ ...line, originalText: "", words: [], chars: [] })),
+      })),
+    })) };
+  }, [project?.path]);
+  const loadReaderImages = useCallback(async (page: DocumentPage, signal: AbortSignal) => {
+    const entry = manifestRef.current.pages.find(entry => entry.id === page.id);
+    if (!entry) throw new Error(globalT("appErrors.processedPage"));
+    return readableImages(page, entry, signal);
+  }, [readableImages]);
   const exportFile = useCallback(
     async (type: "txt" | "hocr" | "html" | "svg", scope: ExportScope = "all") => {
       if (!projectRef.current || working.current || importActive.current)
@@ -1886,10 +1933,7 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
               continue;
             }
             if (!entry) throw new Error(globalT("appErrors.processedPage"));
-            const rendered = await renderEntry(entry, loading.current, pdf, document.createElement("canvas"), false);
-            if (!rendered || rendered.canvas.width !== page.width || rendered.canvas.height !== page.height)
-              throw new Error(globalT("appErrors.coordinateMismatch"));
-            for (const figure of page.figureRegions ?? []) images[figure.id] = cropFigure(rendered.canvas, figure.bbox);
+            Object.assign(images, await readableImages(page, entry));
           }
         }
         let content = "",
@@ -1926,7 +1970,7 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
         setBusy(null);
       }
     },
-    [flush, renderEntry, pdf],
+    [flush, renderEntry, pdf, readableImages],
   );
   useEffect(() => {
     if (!isTauri) return;
@@ -1936,7 +1980,7 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
       if (disposed || working.current || importActive.current) return;
       if (event.payload === "import") importPdf();
       if (event.payload === "open") openProject();
-      if (event.payload === "export") exportFile("txt");
+      if (event.payload === "export") exportFile(readingRef.current ? "html" : "txt");
       if (event.payload === "settings") setSettingsOpen(true);
     }).then((value) => {
       if (disposed) value();
@@ -2511,9 +2555,40 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
     if (pdfStageRef.current) observer.observe(pdfStageRef.current);
     if (ocrStageRef.current) observer.observe(ocrStageRef.current);
     return () => observer.disconnect();
-  }, [synchronizeProofingPane]);
+  }, [reading, synchronizeProofingPane]);
+  const changeViewMode = async (nextReading: boolean) => {
+    if (nextReading === readingRef.current || !project || busy || working.current || importActive.current ||
+      historyApplying.current || document.querySelector(".modal")) return;
+    if (!nextReading) {
+      readingRef.current = false;
+      setReading(false);
+      return;
+    }
+    working.current = true;
+    setBusy("save");
+    try {
+      finishLineEditRef.current();
+      await flush();
+      await writeQueue.current.idle();
+      documentLoading.current++;
+      loading.current++;
+      regionDrag.current = null;
+      orderDrag.current = null;
+      stopRegionScroll();
+      setSelected(null);
+      setRegionMode(null);
+      setRegionSelection(null);
+      setFigureImages({});
+      setReaderJump(value => ({ index: indexRef.current, serial: value.serial + 1 }));
+      readingRef.current = true;
+      setReading(true);
+    } catch (error) { setNotice("reader.switchFailed", { error: errorText(error) }); }
+    finally { working.current = false; setBusy(null); }
+  };
+  const modeSwitchDisabled = !project || !manifest.pages.length || Boolean(busy || settingsOpen || importSource || confirmOcr ||
+    recoveryProjects || bulkReplace || scriptCalibrationOpen || pendingFigure);
   return (
-    <main className={isTauri ? "app-shell" : "app-shell browser-app"}>
+    <main className={`app-shell${isTauri ? "" : " browser-app"}${reading ? " reading-mode" : ""}`}>
       <header className="topbar">
         <div className="brand">
           <div className="brand-mark">E</div>
@@ -2531,6 +2606,10 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
           </span>
           {!isTauri && <span className={project ? "muted" : "muted privacy-notice"}>{t(project ? (browserDirty ? "browser.unsavedFile" : "browser.savedFile") : "browser.localOnly")}</span>}
         </div>
+        <div className="mode-switch" role="group" aria-label={t("reader.mode")}>
+          <button disabled={modeSwitchDisabled} aria-pressed={!reading} onClick={() => void changeViewMode(false)}>{t("reader.proofing")}</button>
+          <button disabled={modeSwitchDisabled} aria-pressed={reading} onClick={() => void changeViewMode(true)}>{t("reader.reading")}</button>
+        </div>
         {!isTauri && <KurnugiaLinks />}
         {!isTauri && <a className="header-help" href="../getting-started/browser/" target="_blank" rel="noopener noreferrer" title={t("browser.openInNewTab")}>
           <CircleHelp size={16} aria-hidden="true" />
@@ -2547,7 +2626,7 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
           <Settings2 size={16} />
         </button>
       </header>
-      <nav className="toolbar">
+      <nav className={`toolbar${reading ? " reader-toolbar" : ""}`}>
         <button onClick={importPdf} disabled={Boolean(busy)}>
           <FilePlus2 size={15} /> {t("ui.importPdf")}
         </button>
@@ -2559,7 +2638,7 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
           <button onClick={() => void save(true)} disabled={!project || Boolean(busy)} title="Ctrl+Shift+S">{t("browser.saveAs")}</button>
           <button disabled={Boolean(busy) || !hasWorkingProjects} onClick={() => void showWorkingProjects()}>{t("browser.recover")}</button>
         </>}
-        <span className="toolbar-divider" />
+        {!reading && <><span className="toolbar-divider" />
         <button onClick={undo} disabled={!undoStack.length || Boolean(busy)} title="Ctrl+Z" aria-keyshortcuts="Control+Z">
           <Undo2 size={15} /> {t("ui.undo")}
         </button>
@@ -2589,8 +2668,10 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
             <Square size={13} /> {t("ui.cancel")}
           </button>
         )}
+        </>}
         <span className="toolbar-divider" />
         <select
+          aria-label={t("reader.exportScope")}
           value={exportScope}
           onChange={(e) => setExportScope(e.target.value as ExportScope)}
           disabled={!project || Boolean(busy)}
@@ -2599,33 +2680,50 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
           <option value="all">{t("ui.allPages")}</option>
           <option value="completed">{t("ui.completedPagesOnly")}</option>
         </select>
-        <button
+        {!reading && <button
           onClick={() => exportFile("txt", exportScope)}
           disabled={!project || Boolean(busy)}
         >
           <FileDown size={15} /> TXT
-        </button>
-        <button
+        </button>}
+        {!reading && <button
           onClick={() => exportFile("hocr", exportScope)}
           disabled={!project || Boolean(busy)}
         >
           hOCR
-        </button>
+        </button>}
         <button
           onClick={() => exportFile("html", exportScope)}
           disabled={!project || Boolean(busy)}
         >
           HTML
         </button>
-        <button
+        {!reading && <button
           onClick={() => exportFile("svg", exportScope)}
           disabled={!project || Boolean(busy)}
         >
           SVG
-        </button>
+        </button>}
+        {reading && <>
+          <span className="toolbar-spacer" />
+          <div className="reader-controls">
+          <button aria-expanded={!readerSidebarHidden} onClick={() => setReaderSidebarHidden(value => !value)}>{t(readerSidebarHidden ? "reader.showPages" : "reader.hidePages")}</button>
+          <button aria-label={t("reader.previous")} disabled={index === 0 || Boolean(busy)} onClick={() => void go(index - 1)}><ChevronLeft size={15} /></button>
+          <select aria-label={t("reader.page")} disabled={Boolean(busy)} value={index} onChange={event => void go(Number(event.target.value))}>
+            {manifest.pages.map((entry, i) => <option key={entry.id} value={i}>{t("ui.page", { page: entry.label })}</option>)}
+          </select>
+          <button aria-label={t("reader.next")} disabled={index >= manifest.pages.length - 1 || Boolean(busy)} onClick={() => void go(index + 1)}><ChevronRight size={15} /></button>
+          <div className="reader-font-size" role="group" aria-label={t("reader.fontSize")}>
+            <span>{t("reader.fontSize")}</span>
+            <button disabled={readerFontSize <= 12} aria-label={`${t("reader.fontSize")} −`} onClick={() => setReaderFontSize(value => Math.max(12, value - 2))}>−</button>
+            <output>{readerFontSize}px</output>
+            <button disabled={readerFontSize >= 36} aria-label={`${t("reader.fontSize")} ＋`} onClick={() => setReaderFontSize(value => Math.min(36, value + 2))}>＋</button>
+          </div>
+          </div>
+        </>}
       </nav>
-      <section className="workspace">
-        <aside className="sidebar">
+      <section className={`workspace${reading ? ` reader-workspace${readerSidebarHidden ? " sidebar-collapsed" : ""}` : ""}`}>
+        {(!reading || !readerSidebarHidden) && <aside className="sidebar">
           <div className="side-heading">
             <span>{t("ui.logicalPages")}</span>
             <span className="page-count">{manifest.pages.length}</span>
@@ -2656,8 +2754,9 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
               </button>
             ))}
           </div>
-        </aside>
-        <section className="editor-area">
+        </aside>}
+        {reading && project ? <ReaderView key={project.path} pages={manifest.pages} jump={readerJump} fontSize={readerFontSize}
+          loadPage={loadReaderPage} loadImages={loadReaderImages} onActivePage={putIndex} /> : <section className="editor-area">
           <div className="canvas-toolbar">
             <div className="breadcrumb">
               {project && current && <>
@@ -3032,12 +3131,13 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
               </div>
             </article>
           </div>
-        </section>
+        </section>}
       </section>
       <footer className="statusbar">
         <span className="status-left">
           {startupWarning && <span title={t(startupWarning.key, startupWarning.values)}>{t(startupWarning.key, startupWarning.values)}</span>}
-          <span>{t(notice.key, notice.values)}</span>
+          {reading && <span>{t("reader.position", { page: index + 1, total: manifest.pages.length })}</span>}
+          {(!reading || /failed|error/i.test(notice.key)) && <span>{t(notice.key, notice.values)}</span>}
         </span>
         <span className={`save-indicator ${busy === "save" ? "working" : ""}`}>
           {busy === "save" ? t("ui.saving") : project ? t("ui.autosave") : t("ui.idle")}
@@ -3101,6 +3201,7 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
       )}{" "}
       {settingsOpen && (
         <SettingsModal
+          readOnly={reading}
           manifest={manifest}
           putManifest={putManifest}
           scheduleSave={scheduleSave}
@@ -3172,6 +3273,7 @@ function Empty({ busy, onImport, onOpen, onRecover, canRecover }: {
   );
 }
 function SettingsModal({
+  readOnly = false,
   manifest,
   putManifest,
   scheduleSave,
@@ -3182,6 +3284,7 @@ function SettingsModal({
   magnifierPreferences,
   setMagnifierPreference,
 }: {
+  readOnly?: boolean;
   manifest: Manifest;
   putManifest: (v: Manifest) => void;
   scheduleSave: () => void;
@@ -3200,15 +3303,16 @@ function SettingsModal({
   return (
     <div className="modal-scrim">
       <div className="modal settings-modal">
-        <div className="modal-head"><div><div className="eyebrow">{t("ui.ocrSettings")}</div><h2>{t("ui.settings")}</h2></div><button className="icon-btn" onClick={close} aria-label={t("ui.close")}><X size={16} /></button></div>
+        <div className="modal-head"><div><div className="eyebrow">{t(readOnly ? "reader.readOnly" : "ui.ocrSettings")}</div><h2>{t("ui.settings")}</h2></div><button className="icon-btn" onClick={close} aria-label={t("ui.close")}><X size={16} /></button></div>
         <label>{t("ui.language")}
           <select aria-label={t("ui.language")} disabled={languageSaving} value={language} onChange={(e) => void changeLanguage(e.target.value as LocalePreference)}>
             <option value="auto">{t("language.auto")}</option><option value="en">{t("language.en")}</option><option value="ja">{t("language.ja")}</option><option value="zh-Hans">{t("language.zh-Hans")}</option><option value="zh-Hant">{t("language.zh-Hant")}</option>
           </select>
         </label>
-        <label className="settings-checkbox"><input type="checkbox" checked={magnifierPreferences.imageMagnifierEnabled} onChange={(event) => setMagnifierPreference("imageMagnifierEnabled", event.currentTarget.checked)} />{t("ui.imageMagnifier")}</label>
+        {!readOnly && <><label className="settings-checkbox"><input type="checkbox" checked={magnifierPreferences.imageMagnifierEnabled} onChange={(event) => setMagnifierPreference("imageMagnifierEnabled", event.currentTarget.checked)} />{t("ui.imageMagnifier")}</label>
         <label className="settings-checkbox"><input type="checkbox" checked={magnifierPreferences.textMagnifierEnabled} onChange={(event) => setMagnifierPreference("textMagnifierEnabled", event.currentTarget.checked)} />{t("ui.textMagnifier")}</label>
-        <label>{t("ui.model")}
+        </>}
+        {!readOnly && <><label>{t("ui.model")}
           <button className="file-select" disabled={modelLoading} onClick={async () => {
             setModelLoading(true);
             setModelError(null);
@@ -3229,6 +3333,7 @@ function SettingsModal({
           scheduleSave();
         }}>{t("browser.resetModel")}</button>}
         <label>PSM<select value={manifest.settings.psm} onChange={(e) => { putManifest({ ...manifest, settings: { ...manifest.settings, psm: Number(e.target.value) as Settings["psm"] } }); scheduleSave(); }}><option value="3">3 — {t("ui.automatic")}</option><option value="6">6 — {t("ui.singleBlock")}</option><option value="11">11 — {t("ui.sparseText")}</option></select></label>
+        </>}
         <div className="modal-actions"><button onClick={() => setShowLicenses(true)}>{t("ui.licenses")}</button><button className="primary" onClick={close}>{t("ui.done")}</button></div>
       </div>
     </div>

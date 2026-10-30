@@ -1,0 +1,22 @@
+.mode-switch { display: inline-flex; flex: 0 0 auto; padding: 3px; gap: 2px; background: #e8e8df; border-radius: 7px; }
+.mode-switch button { padding: 6px 12px; border-radius: 5px; background: transparent; color: #62706e; font-size: 12px; white-space: nowrap; }
+.mode-switch button[aria-pressed="true"] { background: var(--paper); color: var(--navy); box-shadow: 0 1px 3px #193e4b1a; font-weight: 700; }
+.mode-switch button:focus-visible, .reader-stage:focus-visible { outline: 2px solid var(--teal); outline-offset: -2px; }
+.topbar > .mode-switch { margin: 0 12px; }
+.reader-workspace { background: #f4f1eb; }
+.reader-workspace.sidebar-collapsed { grid-template-columns: minmax(0, 1fr); }
+.reader-workspace .sidebar { padding-top: 16px; }
+.reader-workspace .page-item { min-height: 44px; }
+.reader-stage { overflow: auto; min-height: 0; min-width: 0; scroll-behavior: auto; color: #29251f; }
+.reader-document { max-width: 48rem; margin: 24px auto 3rem; padding: 0 2rem; font-family: var(--ocr-font); line-height: 1.9; }
+.reader-page { margin: 0 0 3rem; padding: 1.5rem 0 0; border-top: 1px solid #c9c3b8; overflow-wrap: anywhere; }
+.reader-page-label { text-align: right; color: #827b70; font: 12px/1.4 Manrope, sans-serif; letter-spacing: .04em; margin-bottom: 1.5rem; }
+.reader-page-content { min-height: 160px; }
+.reader-message { padding: 1.5rem 0; color: #7b817b; font: 13px/1.7 Manrope, "Noto Sans JP", sans-serif; }
+.reader-message button { border-radius: 4px; padding: 5px 9px; color: var(--navy); background: #e8efeb; }
+.reader-figure-placeholder { display: grid; place-items: center; background: #eae7df; color: #7b817b; font: 12px/1.6 Manrope, sans-serif; }
+.reader-toolbar { gap: 9px; }
+.reader-toolbar select { max-width: 180px; }
+.reader-controls { display: flex; align-items: center; flex: 0 0 auto; flex-wrap: wrap; gap: 8px; margin-left: auto; }
+.reader-font-size { display: inline-flex; align-items: center; gap: 6px; font-size: 11px; color: #62706e; }
+.reader-font-size output { min-width: 32px; text-align: center; }

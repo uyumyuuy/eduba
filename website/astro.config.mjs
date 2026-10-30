@@ -11,7 +11,7 @@ export default defineConfig({
       locales: { root: { label: '日本語', lang: 'ja' } },
       sidebar: [
         { label: 'はじめに', items: ['index', 'getting-started/browser', 'getting-started/installation', 'getting-started/first-project'] },
-        { label: '使い方', items: ['guides/importing', 'guides/ocr', 'guides/proofreading', 'guides/regions', 'guides/exporting', 'guides/replace-all'] },
+        { label: '使い方', items: ['guides/importing', 'guides/ocr', 'guides/proofreading', 'guides/reading', 'guides/regions', 'guides/exporting', 'guides/replace-all'] },
         { label: '困ったとき', items: ['troubleshooting'] },
       ],
       social: [{ icon: 'github', label: 'GitHub', href: 'https://github.com/uyumyuuy/eduba' }],
