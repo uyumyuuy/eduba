@@ -11,7 +11,7 @@ button:disabled { cursor: not-allowed; opacity: .42; }
 .app-shell { height: 100dvh; min-height: 0; display: grid; grid-template-rows: 64px auto minmax(0, 1fr) 30px; overflow: hidden; }
 .topbar { display: flex; align-items: center; padding: 0 22px 0 24px; background: #fbfaf6; border-bottom: 1px solid var(--line); }
 .brand { display: flex; align-items: center; gap: 11px; width: 237px; }
-.brand-mark { width: 31px; height: 31px; display: grid; place-items: center; color: #fbfaf6; background: var(--navy); border-radius: 8px; font-family: serif; font-size: 20px; }
+.brand-mark { width: 31px; height: 31px; display: block; flex-shrink: 0; }
 .brand-name { color: var(--navy); font-size: 14px; font-weight: 700; letter-spacing: .2em; line-height: 1; }
 .brand-sub { color: #a0a7a2; margin-top: 4px; font-family: "DM Mono", monospace; font-size: 7px; letter-spacing: .13em; }
 .project-title { display: flex; flex-wrap: wrap; gap: 3px 11px; align-items: center; min-width: 0; font-size: 13px; flex: 1; }

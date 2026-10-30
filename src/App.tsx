@@ -2591,7 +2591,7 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
     <main className={`app-shell${isTauri ? "" : " browser-app"}${reading ? " reading-mode" : ""}`}>
       <header className="topbar">
         <div className="brand">
-          <div className="brand-mark">E</div>
+          <img className="brand-mark" src={`${import.meta.env.BASE_URL}favicon.svg`} width="31" height="31" alt="" />
           <div>
             <div className="brand-name">EDUBA</div>
             <div className="brand-sub">{t("ui.tagline")}</div>
