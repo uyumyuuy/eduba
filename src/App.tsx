@@ -2604,13 +2604,14 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
               ? t("ui.logicalPageCount", { count: manifest.pages.length })
               : t("ui.projectFile")}
           </span>
-          {!isTauri && <span className={project ? "muted" : "muted privacy-notice"}>{t(project ? (browserDirty ? "browser.unsavedFile" : "browser.savedFile") : "browser.localOnly")}</span>}
+          {!isTauri && <span className={project ? "muted" : "muted privacy-notice"}>{t(project ? (browserDirty ? "browser.unsavedFile" : "browser.savedFile") : "browser.localProcessing")}</span>}
         </div>
         <div className="mode-switch" role="group" aria-label={t("reader.mode")}>
           <button disabled={modeSwitchDisabled} aria-pressed={!reading} onClick={() => void changeViewMode(false)}>{t("reader.proofing")}</button>
           <button disabled={modeSwitchDisabled} aria-pressed={reading} onClick={() => void changeViewMode(true)}>{t("reader.reading")}</button>
         </div>
         {!isTauri && <KurnugiaLinks />}
+        {!isTauri && <a className="header-help" href="../privacy/" target="_blank" rel="noopener noreferrer" title={t("browser.openInNewTab")}>{t("browser.privacy")}</a>}
         {!isTauri && <a className="header-help" href="../getting-started/browser/" target="_blank" rel="noopener noreferrer" title={t("browser.openInNewTab")}>
           <CircleHelp size={16} aria-hidden="true" />
           {t("browser.help")}

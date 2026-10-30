@@ -11,7 +11,7 @@
     "build:website": "node scripts/build-website.mjs",
     "prepare:web": "node scripts/prepare-web-assets.mjs",
     "dev:web": "npm run prepare:web && vite --host 127.0.0.1 --port 1421",
-    "build:web": "npm run prepare:web && npm run build",
+    "build:web": "npm run prepare:web && npm run build -- --mode browser",
     "preview:web": "vite preview --host 127.0.0.1 --port 1421",
     "test:browser": "playwright test",
     "dev": "vite --host 127.0.0.1 --port 1420",

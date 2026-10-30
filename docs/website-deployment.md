@@ -4,6 +4,8 @@
 Vite で生成したアプリを `website/public/app/` にコピーしてから Astro をビルドし、
 `website/dist/` 全体を GitHub Pages に公開する。アプリは Starlight のレイアウトに埋め込まず、独立したページとして開く。
 
+ドキュメントとアプリには同じ Cloudflare Web Analytics ビーコンをそれぞれ設置し、ページビュー・画面遷移と表示速度を計測する。独自の操作イベントは送信しない。Cloudflare 側の自動挿入を併用すると重複するため、手動スニペット方式を使用する。
+
 ## 固定する OCR モデル
 
 `config/web-model.json` に Release のリポジトリ・タグ・ファイル名・SHA-256・サイズを記録する。

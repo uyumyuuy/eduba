@@ -8,6 +8,8 @@ const baseBrowserResources = {
 const workingProjectResources = {
   en: {
     familyLinks: "Kurnugia family",
+    localProcessing: "PDFs and OCR content stay on your device.",
+    privacy: "Privacy",
     help: "Help",
     openInNewTab: "Opens in a new tab",
     resetModel: "Use the baseline model",
@@ -24,6 +26,8 @@ const workingProjectResources = {
   },
   ja: {
     familyLinks: "Kurnugiaファミリー",
+    localProcessing: "PDFやOCRの内容は端末内で処理されます。",
+    privacy: "プライバシー",
     help: "ヘルプ",
     openInNewTab: "新しいタブで開きます",
     resetModel: "基準モデルに戻す",
@@ -40,6 +44,8 @@ const workingProjectResources = {
   },
   "zh-Hans": {
     familyLinks: "Kurnugia 系列",
+    localProcessing: "PDF 和 OCR 内容在您的设备上处理。",
+    privacy: "隐私",
     help: "帮助",
     openInNewTab: "在新标签页中打开",
     resetModel: "恢复基准模型",
@@ -56,6 +62,8 @@ const workingProjectResources = {
   },
   "zh-Hant": {
     familyLinks: "Kurnugia 系列",
+    localProcessing: "PDF 和 OCR 內容在您的裝置上處理。",
+    privacy: "隱私",
     help: "說明",
     openInNewTab: "在新分頁中開啟",
     resetModel: "恢復基準模型",

@@ -1,6 +1,11 @@
 import { test, expect, type Page } from "@playwright/test";
 import { readFile } from "node:fs/promises";
 
+test.beforeEach(async ({ context }) => {
+  // Do not send test traffic to the real analytics site.
+  await context.route("https://static.cloudflareinsights.com/beacon.min.js", route => route.fulfill({ status: 200, contentType: "text/javascript", body: "" }));
+});
+
 function fixturePdf(): Buffer {
   const content = "BT /F1 22 Tf 30 170 Td (EDUBA browser OCR) Tj 0 -35 Td /F1 12 Tf (Local projects stay on this device.) Tj ET";
   const objects = [
@@ -36,6 +41,9 @@ test("PDF → local OCR → correction → .eduba → reopen and recover, using 
     Object.defineProperty(window, "showSaveFilePicker", { value: undefined, configurable: true });
   });
   await page.goto("/");
+  const beacon = page.locator('script[src="https://static.cloudflareinsights.com/beacon.min.js"]');
+  await expect(beacon).toHaveCount(1);
+  expect(JSON.parse((await beacon.getAttribute("data-cf-beacon"))!)).toEqual({ token: "ac0248e137a945d78a0d7a30aafad910" });
   await selectFile(page, "Import PDF", { name: "sample.pdf", mimeType: "application/pdf", buffer: fixturePdf() });
   const modal = page.getByRole("dialog");
   await expect(modal).toBeVisible();
@@ -91,7 +99,8 @@ test("PDF → local OCR → correction → .eduba → reopen and recover, using 
   expect(hocr).toContain('name="eduba-hocr-coordinates" content="complete"');
   expect(hocr).toContain("x_edubapagetopdf");
   expect(hocr).toContain("corrected");
-  expect(remote).toEqual([]);
+  expect(remote.length).toBeGreaterThan(0);
+  expect(remote.every(url => url === "https://static.cloudflareinsights.com/beacon.min.js")).toBe(true);
   expect(errors).toEqual([]);
 });
 

@@ -28,6 +28,8 @@ SQLite は OPFS SAH pool、ONNX は WASM 1スレッドを使用し、COOP/COEP �
 依存コード、学習モデル、推論モデルの取得先は同一サイト内の静的資産のみ。
 この段階では Service Worker によるオフライン起動は実装していない。
 
+配信用ブラウザビルドは Cloudflare Web Analytics のビーコンを読み込み、ページビューと表示速度を Cloudflare に送信する。SPA の画面遷移も Cloudflare の標準機能で計測し、独自の操作イベントは送らない。Cloudflare は個人をサイト間で追跡しない。PDF、画像、OCR・校正内容は送信しない。計測スクリプトを読み込めなくてもアプリの処理は継続する。デスクトップビルドと開発サーバーにはビーコンを含めない。Web Analytics の自動挿入を Cloudflare 側で有効にすると重複するため、手動スニペット方式を使用する。
+
 Starlight のドキュメントとまとめて配信する場合は `npm run build:website` を使用する。
 固定した Release の OCR モデルを取得・SHA-256 検証してからアプリをビルドし、
 `website/public/app/` を経由して `website/dist/app/` に配置する。
@@ -103,7 +105,7 @@ npm run test:browser
 ブラウザテストは既定でインストール済みの Microsoft Edge を使用する。
 別のブラウザを使う場合は `EDUBA_TEST_BROWSER` に Playwright の channel（例: `chrome`）を設定する。
 テストは配信用ビルドを使い、PDF読み込み、実OCR・ONNX推論、校正、SQLiteファイル保存、再オープン、Undo/Redo、リロード復元、hOCR座標メタデータを確認する。
-ファイル選択・ダウンロードの互換方式と外部ネットワークへのリクエストがないことを確認する。
+ファイル選択・ダウンロードの互換方式と、Cloudflare ビーコン以外への外部リクエストがないことを確認する。テストではビーコンをスタブし、計測データを送らない。
 ファイルハンドルでの直接保存、権限拒否、書き込み失敗からの再試行、名前を付けて保存、別タブとの競合防止、独自traineddataの読み込みも対象にする。
 直接保存APIの権限拒否・書き込み失敗はテスト用ファイルハンドルで再現する。PDF.js、Tesseract.js、ONNX、OPFS、ファイル入力とダウンロードは実ブラウザで実行する。
 
