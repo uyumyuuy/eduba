@@ -17,7 +17,9 @@ mod preferences;
 mod figure_detector;
 mod text_alignment;
 mod edit_history;
+mod working_projects;
 use edit_history::{load_edit_history, save_project_state};
+use working_projects::{list_working_projects, record_working_project, forget_working_project};
 #[path = "style_classifier_runtime/lib.rs"]
 pub mod style_classifier_runtime;
 use preferences::{LastOpenedProject, LocalePreference, SupportedLocale, UserPreferences};
@@ -1547,6 +1549,9 @@ fn save_last_opened_project(
         .app_config_dir()
         .map_err(|e| format!("could not locate app config directory: {e}"))?;
     let mut preferences = preferences::read_preferences(&config_dir, current_os_locale());
+    if !working_projects::remember_page(&config_dir, &project_path, &page_id)? {
+        return Ok(());
+    }
     preferences.last_project = Some(LastOpenedProject {
         path: project_path,
         page_id,
@@ -1622,6 +1627,9 @@ pub fn run() {
             save_user_preferences,
             save_magnifier_preferences,
             save_last_opened_project,
+            list_working_projects,
+            record_working_project,
+            forget_working_project,
             set_ui_language,
             create_project,
             open_project,

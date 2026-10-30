@@ -5,6 +5,7 @@ import { BrowserOcr, DEFAULT_MODEL, assetUrl } from "./ocr";
 import { workerRpc } from "./rpc";
 import { storeModel } from "./modelStore";
 import { requestStorageProtection } from "./storage";
+import type { WorkingProjectInfo } from "../workingProjects";
 
 const database = workerRpc(() => new Worker(new URL("./database.worker.ts", import.meta.url), { type: "module" }));
 const inference = workerRpc(() => new Worker(new URL("./inference.worker.ts", import.meta.url), { type: "module" }));
@@ -31,11 +32,7 @@ export async function activateBrowserProject(path: string): Promise<void> {
   await database("activate", { projectPath: path });
   void requestStorageProtection();
 }
-export type WorkingProjectInfo = ProjectInfo & {
-  pageCount: number | null;
-  sizeBytes: number;
-  modifiedAt: string | null;
-};
+export type { WorkingProjectInfo } from "../workingProjects";
 export function workingProjects(): Promise<WorkingProjectInfo[]> { return database("list"); }
 export async function createBrowserProject(pdfPath: string, manifest?: string): Promise<ProjectInfo> {
   const source = localFile(pdfPath);
@@ -100,6 +97,9 @@ const handlers: { [K in keyof BackendCommands]: CommandHandler<K> } = {
   save_user_preferences: async args => savePreferences({ language: args.language }),
   save_magnifier_preferences: async args => savePreferences(args),
   save_last_opened_project: async args => savePreferences({ lastProject: { path: args.projectPath, pageId: args.pageId } }),
+  list_working_projects: async () => { throw new Error("Desktop project history is unavailable in the browser."); },
+  record_working_project: async () => { throw new Error("Desktop project history is unavailable in the browser."); },
+  forget_working_project: async () => { throw new Error("Desktop project history is unavailable in the browser."); },
   set_ui_language: async () => {},
   get_environment: async () => ({ modelPath: DEFAULT_MODEL, tesseractPath: "Tesseract.js" }),
   inspect_pdf: async args => ({ pdfSize: (localFile(args.pdfPath).file ?? await localFile(args.pdfPath).handle!.getFile()).size }),

@@ -16,7 +16,7 @@ export default defineConfig({
       } }],
       sidebar: [
         { label: 'はじめに', items: ['index', 'getting-started/browser', 'getting-started/installation', 'getting-started/first-project'] },
-        { label: '使い方', items: ['guides/importing', 'guides/ocr', 'guides/proofreading', 'guides/reading', 'guides/regions', 'guides/exporting', 'guides/replace-all'] },
+        { label: '使い方', items: ['guides/importing', 'guides/working-projects', 'guides/ocr', 'guides/proofreading', 'guides/reading', 'guides/regions', 'guides/exporting', 'guides/replace-all'] },
         { label: '困ったとき', items: ['troubleshooting'] },
         { label: 'プライバシー', items: ['privacy'] },
       ],

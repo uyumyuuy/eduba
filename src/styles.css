@@ -138,6 +138,17 @@ button:disabled { cursor: not-allowed; opacity: .42; }
 .recovery-delete { flex-shrink: 0; min-height: 32px; padding: 6px 10px; border-radius: 5px; background: #f4e4df; color: #9d4d40; font-size: 11px; }
 .recovery-delete:hover:not(:disabled) { background: #ecd0c7; }
 .recovery-empty { margin-top: 16px !important; }
+.recovery-path { margin: 7px 8px !important; color: #63716d; overflow-wrap: anywhere; font-size: 11px; }
+.recovery-path > span { margin-right: 4px; color: #77817b; }
+.recovery-file-status { margin: 7px 8px !important; color: #9d4d40; font-size: 11px; }
+.recovery-sort-hint { margin-top: 8px !important; }
+.recovery-project-actions { display: flex; flex-direction: column; gap: 8px; flex-shrink: 0; }
+.recovery-locate { min-height: 32px; padding: 6px 10px; font-size: 11px; }
+@media (max-width: 480px) {
+  .recovery-projects li { flex-direction: column; }
+  .recovery-project-info { width: 100%; }
+  .recovery-project-actions { flex-direction: row; flex-wrap: wrap; }
+}
 .eyebrow { color: #96a39e; font: 8px "DM Mono", monospace; letter-spacing: .14em; }
 .settings-modal { width: 480px; }
 .settings-modal h2 { margin-top: 7px; }

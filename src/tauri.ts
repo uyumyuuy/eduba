@@ -51,6 +51,9 @@ export type BackendCommands = {
   save_user_preferences: { args: { language: string }; result: void };
   save_magnifier_preferences: { args: { imageMagnifierEnabled: boolean; textMagnifierEnabled: boolean }; result: void };
   save_last_opened_project: { args: { projectPath: string; pageId: string }; result: void };
+  list_working_projects: { args: undefined; result: import("./workingProjects").DesktopWorkingProject[] };
+  record_working_project: { args: { projectPath: string; pageId: string | null; previousPath?: string }; result: void };
+  forget_working_project: { args: { projectPath: string }; result: void };
   set_ui_language: { args: { language: string }; result: void };
   get_environment: { args: undefined; result: { modelPath: string; tesseractPath: string } };
   inspect_pdf: { args: { pdfPath: string }; result: { pdfSize: number } };

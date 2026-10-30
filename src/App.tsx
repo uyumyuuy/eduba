@@ -39,7 +39,7 @@ import {
 import { canvasToBase64, openProjectPdf, openSourcePdf } from "./pdf";
 import { LogicalPageThumbnailCache } from "./pdfThumbnail";
 import { invokeCommand, isTauri, type ProjectInfo } from "./tauri";
-import type { WorkingProjectInfo } from "./browser/backend";
+import { listWorkingProjects, workingProjectsChanged, type WorkingProjectInfo } from "./workingProjects";
 import { storageProtection, STORAGE_PROTECTION_CHANGED, type StorageProtection } from "./browser/storage";
 import { SaveQueue } from "./persistence";
 import { compactChange, historyPageUpdate, HistoryPersistence, type ProjectPageUpdate, type HistoryOperation as EditHistoryOperation } from "./editHistory";
@@ -397,12 +397,13 @@ function WorkingProjectDetails({ info }: { info: WorkingProjectInfo }) {
   const { t, i18n } = useTranslation();
   const locale = i18n.resolvedLanguage || i18n.language;
   const units = ["B", "KiB", "MiB", "GiB", "TiB"];
-  const unit = Math.min(units.length - 1, Math.max(0, Math.floor(Math.log2(Math.max(1, info.sizeBytes)) / 10)));
-  const size = `${new Intl.NumberFormat(locale, { maximumFractionDigits: unit ? 1 : 0 }).format(info.sizeBytes / 1024 ** unit)} ${units[unit]}`;
+  const bytes = info.sizeBytes;
+  const unit = Math.min(units.length - 1, Math.max(0, Math.floor(Math.log2(Math.max(1, bytes ?? 0)) / 10)));
+  const size = bytes === null ? t("browser.unknown") : `${new Intl.NumberFormat(locale, { maximumFractionDigits: unit ? 1 : 0 }).format(bytes / 1024 ** unit)} ${units[unit]}`;
   return <dl className="recovery-project-details">
     <div><dt>{t("browser.pageCount")}</dt><dd>{info.pageCount === null ? t("browser.unknown") : new Intl.NumberFormat(locale).format(info.pageCount)}</dd></div>
     <div><dt>{t("browser.dataSize")}</dt><dd>{size}</dd></div>
-    <div><dt>{t("browser.lastEdited")}</dt><dd>{info.modifiedAt
+    <div><dt>{t(isTauri ? "workingProjects.lastUpdated" : "browser.lastEdited")}</dt><dd>{info.modifiedAt
       ? <time dateTime={info.modifiedAt}>{new Intl.DateTimeFormat(locale, { dateStyle: "medium", timeStyle: "short" }).format(new Date(info.modifiedAt))}</time>
       : t("browser.unknown")}</dd></div>
   </dl>;
@@ -435,6 +436,7 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
   const orderedRecoveryProjects = useMemo(() => [...(recoveryProjects ?? [])].sort((a, b) => {
     const currentOrder = Number(b.path === project?.path) - Number(a.path === project?.path);
     if (currentOrder) return currentOrder;
+    if (isTauri) return (b.lastUsedAt ?? 0) - (a.lastUsedAt ?? 0) || a.name.localeCompare(b.name) || a.path.localeCompare(b.path);
     if (a.modifiedAt === null && b.modifiedAt !== null) return 1;
     if (b.modifiedAt === null && a.modifiedAt !== null) return -1;
     const timeOrder = a.modifiedAt && b.modifiedAt ? Date.parse(b.modifiedAt) - Date.parse(a.modifiedAt) : 0;
@@ -819,8 +821,8 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
     renderEntry,
   ]);
   const openInfo = useCallback(
-    async (info: ProjectInfo, savedPageId?: string, quiet = false) => {
-      if (working.current) return;
+    async (info: ProjectInfo, savedPageId?: string, quiet = false, previousPath?: string): Promise<boolean> => {
+      if (working.current) return false;
       working.current = true;
       setBusy("open");
       let existing: Manifest;
@@ -830,7 +832,7 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
         if (!quiet) setNotice("notices.genericError", { error: errorText(e) });
         setBusy(null);
         working.current = false;
-        return;
+        return false;
       }
       if (!existing.settings.modelPath)
         existing.settings.modelPath = environmentModel.current;
@@ -841,11 +843,19 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
         existing.settings.modelPath = environmentModel.current;
       }
       try {
+        await lastProjectWrite.current.catch(() => undefined);
         const opened = await openProjectPdf(info.path, info.pdfSize);
         const historyStore = new HistoryPersistence<Settings, Entry>();
         const restoredHistory = await (async () => {
           try {
-            return historyStore.restore(await invokeCommand("load_edit_history", { projectPath: info.path }));
+            const restored = historyStore.restore(await invokeCommand("load_edit_history", { projectPath: info.path }));
+            if (!info.manifest) {
+              const next = makeManifest(opened.numPages);
+              next.settings.modelPath = existing.settings.modelPath;
+              await invokeCommand("save_manifest", { projectPath: info.path, manifest: JSON.stringify(next) });
+              existing = next;
+            }
+            return restored;
           } catch (error) {
             await opened.destroy();
             throw error;
@@ -869,23 +879,24 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
         putIndex(savedIndex >= 0 ? savedIndex : 0);
         putDoc(null);
         setPdf(opened);
-        if (!info.manifest) {
-          const next = makeManifest(opened.numPages);
-          next.settings.modelPath = existing.settings.modelPath;
-          putManifest(next);
-          await invokeCommand("save_manifest", {
-            projectPath: info.path,
-            manifest: JSON.stringify(next),
-          });
-        }
         if (!quiet) setNotice("notices.opened", { name: info.name });
         if (!isTauri) {
           const backend = await import("./browser/backend");
           await backend.activateBrowserProject(info.path);
           setBrowserDirty(backend.isProjectDirty(info.path));
+        } else {
+          try {
+            await invokeCommand("record_working_project", { projectPath: info.path,
+              pageId: manifestRef.current.pages[indexRef.current]?.id ?? null, previousPath });
+            workingProjectsChanged();
+          } catch (error) {
+            setNotice("workingProjects.historyFailed", { error: errorText(error) });
+          }
         }
+        return true;
       } catch (e) {
         if (!quiet) setNotice("notices.pdfLoadFailed", { error: errorText(e) });
+        return false;
       } finally {
         setBusy(null);
         working.current = false;
@@ -1200,8 +1211,8 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
     }
   }, [busy, flush, setNotice, putProject]);
   const deleteWorkingProject = useCallback(async (info: ProjectInfo) => {
-    if (isTauri || busy || working.current || importActive.current || historyApplying.current) return;
-    if (!window.confirm(t("browser.deleteWorkingConfirm", { name: info.name }))) return;
+    if (busy || working.current || importActive.current || historyApplying.current) return;
+    if (!window.confirm(t(isTauri ? "workingProjects.removeConfirm" : "browser.deleteWorkingConfirm", { name: info.name }))) return;
     working.current = true;
     restorationGeneration.current += 1;
     setBusy("save");
@@ -1209,9 +1220,16 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
     setRecoveryError(null);
     try {
       finishLineEditRef.current();
-      await flush();
+      if (timer.current) await flush();
       await writeQueue.current.idle();
       await lastProjectWrite.current.catch(() => undefined);
+      if (isTauri) {
+        await invokeCommand("forget_working_project", { projectPath: info.path });
+        setRecoveryProjects(current => current?.filter(project => project.path !== info.path) ?? null);
+        workingProjectsChanged();
+        setNotice("workingProjects.removed", { name: info.name });
+        return;
+      }
       const backend = await import("./browser/backend");
       await backend.deleteWorkingProject(info.path);
       if (projectRef.current?.path === info.path) {
@@ -1268,46 +1286,71 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
       setRecoveryProjects(current => current?.filter(project => project.path !== info.path) ?? null);
       setNotice("browser.workingDeleted", { name: info.name });
     } catch (error) {
-      setRecoveryError(errorText(error));
-      setNotice("browser.workingDeleteFailed", { error: errorText(error) });
+      setRecoveryError(t(isTauri ? "workingProjects.operationFailed" : "browser.workingDeleteFailed", { error: errorText(error) }));
+      setNotice(isTauri ? "workingProjects.operationFailed" : "browser.workingDeleteFailed", { error: errorText(error) });
     } finally {
       working.current = false;
       setDeletingWorkingPath(null);
       setBusy(null);
     }
   }, [busy, flush, pdf, putDoc, putIndex, putManifest, putProject, setNotice, setRedoStack, setUndoStack, t]);
-  const openWorkingProject = useCallback(async (info: ProjectInfo) => {
+  const openWorkingProject = useCallback(async (info: WorkingProjectInfo, locate = false) => {
     if (busy || working.current || importActive.current || historyApplying.current) return;
+    if (!locate && info.path === projectRef.current?.path) { setRecoveryProjects(null); return; }
     working.current = true;
     restorationGeneration.current += 1;
     setBusy("open");
+    setRecoveryError(null);
     try {
+      const path = locate ? await dialogOpen({ title: t("workingProjects.locateTitle"), multiple: false,
+        defaultPath: info.path, filters: [{ name: "Eduba", extensions: ["eduba"] }] }) : info.path;
+      if (!path) return;
       finishLineEditRef.current();
-      await flush();
+      if (timer.current) await flush();
       await writeQueue.current.idle();
-      const restored = await invokeCommand("open_project", { projectPath: info.path });
+      await lastProjectWrite.current.catch(() => undefined);
+      const restored = await invokeCommand("open_project", { projectPath: path });
       working.current = false;
-      setRecoveryProjects(null);
-      await openInfo(restored);
+      if (await openInfo(restored, info.pageId ?? undefined, false, locate ? info.path : undefined)) setRecoveryProjects(null);
+      else {
+        setRecoveryError(t("workingProjects.openFailed"));
+        if (isTauri) {
+          // Refresh statuses when a file disappeared or became unreadable while the list was open.
+          working.current = true;
+          setBusy("open");
+          setRecoveryProjects(await listWorkingProjects());
+        }
+      }
     } catch (error) {
+      setRecoveryError(t("notices.projectOpenFailed", { error: errorText(error) }));
       setNotice("notices.projectOpenFailed", { error: errorText(error) });
+      if (isTauri) {
+        try { setRecoveryProjects(await listWorkingProjects()); } catch { /* Keep the original open error. */ }
+      }
     } finally {
       working.current = false;
       setBusy(null);
     }
-  }, [busy, flush, openInfo, setNotice]);
+  }, [busy, flush, openInfo, setNotice, t]);
   const showWorkingProjects = useCallback(async () => {
-    if (isTauri || busy || working.current || importActive.current) return;
+    if (busy || working.current || importActive.current || historyApplying.current) return;
+    working.current = true;
+    restorationGeneration.current += 1;
+    setBusy("open");
     setRecoveryError(null);
     try {
       finishLineEditRef.current();
       if (timer.current) await flush();
       await writeQueue.current.idle();
-      const saved = await (await import("./browser/backend")).workingProjects();
+      await lastProjectWrite.current.catch(() => undefined);
+      const saved = await listWorkingProjects();
       setHasWorkingProjects(saved.length > 0);
-      if (!working.current && !importActive.current) setRecoveryProjects(saved);
+      setRecoveryProjects(saved);
     } catch (error) {
       setNotice("notices.projectOpenFailed", { error: errorText(error) });
+    } finally {
+      working.current = false;
+      setBusy(null);
     }
   }, [busy, flush, setNotice]);
   useEffect(() => {
@@ -2022,23 +2065,24 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
     return () => { disposed = true; unlisten?.(); };
   }, [flush]);
   useEffect(() => {
-    if (isTauri) return;
     let disposed = false;
     let request = 0;
     const update = () => {
       const current = ++request;
-      void import("./browser/backend").then(backend => backend.workingProjects()).then(saved => {
+      void listWorkingProjects().then(saved => {
         if (!disposed && current === request) setHasWorkingProjects(saved.length > 0);
       }).catch(() => {
         if (!disposed && current === request) setHasWorkingProjects(false);
       });
     };
     window.addEventListener("eduba-browser-projects-changed", update);
+    window.addEventListener("eduba-working-projects-changed", update);
     window.addEventListener("focus", update);
     update();
     return () => {
       disposed = true;
       window.removeEventListener("eduba-browser-projects-changed", update);
+      window.removeEventListener("eduba-working-projects-changed", update);
       window.removeEventListener("focus", update);
     };
   }, []);
@@ -2637,8 +2681,8 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
         {!isTauri && <>
           <button onClick={() => void save()} disabled={!project || Boolean(busy)} title="Ctrl+S">{t("browser.save")}</button>
           <button onClick={() => void save(true)} disabled={!project || Boolean(busy)} title="Ctrl+Shift+S">{t("browser.saveAs")}</button>
-          <button disabled={Boolean(busy) || !hasWorkingProjects} onClick={() => void showWorkingProjects()}>{t("browser.recover")}</button>
         </>}
+        <button disabled={Boolean(busy) || !hasWorkingProjects} onClick={() => void showWorkingProjects()}>{t("browser.recover")}</button>
         {!reading && <><span className="toolbar-divider" />
         <button onClick={undo} disabled={!undoStack.length || Boolean(busy)} title="Ctrl+Z" aria-keyshortcuts="Control+Z">
           <Undo2 size={15} /> {t("ui.undo")}
@@ -2960,7 +3004,7 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
                     busy={Boolean(busy) || importCreating}
                     onImport={() => void importPdf()}
                     onOpen={() => void openProject()}
-                    onRecover={isTauri ? undefined : () => void showWorkingProjects()}
+                    onRecover={() => void showWorkingProjects()}
                     canRecover={hasWorkingProjects}
                   />
                 )}
@@ -3171,21 +3215,26 @@ export default function App({ initialLanguage = "auto", initialOsLocale = null }
       {recoveryProjects && <div className="modal-scrim"><div className="modal recovery-modal" role="dialog" aria-modal="true" aria-labelledby="recovery-title" aria-describedby="recovery-description" aria-busy={Boolean(deletingWorkingPath)}>
         <div className="modal-head"><h2 id="recovery-title">{t("browser.recoveryTitle")}</h2><button className="icon-btn" disabled={Boolean(busy)} onClick={() => setRecoveryProjects(null)} aria-label={t("ui.close")}><X size={16} /></button></div>
         <div className="recovery-body">
-        <p id="recovery-description">{t("browser.recoveryDescription")}</p>
-        <WorkingProjectStorageNotice />
-        {recoveryError && <p className="form-error" role="alert">{t("browser.workingDeleteFailed", { error: recoveryError })}</p>}
+        <p id="recovery-description">{t(isTauri ? "workingProjects.description" : "browser.recoveryDescription")}</p>
+        {isTauri ? <p className="recovery-sort-hint">{t("workingProjects.sortOrder")}</p> : <WorkingProjectStorageNotice />}
+        {recoveryError && <p className="form-error" role="alert">{recoveryError}</p>}
         {recoveryProjects.length ? <ul className="recovery-projects">{orderedRecoveryProjects.map(info => <li key={info.path}>
           <div className="recovery-project-info">
-            <button className="recovery-open" title={info.name} disabled={Boolean(busy)} onClick={() => void openWorkingProject(info)}>
+            <button className="recovery-open" title={info.name} disabled={Boolean(busy) || Boolean(info.status && info.status !== "available" && info.path !== project?.path)} onClick={() => void openWorkingProject(info)}>
               <span className="recovery-project-name">{info.name}</span>
               {info.path === project?.path && <span className="recovery-current">{t("browser.currentProject")}</span>}
             </button>
+            {isTauri && <p className="recovery-path" title={info.path}><span>{t("workingProjects.path")}</span> {info.path.replace(/^\\\\\?\\/, "")}</p>}
+            {info.status && info.status !== "available" && <p className="recovery-file-status" role="status">{t(`workingProjects.${info.status}`)}</p>}
             <WorkingProjectDetails info={info} />
           </div>
-          <button className="recovery-delete" disabled={Boolean(busy)} aria-label={t("browser.deleteWorkingLabel", { name: info.name })} onClick={() => void deleteWorkingProject(info)}>
-            {deletingWorkingPath === info.path ? t("browser.deletingWorking") : t("browser.deleteWorking")}
+          <div className="recovery-project-actions">
+          {isTauri && info.status !== "available" && <button className="secondary recovery-locate" disabled={Boolean(busy)} onClick={() => void openWorkingProject(info, true)}>{t("workingProjects.locate")}</button>}
+          <button className="recovery-delete" disabled={Boolean(busy)} aria-label={t(isTauri ? "workingProjects.removeLabel" : "browser.deleteWorkingLabel", { name: info.name })} onClick={() => void deleteWorkingProject(info)}>
+            {t(isTauri ? (deletingWorkingPath === info.path ? "workingProjects.removing" : "workingProjects.remove") : (deletingWorkingPath === info.path ? "browser.deletingWorking" : "browser.deleteWorking"))}
           </button>
-        </li>)}</ul> : <p className="recovery-empty">{t("browser.recoveryEmpty")}</p>}
+          </div>
+        </li>)}</ul> : <p className="recovery-empty">{t(isTauri ? "workingProjects.empty" : "browser.recoveryEmpty")}</p>}
         </div>
       </div></div>}
       {bulkReplace && project && (<BulkReplaceDialog open={true} projectPath={project.path} initialSearch={bulkReplace.search} initialMatch={bulkReplace.initialMatch} getSnippet={getBulkSnippet} onApply={applyBulkReplace} onClose={() => { bulkSnippetCanvases.current.clear(); setBulkReplace(null); }} />)}

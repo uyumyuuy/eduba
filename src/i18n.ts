@@ -7,16 +7,17 @@ import zhHant from "./locales/zh-Hant";
 import importResources from "./locales/importResources";
 import { browserResources } from "./browser/translations";
 import { readerResources } from "./locales/reader";
+import { workingProjectsResources } from "./locales/workingProjects";
 
 export const supportedLocales = ["en", "ja", "zh-Hans", "zh-Hant"] as const;
 export type SupportedLocale = (typeof supportedLocales)[number];
 export type LocalePreference = "auto" | SupportedLocale;
 
 export const resources = {
-  en: { translation: { ...en, ...importResources.en, browser: browserResources.en, reader: readerResources.en } },
-  ja: { translation: { ...ja, ...importResources.ja, browser: browserResources.ja, reader: readerResources.ja } },
-  "zh-Hans": { translation: { ...zhHans, ...importResources["zh-Hans"], browser: browserResources["zh-Hans"], reader: readerResources["zh-Hans"] } },
-  "zh-Hant": { translation: { ...zhHant, ...importResources["zh-Hant"], browser: browserResources["zh-Hant"], reader: readerResources["zh-Hant"] } },
+  en: { translation: { ...en, ...importResources.en, browser: browserResources.en, reader: readerResources.en, workingProjects: workingProjectsResources.en } },
+  ja: { translation: { ...ja, ...importResources.ja, browser: browserResources.ja, reader: readerResources.ja, workingProjects: workingProjectsResources.ja } },
+  "zh-Hans": { translation: { ...zhHans, ...importResources["zh-Hans"], browser: browserResources["zh-Hans"], reader: readerResources["zh-Hans"], workingProjects: workingProjectsResources["zh-Hans"] } },
+  "zh-Hant": { translation: { ...zhHant, ...importResources["zh-Hant"], browser: browserResources["zh-Hant"], reader: readerResources["zh-Hant"], workingProjects: workingProjectsResources["zh-Hant"] } },
 } as const;
 
 /** Resolves the operating-system locale to one of the bundled translations. */
