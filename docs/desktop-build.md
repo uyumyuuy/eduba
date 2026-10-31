@@ -15,7 +15,13 @@
 - 基準モデルの通知文、Apache-2.0 のライセンス、元の provenance、モデル専用の校正候補表、`web-model.json`
 - Tesseract のライセンスと取得元・ハッシュの記録
 
-インストーラーは署名なしの確認用ビルド。起動時に Windows の警告が出る場合がある。インストール後は開発サーバーや別途インストールした Tesseract を必要としない。WebView2 が未導入の場合はインストーラーの標準処理で取得するため、初回インストールにネットワーク接続が必要になる場合がある。
+インストーラーは署名なし。起動時に Windows の警告が出る場合がある。インストール後は開発サーバーや別途インストールした Tesseract を必要としない。WebView2 が未導入の場合はインストーラーの標準処理で取得するため、初回インストールにネットワーク接続が必要になる場合がある。
+
+## アプリの Release
+
+正式版は `v<version>` のタグで GitHub Release に公開する。リリース前に `package.json`、`package-lock.json`、`src-tauri/tauri.conf.json`、`src-tauri/Cargo.toml`、`src-tauri/Cargo.lock` のアプリのバージョンをそろえてコミットし、そのコミットの Actions で Windows 版をビルドする。
+
+成功した実行から成果物を取得し、`BUILDINFO.json` のバージョン・コミット・モデル情報と `SHA256SUMS` を確認する。EXE、MSI、ビルド情報、ハッシュ、付属のライセンス・モデル出典をまとめて公開する。アプリの Release は Latest とし、OCR モデル専用 Release と区別する。1.0.0 のリリースノートは [releases/1.0.0.md](releases/1.0.0.md) に保存する。
 
 ## ビルドの構成
 
