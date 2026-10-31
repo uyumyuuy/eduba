@@ -2,6 +2,7 @@
 name = "eduba"
 version = "1.0.0"
 description = "Offline OCR proofreading workspace"
+license = "Apache-2.0"
 authors = ["Eduba"]
 edition = "2021"
 

@@ -12,6 +12,7 @@
 - `Eduba_<version>_x64_en-US.msi`：MSI を使う環境向け
 - `BUILDINFO.json`：ソースのコミット、未コミット変更の有無、対象アーキテクチャ、モデル・候補表・ランタイムの識別情報
 - `SHA256SUMS`：各成果物の SHA-256
+- `EDUBA-LICENSE.txt`：Eduba 本体の Apache License 2.0。インストール先にも同梱する。
 - 基準モデルの通知文、Apache-2.0 のライセンス、元の provenance、モデル専用の校正候補表、`web-model.json`
 - Tesseract のライセンスと取得元・ハッシュの記録
 

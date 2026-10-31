@@ -77,6 +77,7 @@ if (mode === "prepare") {
   }
   const modelNotices = ["OCR-MODEL-NOTICE.txt", "OCR-MODEL-LICENSE.txt", "OCR-MODEL-PROVENANCE.json", "OCR-MODEL-CANDIDATES.json", "web-model.json"];
   for (const name of modelNotices) await copyFile(join(root, "src-tauri/resources/models", name), join(artifacts, name));
+  await copyFile(join(root, "LICENSE"), join(artifacts, "EDUBA-LICENSE.txt"));
   await copyFile(join(root, "src-tauri/resources/tesseract/doc/LICENSE"), join(artifacts, "TESSERACT-LICENSE.txt"));
   await copyFile(join(root, "config/windows-runtime.json"), join(artifacts, "TESSERACT-RUNTIME.json"));
   const commit = process.env.GITHUB_SHA || execFileSync("git", ["rev-parse", "HEAD"], { cwd: root, encoding: "utf8" }).trim();

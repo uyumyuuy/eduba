@@ -1,5 +1,7 @@
 # EDUBA
 
+Eduba 本体は [Apache License 2.0](LICENSE) で公開しています。同梱するライブラリ、フォント、学習モデルなどには、それぞれのライセンスと通知文が適用されます。
+
 EDUBA は、スキャンした英語の本・論文を Tauri 2 と React で OCR 校正するデスクトップアプリです。初期スライスでは、PDF の画像化、Tesseract hOCR の階層化、左右見開きの前処理、行単位の校正、TXT/hOCR/SVG 出力を対象にします。
 
 ## 現在の状態

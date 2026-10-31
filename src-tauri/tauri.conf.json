@@ -33,6 +33,7 @@
     "resources": {
       "resources/tesseract": "tesseract",
       "resources/models": "models",
+      "../LICENSE": "EDUBA-LICENSE.txt",
       "../src/assets/fonts/NotoSerif-OFL.txt": "NotoSerif-OFL.txt",
       "resources/figure-detection": "figure-detection"
     }

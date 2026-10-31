@@ -40,6 +40,7 @@ for (const name of ["ort-wasm-simd-threaded.mjs", "ort-wasm-simd-threaded.wasm"]
   await copy(join(root, "node_modules/onnxruntime-web/dist", name), join(output, "onnx", name));
 }
 for (const [source, name] of [
+  ["LICENSE", "EDUBA-LICENSE.txt"],
   ["src-tauri/resources/figure-detection/LICENSE", "PicoDet-LICENSE"],
   ["src-tauri/resources/figure-detection/MODEL-NOTICE.txt", "PicoDet-NOTICE.txt"],
   ["node_modules/tesseract.js/LICENSE.md", "Tesseract-js-LICENSE.md"],
