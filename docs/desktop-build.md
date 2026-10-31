@@ -35,6 +35,8 @@
 
 基準モデルは `src-tauri/resources/models/<モデル名>.traineddata`、校正候補表は `src/assets/scan-candidate-character-confusions.json` として Git 管理する。モデル更新時は、元の provenance・通知文・`config/web-model.json`・既定モデル名と一緒に更新し、`.gitignore` の traineddata の許可対象も切り替える。置き換えた旧モデルは Git 管理から外す。
 
+Git 管理に加えて、モデルまたは候補表の更新を公開する際は OCR モデル専用の Release も必ず作成する。モデル・候補表・出典・ライセンス・通知文・manifest・ハッシュをセットで配布し、ソースコードのアーカイブは手動添付しない。手順は [モデル単体の Release](website-deployment.md#モデル単体の-release) を参照する。
+
 Tesseract を更新するときは `config/windows-runtime.json` のリポジトリ・タグ・ファイル名・サイズ・SHA-256・バージョンを同じ変更で更新する。取得元は [Tesseract 公式リリース](https://github.com/tesseract-ocr/tesseract/releases)。ハッシュは GitHub のリリース資産の digest と取得ファイルを照合する。
 
 ## ローカルで同じ手順を使う

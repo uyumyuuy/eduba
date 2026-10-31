@@ -33,7 +33,7 @@ Web 公開の GitHub Actions のキャッシュは npm 用だけで、モデル�
 
 ## モデル単体の Release
 
-モデル単体を配布する場合は次の手順を使う。Git 管理されたモデルからのアプリビルドに Release の公開は不要。現在の固定タグは公開済みのため、新しいモデル・候補表の組み合わせを公開するときは別のタグに更新する。
+基準モデルの traineddata または対応する校正候補表を更新して公開するときは、Git への取り込みと合わせて OCR モデル専用の Release を必ず作成する。アプリのビルドは Git 管理されたモデルを使用するが、モデル単体の配布と過去の組み合わせの保存のために Release も継続する。現在の固定タグは公開済みのため、新しいモデル・候補表の組み合わせには別のタグを使用する。
 
 1. `docs/ocr-model-notice.txt` の派生元と追加学習の記載、Apache-2.0 での公開内容を確認する。
 2. ローカルにある対象モデルから、検証済みの公開ファイルを準備する。
@@ -65,6 +65,7 @@ gh release create ocr-model-20261023-charset-expanded-250x-candidates-20261027 `
 ```
 
 モデルと通知文は公開資産になる。元 PDF、学習データ、ユーザーのプロジェクトは添付しない。
+ソースコードのアーカイブも手動では添付しない。GitHub が自動表示する「Source code (zip)」「Source code (tar.gz)」はタグ時点のリポジトリのアーカイブへのリンクで、アップロードした配布資産とは別のもの。モデルの利用には不要である（[GitHub の Release の説明](https://docs.github.com/en/repositories/releasing-projects-on-github/about-releases)）。
 Release の公開だけではサイトを更新しない。次の main への対象変更の push、または Actions の手動実行で反映する。
 
 ## ローカルでサイト全体をビルドする
@@ -122,7 +123,7 @@ Pages の書き込みと OIDC の権限はデプロイジョブにだけ与え�
 
 基準モデルの更新では traineddata・元の provenance・そのモデル専用の候補表を必ずセットで取り込む。Assyrian-OCR の `config/ocr-models.json` の `training_baseline` と `evaluation_baseline` を確認し、対応する `data/<model-key>/` から取得する。モデル key とハッシュを照合してから、manifest のモデル情報・出典ハッシュ・`correctionCandidates` の取り込み元とハッシュ/サイズ、通知文を同じ変更で更新する。デスクトップ版の既定モデル名と、`.gitignore` の traineddata の許可対象も合わせて更新する。置き換えた旧モデルは Git 管理から外す。
 `npm run verify:model-pair`、ローカル traineddata を指定した `npm run fetch:web-model -- --model <path>`、`npm run prepare:model-release -- --model <path>` の順に対応を確認し、配信用ビルドを行う。
-モデルまたは候補表を変更して公開する場合は別の Release タグを使用する。候補表だけを更新する場合も同様。
+モデルまたは候補表を変更して公開する場合は、新しいタグでモデル専用 Release を必ず作成する。候補表だけを更新する場合も同様。
 過去の Release と資産は残す。同じタグのファイルを差し替えると、既存の期待ハッシュと一致せずビルドが失敗する。
 旧モデルへ戻す場合は、モデル・候補表・出典・manifest・通知文を対応する以前の組み合わせへ戻して再公開する。
 
