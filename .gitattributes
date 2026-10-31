@@ -1,3 +1,4 @@
 # Preserve the training project's provenance bytes for SHA-256 verification.
 docs/ocr-model-provenance.json -text
 src/assets/scan-candidate-character-confusions.json -text
+src-tauri/resources/models/*.traineddata binary

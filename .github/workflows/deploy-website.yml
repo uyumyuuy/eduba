@@ -48,10 +48,8 @@ jobs:
         run: npm ci
       - name: Install website dependencies
         run: npm ci --prefix website
-      - name: Fetch verified OCR model and build app with documentation
+      - name: Verify bundled OCR model and build app with documentation
         run: npm run build:website
-        env:
-          GH_TOKEN: ${{ github.token }}
       - name: Upload website
         uses: actions/upload-pages-artifact@v5
         with:

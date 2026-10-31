@@ -20,11 +20,13 @@ HTML出力では読み順に沿って図表を配置し、SVGでは元の座標�
 
 ```powershell
 npm install
-./scripts/setup-runtime.ps1 -TesseractRoot 'C:\Program Files\Tesseract-OCR' -ModelPath 'C:\path\to\traineddata'
+./scripts/setup-runtime.ps1 -TesseractRoot 'C:\Program Files\Tesseract-OCR'
 npm run tauri dev
 ```
 
 `setup-runtime.ps1` は Tesseract の実行ファイル、DLL、選択した traineddata を `src-tauri/resources/` にコピーします。テストを実行する場合は、プロジェクト依存関係のインストール後に `npm test` を使います。初期セットアップで Tauri の Rust 環境が必要です。代表的な hOCR は `tmp/ocr/` にあります。
+
+基準モデルの traineddata とモデル専用の校正候補表は Git 管理しており、ビルド時にハッシュと組み合わせを検証します。Windows x64 のインストーラーは GitHub Actions でも手動ビルドできます。実行と取得方法は [デスクトップ版の CI ビルド](docs/desktop-build.md) を参照してください。
 
 `src-tauri/target/debug/eduba.exe` は開発用です。単独では起動せず、`npm run dev` が起動する `http://127.0.0.1:1420` を読み込みます。日常利用ではこのファイルを直接開かないでください。
 

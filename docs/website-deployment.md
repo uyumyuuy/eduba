@@ -8,7 +8,7 @@ Vite で生成したアプリを `website/public/app/` にコピーしてから 
 
 ## 固定する OCR モデル
 
-`config/web-model.json` に Release のリポジトリ・タグ・ファイル名・SHA-256・サイズを記録する。
+基準モデルの traineddata は `src-tauri/resources/models/` に Git 管理し、モデル専用の候補表と同じコミットから取り込む。`config/web-model.json` にファイル名・SHA-256・サイズと、別途配布する Release のリポジトリ・タグを記録する。
 現在の対象は `eng_assyriology_charset_expanded_250x_20261023`（12,091,049 bytes）。
 Assyrian-OCR が2026年10月24日に採用した学習・評価用の基準モデルを取り込んでいる。
 文字集合拡張実験の250回/行チェックポイントで、モデル名の日付は実験開始日（10月23日）。最終300回/行チェックポイントは使用しない。
@@ -18,22 +18,22 @@ Assyrian-OCR が2026年10月24日に採用した学習・評価用の基準モ�
 `latest` や可変のブランチ URL は使わない。
 モデルの由来と配布条件は `docs/ocr-model-notice.txt` に記録する。
 モデル専用の校正候補表も `src/assets/scan-candidate-character-confusions.json` に取り込む。Assyrian-OCR の現在の取り込み元は `data/eng_assyriology_charset_expanded_250x_20261023/scan-candidate-character-confusions.json`（173,482 bytes、SHA-256 `bd6b3836ccbf05313fdb9559f35fd23189087f63cca18c0cfd984d453ead0737`）。共通の `artifacts/scan-candidate-character-confusions.json` は別のモデル用なので使用しない。
-`config/web-model.json` の `correctionCandidates` に保存先・取り込み元・サイズ・ハッシュを固定する。`npm run verify:model-pair` は候補表のバイト列・スキーマ・モデル key/SHA と、モデル出典の対応を確認する。モデルの取得時、アプリのビルド時、配布準備時にも照合し、不一致なら停止する。モデル本体のバイト列は取得・キャッシュ利用時に別途照合する。
+`config/web-model.json` の `correctionCandidates` に保存先・取り込み元・サイズ・ハッシュを固定する。`npm run verify:model-pair` はモデル本体のサイズ・SHA-256、候補表のバイト列・スキーマ・モデル key/SHA と、モデル出典の対応を確認する。モデルの取得時、アプリのビルド時、配布準備時にも照合し、不一致なら停止する。
 派生元は `tesseract-ocr/tessdata_best` の `eng.traineddata`。
 追加学習モデルも Apache-2.0 で配布し、独自の用途制限は追加しない。
 ライセンス本文は `licenses/ocr-model-Apache-2.0.txt` に保存する。
 
-`npm run fetch:web-model` は GitHub CLI の `gh release download` で指定したファイルを取得する。
+`npm run fetch:web-model` と配信用ビルドは、Git 管理されたモデルを検証して使用する。明示指定したローカルファイルも使用できる。Git 管理のモデルがない状態で取得コマンドだけを使う場合は、既存キャッシュ、GitHub CLI の `gh release download` の順で固定資産を探す。
 取得後にサイズと SHA-256 を照合し、両方が一致したファイルだけを `.cache/ocr-models/<sha256>/` に保存する。
 ダウンロード途中のファイルは一時名で扱い、失敗時には削除する。
 既存キャッシュも使用前に検証し、不一致の場合は処理を停止する。意図したモデル情報と照合してから、そのキャッシュを削除し、再取得する。
 
 ONNX モデルは Git 管理済みのファイルを使用する。Tesseract.js と WASM は `npm ci` で復元する。
-GitHub Actions のキャッシュは npm 用だけで、モデルはジョブごとに取得する。
+Web 公開の GitHub Actions のキャッシュは npm 用だけで、モデルはリポジトリの checkout に含まれる。
 
-## 初回のモデル Release
+## モデル単体の Release
 
-最初の Release が未公開のため、次の準備が必要。
+モデル単体を配布する場合は次の手順を使う。Git 管理されたモデルからのアプリビルドに Release の公開は不要。現在の固定タグは公開済みのため、新しいモデル・候補表の組み合わせを公開するときは別のタグに更新する。
 
 1. `docs/ocr-model-notice.txt` の派生元と追加学習の記載、Apache-2.0 での公開内容を確認する。
 2. ローカルにある対象モデルから、検証済みの公開ファイルを準備する。
@@ -69,7 +69,7 @@ Release の公開だけではサイトを更新しない。次の main への対
 
 ## ローカルでサイト全体をビルドする
 
-Node.js 24 と GitHub CLI を使用する。依存パッケージは、ルートと website の両方で復元する。
+Node.js 24 を使用する。モデルは checkout に含まれるため、通常のビルドに GitHub CLI は不要。依存パッケージは、ルートと website の両方で復元する。
 
 ```powershell
 npm ci
@@ -103,12 +103,11 @@ npm run build:website
 `.github/workflows/deploy-website.yml` は以下を順に実行する。
 
 1. Node.js 24 を用意し、両方の lockfile に従って依存パッケージを復元する。
-2. `GH_TOKEN` にジョブの `GITHUB_TOKEN` を渡して、`npm run build:website` を実行する。
+2. Git 管理されたモデル・provenance・校正候補表を検証し、`npm run build:website` を実行する。
 3. 成功した `website/dist/` を Pages 用 artifact としてアップロードする。
 4. ビルドに成功した場合だけ、別のジョブでデプロイする。
 
-取得処理は同じリポジトリの Release に対する `contents: read` を使用する。
-個人用トークンや Release への書き込み権限は不要。
+checkout のために `contents: read` を使用する。モデル取得用の個人用トークンや Release への書き込み権限は不要。
 Pages の書き込みと OIDC の権限はデプロイジョブにだけ与える。
 リポジトリの Settings → Pages → Source は GitHub Actions に設定する。
 
@@ -121,7 +120,7 @@ Pages の書き込みと OIDC の権限はデプロイジョブにだけ与え�
 
 ## モデルの更新と再現
 
-基準モデルの更新では traineddata・元の provenance・そのモデル専用の候補表を必ずセットで取り込む。Assyrian-OCR の `config/ocr-models.json` の `training_baseline` と `evaluation_baseline` を確認し、対応する `data/<model-key>/` から取得する。モデル key とハッシュを照合してから、manifest のモデル情報・出典ハッシュ・`correctionCandidates` の取り込み元とハッシュ/サイズ、通知文を同じ変更で更新する。デスクトップ版の既定モデル名とセットアップ用パスも合わせて更新する。
+基準モデルの更新では traineddata・元の provenance・そのモデル専用の候補表を必ずセットで取り込む。Assyrian-OCR の `config/ocr-models.json` の `training_baseline` と `evaluation_baseline` を確認し、対応する `data/<model-key>/` から取得する。モデル key とハッシュを照合してから、manifest のモデル情報・出典ハッシュ・`correctionCandidates` の取り込み元とハッシュ/サイズ、通知文を同じ変更で更新する。デスクトップ版の既定モデル名と、`.gitignore` の traineddata の許可対象も合わせて更新する。置き換えた旧モデルは Git 管理から外す。
 `npm run verify:model-pair`、ローカル traineddata を指定した `npm run fetch:web-model -- --model <path>`、`npm run prepare:model-release -- --model <path>` の順に対応を確認し、配信用ビルドを行う。
 モデルまたは候補表を変更して公開する場合は別の Release タグを使用する。候補表だけを更新する場合も同様。
 過去の Release と資産は残す。同じタグのファイルを差し替えると、既存の期待ハッシュと一致せずビルドが失敗する。

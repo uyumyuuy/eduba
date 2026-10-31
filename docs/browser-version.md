@@ -6,11 +6,9 @@ Tesseract.js、ONNX Runtime Web、SQLite WASM は端末内で動く。
 
 ## 開発と配信
 
-初回は `npm install` を実行し、OCR モデルを配置する。
-モデルは Git 管理対象外なので、新しい worktree では既存のモデルを明示的に指定できる。
+初回は `npm install` を実行する。基準モデルの traineddata とモデル専用の校正候補表は Git 管理しており、checkout に含まれる。
 
 ```powershell
-npm run prepare:web -- --model 'src-tauri/resources/models/eng_assyriology_charset_expanded_250x_20261023.traineddata'
 npm run dev:web
 ```
 
@@ -31,9 +29,9 @@ SQLite は OPFS SAH pool、ONNX は WASM 1スレッドを使用し、COOP/COEP �
 配信用ブラウザビルドは Cloudflare Web Analytics のビーコンを読み込み、ページビューと表示速度を Cloudflare に送信する。SPA の画面遷移も Cloudflare の標準機能で計測し、独自の操作イベントは送らない。Cloudflare は個人をサイト間で追跡しない。PDF、画像、OCR・校正内容は送信しない。計測スクリプトを読み込めなくてもアプリの処理は継続する。デスクトップビルドと開発サーバーにはビーコンを含めない。Web Analytics の自動挿入を Cloudflare 側で有効にすると重複するため、手動スニペット方式を使用する。
 
 Starlight のドキュメントとまとめて配信する場合は `npm run build:website` を使用する。
-固定した Release の OCR モデルを取得・SHA-256 検証してからアプリをビルドし、
+Git 管理された OCR モデルと対応する候補表・provenance を SHA-256 検証してからアプリをビルドし、
 `website/public/app/` を経由して `website/dist/app/` に配置する。
-初回のモデル公開、ローカルでのビルド、CI の構成は [サイト公開手順](website-deployment.md) を参照する。
+モデル単体の配布、ローカルでのビルド、CI の構成は [サイト公開手順](website-deployment.md) を参照する。
 
 ## ローカルファイルと自動保存
 

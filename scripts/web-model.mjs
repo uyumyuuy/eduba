@@ -25,6 +25,7 @@ if (!candidates || candidates.file !== "src/assets/scan-candidate-character-conf
 }
 
 export const modelPath = join(root, ".cache/ocr-models", manifest.sha256, manifest.asset);
+export const bundledModelPath = join(root, "src-tauri/resources/models", manifest.asset);
 
 export async function verifyModel(path) {
   const info = await stat(path);
@@ -71,9 +72,17 @@ export async function readModelCandidates() {
   return bytes;
 }
 
-/** Acquire exactly the pinned release asset. A local file can seed the same verified cache. */
+/** Use the checked-in baseline or acquire exactly the pinned asset into a verified cache. */
 export async function acquireModel(source) {
   await Promise.all([readModelProvenance(), readModelCandidates()]);
+  if (!source) {
+    try {
+      await stat(bundledModelPath);
+      source = bundledModelPath;
+    } catch (error) {
+      if (error.code !== "ENOENT") throw error;
+    }
+  }
   if (source) await verifyModel(resolve(source));
   try {
     await verifyModel(modelPath);

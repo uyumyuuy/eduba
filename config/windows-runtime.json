@@ -1,0 +1,8 @@
+{
+  "repository": "tesseract-ocr/tesseract",
+  "tag": "5.5.3",
+  "asset": "tesseract-ocr-w64-setup-5.5.3.20260724.exe",
+  "sha256": "bee9e3434bd94fd65387d9be28cd467a41f61b1275383b55b0f59a1331270ae4",
+  "size": 26573224,
+  "version": "5.5.3"
+}

@@ -11,6 +11,11 @@ src-tauri/gen/
 src-tauri/resources/tesseract/*.exe
 src-tauri/resources/tesseract/*.dll
 src-tauri/resources/models/*.traineddata
+!src-tauri/resources/models/eng_assyriology_charset_expanded_250x_20261023.traineddata
+src-tauri/resources/models/OCR-MODEL-*
+src-tauri/resources/models/web-model.json
+src-tauri/resources/tesseract/doc/
+src-tauri/resources/tesseract/RUNTIME-PROVENANCE.json
 tmp/
 *.sqlite-wal
 *.sqlite-shm

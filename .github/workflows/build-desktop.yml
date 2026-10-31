@@ -1,0 +1,58 @@
+name: Build Windows desktop app
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: desktop-windows-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  windows:
+    name: Windows x64 installers
+    runs-on: windows-2022
+    timeout-minutes: 60
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+          cache: npm
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@1.89.0
+        with:
+          targets: x86_64-pc-windows-msvc
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri -> target
+      - name: Install frontend dependencies
+        run: npm ci
+      - name: Prepare verified baseline model and correction table
+        run: npm run prepare:desktop-model
+      - name: Prepare pinned Tesseract runtime
+        run: ./scripts/prepare-windows-runtime.ps1
+      - name: Build desktop executable
+        run: npm run tauri -- build --ci --no-bundle --no-sign --target x86_64-pc-windows-msvc -- --locked
+      - name: Prepare native DLL resources for installers
+        run: node scripts/desktop-artifacts.mjs prepare
+      - name: Create Windows installers
+        run: npm run tauri -- bundle --ci --no-sign --target x86_64-pc-windows-msvc --bundles nsis,msi --config .cache/windows-build/tauri.bundle.json
+      - name: Collect installers and build metadata
+        run: node scripts/desktop-artifacts.mjs collect
+      - name: Upload Windows installers
+        uses: actions/upload-artifact@v7
+        with:
+          name: eduba-windows-x64-${{ github.run_number }}
+          path: .cache/windows-build/artifacts/
+          if-no-files-found: error
+          retention-days: 30
+          compression-level: 0
